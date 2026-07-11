@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: adren-travel-backend
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/adren_travel
+    username: adren
+    password: adren
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  modulith:
+    events:
+      jdbc-schema-initialization:
+        enabled: true
+
+# Groq (free-tier LLM) — MVP substitute for the AI Governance module's model
+# provider (PRD Section 11). Groq's API is OpenAI-compatible.
+adren:
+  ai:
+    groq:
+      base-url: https://api.groq.com/openai/v1
+      api-key: ${GROQ_API_KEY:}
+      model: llama-3.3-70b-versatile
+  aws:
+    # LocalStack endpoint for local/dev/test — point at real AWS endpoints
+    # in production by overriding this property per environment.
+    endpoint-override: http://localhost:4566
+    region: ap-south-1
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,modulith

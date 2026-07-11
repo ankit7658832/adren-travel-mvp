@@ -1,0 +1,25 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: adren_travel
+      POSTGRES_USER: adren
+      POSTGRES_PASSWORD: adren
+    ports:
+      - "5432:5432"
+    volumes:
+      - adren-postgres-data:/var/lib/postgresql/data
+
+  localstack:
+    image: localstack/localstack:3.8
+    environment:
+      SERVICES: s3,sqs,sns,secretsmanager
+      DEBUG: 1
+    ports:
+      - "4566:4566"
+    volumes:
+      - adren-localstack-data:/var/lib/localstack
+
+volumes:
+  adren-postgres-data:
+  adren-localstack-data:

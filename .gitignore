@@ -1,0 +1,34 @@
+# --- Node / frontend ---
+node_modules/
+dist/
+dist-ssr/
+*.tsbuildinfo
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Java / Gradle backend ---
+build/
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+out/
+
+# --- Playwright / test artifacts ---
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# --- Env / secrets ---
+.env
+.env.local
+.env.*.local
+
+# --- Editor / OS ---
+.DS_Store
+.idea/
+.vscode/
+*.iml
+*.swp
