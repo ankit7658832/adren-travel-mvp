@@ -27,6 +27,12 @@ adren:
       base-url: https://api.groq.com/openai/v1
       api-key: ${GROQ_API_KEY:}
       model: llama-3.3-70b-versatile
+  security:
+    jwt:
+      # Local/dev only default — every non-local environment MUST override this
+      # via env var per RULES.md §5.3 (never a plaintext secret outside local Compose).
+      secret: ${ADREN_JWT_SECRET:dev-only-secret-key-not-for-production-use-change-me-32bytes}
+      expiration-minutes: ${ADREN_JWT_EXPIRATION_MINUTES:60}
   aws:
     # LocalStack endpoint for local/dev/test — point at real AWS endpoints
     # in production by overriding this property per environment.
