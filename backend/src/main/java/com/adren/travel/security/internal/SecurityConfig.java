@@ -8,6 +8,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.session.DisableEncodeUrlFilter;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -31,6 +32,7 @@ class SecurityConfig {
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter,
+                                     TraceIdFilter traceIdFilter,
                                      RestAuthenticationEntryPoint authenticationEntryPoint,
                                      RestAccessDeniedHandler accessDeniedHandler) throws Exception {
         http
@@ -42,6 +44,9 @@ class SecurityConfig {
             .exceptionHandling(handling -> handling
                 .authenticationEntryPoint(authenticationEntryPoint)
                 .accessDeniedHandler(accessDeniedHandler))
+            // Traced first (RULES.md §6.1: "generate at the edge... before
+            // Spring Security"), so even a 401/403 response carries a traceId.
+            .addFilterBefore(traceIdFilter, DisableEncodeUrlFilter.class)
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
@@ -49,6 +54,11 @@ class SecurityConfig {
     @Bean
     JwtAuthenticationFilter jwtAuthenticationFilter(JwtTokenService jwtTokenService) {
         return new JwtAuthenticationFilter(jwtTokenService);
+    }
+
+    @Bean
+    TraceIdFilter traceIdFilter() {
+        return new TraceIdFilter();
     }
 
     @Bean

@@ -1,6 +1,10 @@
 package com.adren.travel.notification.internal;
 
 import com.adren.travel.booking.event.BookingConfirmedEvent;
+import com.adren.travel.shared.TraceIds;
+import org.slf4j.MDC;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Component;
 
@@ -29,8 +33,16 @@ import org.springframework.stereotype.Component;
 @Component
 class BookingNotificationListener {
 
+    private static final Logger log = LoggerFactory.getLogger(BookingNotificationListener.class);
+
     @ApplicationModuleListener
     void on(BookingConfirmedEvent event) {
+        // FND-21: this log line's traceId must match the request that
+        // triggered confirmBooking(), proving MdcTaskDecorator carried MDC
+        // context across the @Async executor boundary — see
+        // NotificationTraceIdPropagationTest.
+        log.info("Booking confirmed notification stub invoked, bookingId={}, traceId={}",
+            event.bookingId(), MDC.get(TraceIds.MDC_KEY));
         // TODO: resolve the Consultant's region-configured notification
         // channel (PRD Section 15) and publish to the SNS topic backing it
         // (LocalStack in dev/test, real SNS in production).
