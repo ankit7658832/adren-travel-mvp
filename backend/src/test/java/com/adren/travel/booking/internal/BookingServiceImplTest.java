@@ -2,8 +2,11 @@ package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
+import com.adren.travel.security.AdrenPrincipal;
+import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,6 +18,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -50,12 +59,18 @@ class BookingServiceImplTest {
         service = new BookingServiceImpl(itineraryRepository, events);
     }
 
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
     @Test
     void savingAsQuotationTransitionsStatusAndPublishesEvent() {
         UUID itineraryId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Itinerary draft = new Itinerary(itineraryId, consultantId, null);
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        authenticateAs(Role.CONSULTANT, consultantId);
 
         service.saveAsQuotation(itineraryId);
 
@@ -73,9 +88,49 @@ class BookingServiceImplTest {
     void savingAsQuotationFailsForUnknownItinerary() {
         UUID itineraryId = UUID.randomUUID();
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.empty());
+        authenticateAs(Role.SUPER_ADMIN, null);
 
         assertThatThrownBy(() -> service.saveAsQuotation(itineraryId))
             .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void aConsultantCannotSaveAnotherConsultantsItineraryAsQuotationFND03() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID otherConsultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, ownerConsultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        authenticateAs(Role.CONSULTANT, otherConsultantId);
+
+        assertThatThrownBy(() -> service.saveAsQuotation(itineraryId))
+            .isInstanceOf(AccessDeniedException.class);
+        assertThat(draft.getStatus()).isEqualTo(ItineraryStatus.DRAFT);
+    }
+
+    @Test
+    void aUserUnderTheOwningConsultantCanSaveItAsQuotation() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        authenticateAs(Role.USER, consultantId);
+
+        service.saveAsQuotation(itineraryId);
+
+        assertThat(draft.getStatus()).isEqualTo(ItineraryStatus.QUOTATION);
+    }
+
+    @Test
+    void aSuperAdminCanSaveAnyConsultantsItineraryAsQuotation() {
+        UUID itineraryId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, UUID.randomUUID(), null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        authenticateAs(Role.SUPER_ADMIN, null);
+
+        service.saveAsQuotation(itineraryId);
+
+        assertThat(draft.getStatus()).isEqualTo(ItineraryStatus.QUOTATION);
     }
 
     @Test
@@ -98,10 +153,42 @@ class BookingServiceImplTest {
         Pageable pageable = PageRequest.of(0, 20);
         Page<Itinerary> page = new PageImpl<>(List.of(itinerary), pageable, 1);
         when(itineraryRepository.findByConsultantId(consultantId, pageable)).thenReturn(page);
+        authenticateAs(Role.CONSULTANT, consultantId);
 
         Page<UUID> result = service.findBookingsByConsultant(consultantId, pageable);
 
         assertThat(result.getTotalElements()).isEqualTo(1);
         assertThat(result.getContent()).containsExactly(itinerary.getItineraryId());
+    }
+
+    @Test
+    void aConsultantCannotListAnotherConsultantsBookingsFND03() {
+        UUID ownConsultantId = UUID.randomUUID();
+        UUID otherConsultantId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 20);
+        authenticateAs(Role.CONSULTANT, ownConsultantId);
+
+        assertThatThrownBy(() -> service.findBookingsByConsultant(otherConsultantId, pageable))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void aSuperAdminCanListAnyConsultantsBookingsViaTheExplicitViewAllPath() {
+        UUID consultantId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 20);
+        when(itineraryRepository.findByConsultantId(consultantId, pageable))
+            .thenReturn(new PageImpl<>(List.of()));
+        authenticateAs(Role.SUPER_ADMIN, null);
+
+        assertThat(service.findBookingsByConsultant(consultantId, pageable).getContent()).isEmpty();
+    }
+
+    private static void authenticateAs(Role role, UUID consultantId) {
+        AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), role, consultantId);
+        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
+        var authentication = new UsernamePasswordAuthenticationToken(principal, null, authorities);
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(authentication);
+        SecurityContextHolder.setContext(securityContext);
     }
 }

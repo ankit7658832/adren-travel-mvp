@@ -112,6 +112,21 @@ class BookingApiMethodSecurityTest {
     }
 
     @Test
+    void fnd03ConsultantCannotSaveAnotherConsultantsItineraryThroughTheRealApiProxy() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID otherConsultantId = UUID.randomUUID();
+        ItineraryRepository repository = context.getBean(ItineraryRepository.class);
+        Itinerary draft = new Itinerary(itineraryId, ownerConsultantId, null);
+        when(repository.findById(itineraryId)).thenReturn(Optional.of(draft));
+
+        authenticateAs(Role.CONSULTANT, otherConsultantId);
+
+        assertThatThrownBy(() -> bookingApi.saveAsQuotation(itineraryId))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+    }
+
+    @Test
     void findBookingsByConsultantIsAlsoGuardedByMethodSecurity() {
         ItineraryRepository repository = context.getBean(ItineraryRepository.class);
         UUID consultantId = UUID.randomUUID();

@@ -3,6 +3,7 @@ package com.adren.travel.booking.internal;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
+import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.Money;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -38,6 +39,12 @@ class BookingServiceImpl implements BookingApi {
         Itinerary itinerary = itineraryRepository.findById(itineraryId)
             .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + itineraryId));
 
+        // RULES.md §5.2 / FND-03: verify the AUTHENTICATED principal owns
+        // this itinerary (or is SUPER_ADMIN) before acting on it — an
+        // itinerary_id alone is not an access-control mechanism, it's just
+        // a key that's hard to guess.
+        CurrentPrincipal.resolveTenantScope(itinerary.getConsultantId());
+
         itinerary.markAsQuotation();
         itineraryRepository.save(itinerary);
 
@@ -58,7 +65,12 @@ class BookingServiceImpl implements BookingApi {
 
     @Override
     public Page<UUID> findBookingsByConsultant(UUID consultantId, Pageable pageable) {
-        return itineraryRepository.findByConsultantId(consultantId, pageable)
+        // RULES.md §5.2: never trust a client-supplied consultantId for a
+        // CONSULTANT/USER caller — resolveTenantScope rejects any mismatch
+        // and only lets SUPER_ADMIN's explicit "view all" path through
+        // with the requested id unchanged.
+        UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(consultantId);
+        return itineraryRepository.findByConsultantId(scopedConsultantId, pageable)
             .map(Itinerary::getItineraryId);
     }
 }
