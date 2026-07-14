@@ -1,6 +1,7 @@
 package com.adren.travel.whitelabel;
 
 import com.adren.travel.security.CapabilityGrantService.Capability;
+import com.adren.travel.shared.LocaleCode;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -75,4 +76,20 @@ public interface WhitelabelApi {
 
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     BrandingProfileView findBranding(UUID consultantId);
+
+    /**
+     * The data-driven per-market language catalog (PRD §13.3, RULES.md
+     * §24.7 — never a hardcoded per-market conditional) — public, like
+     * {@link #requiredKycFieldsFor(Market)}, so language settings can
+     * render options regardless of caller role.
+     */
+    List<LocaleCode> availableLocalesFor(Market market);
+
+    /**
+     * Sets the CALLING Consultant's own preferred display language (PRD
+     * §13.3) — rejected if {@code locale} isn't offered for the
+     * Consultant's homeMarket per {@link #availableLocalesFor(Market)}.
+     */
+    @PreAuthorize("hasRole('CONSULTANT')")
+    void changePreferredLocale(LocaleCode locale);
 }

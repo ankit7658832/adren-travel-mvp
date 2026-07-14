@@ -114,6 +114,17 @@ class WhitelabelModuleIntegrationTests {
             .isInstanceOf(AccessDeniedException.class);
     }
 
+    @Test
+    void aConsultantCanChangeTheirOwnPreferredLocaleToOneOfferedForTheirMarket() {
+        authenticateAs(Role.SUPER_ADMIN, null);
+        UUID consultantId = whitelabelApi.onboardConsultant(
+            new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x")));
+
+        authenticateAs(Role.CONSULTANT, consultantId);
+        assertThat(whitelabelApi.availableLocalesFor(Market.DENMARK)).contains(com.adren.travel.shared.LocaleCode.DA);
+        whitelabelApi.changePreferredLocale(com.adren.travel.shared.LocaleCode.DA);
+    }
+
     private static void authenticateAs(Role role) {
         authenticateAs(role, role == Role.SUPER_ADMIN ? null : UUID.randomUUID());
     }

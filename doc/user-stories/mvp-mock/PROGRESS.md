@@ -23,7 +23,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **FND-14** — implement the default selection algorithm for per location product pre selection
 - [ ] **FND-15** — surface auto selected best available match label on defaulted line items
 - [ ] **FND-16** — build the itinerary builder screen with per location cards and alternate selection panel
-- [ ] **FND-17** — add locale market selection alongside existing multi currency support
+- [x] **FND-17** — add locale market selection alongside existing multi currency support
 - [x] **FND-18** — add a root and per route errorboundary
 - [x] **FND-19** — add eslint flat config with jsx a11y
 - [x] **FND-20** — resolve the path alias half configuration (already satisfied by prior work — vite.config.ts's resolve.alias already matches tsconfig, multiple cross-feature `@/` imports already in place)

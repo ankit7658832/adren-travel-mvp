@@ -1,5 +1,6 @@
 package com.adren.travel.whitelabel.internal;
 
+import com.adren.travel.shared.LocaleCode;
 import com.adren.travel.whitelabel.ConsultantStatus;
 import com.adren.travel.whitelabel.Market;
 import jakarta.persistence.CollectionTable;
@@ -39,6 +40,12 @@ class Consultant {
     @Enumerated(EnumType.STRING)
     private ConsultantStatus status;
 
+    // PRD §13.3/FND-17 — English is every market's primary/default
+    // language; MarketLocaleProvider is the data-driven catalog of what
+    // else a Consultant in this homeMarket may pick as a secondary.
+    @Enumerated(EnumType.STRING)
+    private LocaleCode preferredLocale;
+
     @ElementCollection
     @CollectionTable(name = "consultant_kyc_field", joinColumns = @JoinColumn(name = "consultant_id"))
     @MapKeyColumn(name = "field_key")
@@ -57,7 +64,12 @@ class Consultant {
         this.homeMarket = homeMarket;
         this.kycFields = kycFields;
         this.status = ConsultantStatus.ACTIVE;
+        this.preferredLocale = LocaleCode.EN;
         this.createdAt = Instant.now();
+    }
+
+    void changePreferredLocale(LocaleCode locale) {
+        this.preferredLocale = locale;
     }
 
     void suspend() {
@@ -88,6 +100,10 @@ class Consultant {
 
     ConsultantStatus getStatus() {
         return status;
+    }
+
+    LocaleCode getPreferredLocale() {
+        return preferredLocale;
     }
 
     Instant getCreatedAt() {

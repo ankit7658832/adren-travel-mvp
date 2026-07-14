@@ -3,6 +3,7 @@ package com.adren.travel.whitelabel.internal;
 import com.adren.travel.security.CapabilityGrantService;
 import com.adren.travel.security.CapabilityGrantService.Capability;
 import com.adren.travel.security.CurrentPrincipal;
+import com.adren.travel.shared.LocaleCode;
 import com.adren.travel.whitelabel.AddUserCommand;
 import com.adren.travel.whitelabel.BrandingProfileView;
 import com.adren.travel.whitelabel.ConsultantStatus;
@@ -34,16 +35,19 @@ class WhitelabelServiceImpl implements WhitelabelApi {
     private final ConsultantUserRepository consultantUserRepository;
     private final BrandingProfileRepository brandingProfileRepository;
     private final MarketKycRuleProvider kycRuleProvider;
+    private final MarketLocaleProvider localeProvider;
     private final CapabilityGrantService capabilityGrantService;
     private final ApplicationEventPublisher events;
 
     WhitelabelServiceImpl(ConsultantRepository consultantRepository, ConsultantUserRepository consultantUserRepository,
                            BrandingProfileRepository brandingProfileRepository, MarketKycRuleProvider kycRuleProvider,
-                           CapabilityGrantService capabilityGrantService, ApplicationEventPublisher events) {
+                           MarketLocaleProvider localeProvider, CapabilityGrantService capabilityGrantService,
+                           ApplicationEventPublisher events) {
         this.consultantRepository = consultantRepository;
         this.consultantUserRepository = consultantUserRepository;
         this.brandingProfileRepository = brandingProfileRepository;
         this.kycRuleProvider = kycRuleProvider;
+        this.localeProvider = localeProvider;
         this.capabilityGrantService = capabilityGrantService;
         this.events = events;
     }
@@ -162,6 +166,25 @@ class WhitelabelServiceImpl implements WhitelabelApi {
         return brandingProfileRepository.findById(consultantId)
             .map(WhitelabelServiceImpl::toBrandingView)
             .orElseThrow(() -> new IllegalArgumentException("No branding profile for consultant: " + consultantId));
+    }
+
+    @Override
+    public List<LocaleCode> availableLocalesFor(Market market) {
+        return localeProvider.availableLocalesFor(market);
+    }
+
+    @Override
+    @Transactional
+    public void changePreferredLocale(LocaleCode locale) {
+        UUID consultantId = CurrentPrincipal.get().consultantId();
+        Consultant consultant = findConsultantOrThrow(consultantId);
+        List<LocaleCode> available = localeProvider.availableLocalesFor(consultant.getHomeMarket());
+        if (!available.contains(locale)) {
+            throw new IllegalArgumentException(
+                locale + " is not an available locale for " + consultant.getHomeMarket());
+        }
+        consultant.changePreferredLocale(locale);
+        consultantRepository.save(consultant);
     }
 
     private static BrandingProfileView toBrandingView(BrandingProfile profile) {

@@ -4,6 +4,7 @@ import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.CapabilityGrantService;
 import com.adren.travel.security.CapabilityGrantService.Capability;
 import com.adren.travel.security.Role;
+import com.adren.travel.shared.LocaleCode;
 import com.adren.travel.whitelabel.AddUserCommand;
 import com.adren.travel.whitelabel.BrandingProfileView;
 import com.adren.travel.whitelabel.ConsultantStatus;
@@ -67,7 +68,7 @@ class WhitelabelServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new WhitelabelServiceImpl(consultantRepository, consultantUserRepository, brandingProfileRepository,
-            new MarketKycRuleProvider(), capabilityGrantService, events);
+            new MarketKycRuleProvider(), new MarketLocaleProvider(), capabilityGrantService, events);
     }
 
     @AfterEach
@@ -317,6 +318,35 @@ class WhitelabelServiceImplTest {
         when(brandingProfileRepository.findById(consultantId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.findBranding(consultantId))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void availableLocalesForDelegatesToTheMarketLocaleProvider() {
+        assertThat(service.availableLocalesFor(Market.DENMARK)).containsExactly(LocaleCode.EN, LocaleCode.DA);
+    }
+
+    @Test
+    void changePreferredLocaleUpdatesTheCallingConsultantsOwnRecord() {
+        UUID consultantId = UUID.randomUUID();
+        Consultant consultant = new Consultant(consultantId, "Test Co", Market.DENMARK, Map.of());
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(consultantRepository.findById(consultantId)).thenReturn(Optional.of(consultant));
+
+        service.changePreferredLocale(LocaleCode.DA);
+
+        assertThat(consultant.getPreferredLocale()).isEqualTo(LocaleCode.DA);
+        verify(consultantRepository).save(consultant);
+    }
+
+    @Test
+    void changePreferredLocaleRejectsALocaleNotOfferedForTheConsultantsMarketFND17() {
+        UUID consultantId = UUID.randomUUID();
+        Consultant consultant = new Consultant(consultantId, "Test Co", Market.UK, Map.of());
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(consultantRepository.findById(consultantId)).thenReturn(Optional.of(consultant));
+
+        assertThatThrownBy(() -> service.changePreferredLocale(LocaleCode.HI))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
