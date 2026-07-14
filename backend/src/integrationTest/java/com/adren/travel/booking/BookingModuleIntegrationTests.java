@@ -5,8 +5,11 @@ import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.modulith.test.Scenario;
+import org.springframework.web.reactive.function.client.WebClient;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -21,9 +24,28 @@ import java.util.UUID;
  * {@link Scenario} lets you assert on published events without manually
  * wiring a test listener — this is the standard way to verify the
  * event-driven contract PRD Section 15 depends on.
+ * <p>
+ * {@code DIRECT_DEPENDENCIES} (rather than the default {@code STANDALONE},
+ * which boots only this module) is required since FND-13:
+ * {@code GeocodeAndSearchService} has a real constructor dependency on
+ * {@code supplier.SupplierSearchApi}.
  */
-@ApplicationModuleTest
+@ApplicationModuleTest(ApplicationModuleTest.BootstrapMode.DIRECT_DEPENDENCIES)
 class BookingModuleIntegrationTests {
+
+    /**
+     * {@code @ApplicationModuleTest}'s slice doesn't auto-configure
+     * {@code WebClient.Builder} the way a full {@code @SpringBootTest}
+     * would — {@code supplier}'s {@code HotelbedsClient} (now reachable
+     * transitively via FND-13's {@code GeocodeAndSearchService}) needs one.
+     */
+    @TestConfiguration
+    static class WebClientTestConfig {
+        @Bean
+        WebClient.Builder webClientBuilder() {
+            return WebClient.builder();
+        }
+    }
 
     @Autowired
     BookingApi bookingApi;

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { apiClient } from "@/shared/api/apiClient";
 
 export interface LocationResult {
   locationCode: string;
@@ -6,6 +7,10 @@ export interface LocationResult {
   latitude: number;
   longitude: number;
   hasInventory: boolean; // PRD 9.4 / 21.1 — zero-inventory locations must still render, distinctly
+}
+
+interface SearchResponseDto {
+  locations: LocationResult[];
 }
 
 /**
@@ -17,39 +22,41 @@ export interface LocationResult {
  */
 export type SearchStatus = "idle" | "loading" | "success" | "error";
 
+/**
+ * FND-13: search is triggered by explicit user action (not an automatic
+ * re-fetch on mount/param change), so this is a `useMutation`, not a
+ * `useQuery` — per RULES.md §7.1's reconciliation note. The hook's returned
+ * shape (status/results/errorMessage/search) is unchanged from the mocked
+ * version specifically so `SearchDashboard.tsx` didn't need to change when
+ * this landed.
+ */
 export function useMultiLocationSearch() {
-  const [status, setStatus] = useState<SearchStatus>("idle");
-  const [results, setResults] = useState<LocationResult[]>([]);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const mutation = useMutation({
+    mutationFn: async (locationQueries: string[]) => {
+      const { data } = await apiClient.post<SearchResponseDto>("/search", { locationQueries });
+      return data.locations;
+    },
+  });
 
-  async function search(locationQueries: string[]) {
+  function search(locationQueries: string[]) {
     if (locationQueries.length === 0) {
       return;
     }
-    setStatus("loading");
-    setErrorMessage(null);
-    try {
-      // TODO: replace with a real apiClient.post('/search', ...) call once
-      // the backend search endpoint exists (backend/.../booking module).
-      // The await below is deliberate even though the mock has no real
-      // I/O: without it, React 18 batches "loading" and "success" into a
-      // single render (both setStatus calls happen synchronously in the
-      // same tick), so the loading state committed to the DOM.
-      await Promise.resolve();
-      const mocked: LocationResult[] = locationQueries.map((q) => ({
-        locationCode: q,
-        displayName: q,
-        latitude: 0,
-        longitude: 0,
-        hasInventory: true,
-      }));
-      setResults(mocked);
-      setStatus("success");
-    } catch (err) {
-      setStatus("error");
-      setErrorMessage(err instanceof Error ? err.message : "Search failed");
-    }
+    mutation.mutate(locationQueries);
   }
 
-  return { status, results, errorMessage, search };
+  const status: SearchStatus = mutation.isIdle
+    ? "idle"
+    : mutation.isPending
+      ? "loading"
+      : mutation.isError
+        ? "error"
+        : "success";
+
+  return {
+    status,
+    results: mutation.data ?? [],
+    errorMessage: mutation.error instanceof Error ? mutation.error.message : null,
+    search,
+  };
 }

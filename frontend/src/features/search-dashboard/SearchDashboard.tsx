@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMultiLocationSearch } from "./useMultiLocationSearch";
+import { MapPanel } from "./MapPanel";
 import { Button } from "@/shared/design-system/Button";
 import { Badge } from "@/shared/design-system/Badge";
 
@@ -82,21 +83,26 @@ export function SearchDashboard() {
       )}
 
       {status === "success" && (
-        <ul aria-label="search-results" className="mt-6 space-y-3">
-          {results.map((location) => (
-            <li
-              key={location.locationCode}
-              className="flex items-center justify-between rounded-md border border-neutral-200 bg-surface px-4 py-3"
-            >
-              <span className="text-base text-neutral-900">
-                {location.displayName}
-              </span>
-              {!location.hasInventory && (
-                <Badge tone="neutral">No inventory available</Badge>
-              )}
-            </li>
-          ))}
-        </ul>
+        <>
+          <div className="mt-6">
+            <MapPanel locations={results} />
+          </div>
+          <ul aria-label="search-results" className="mt-6 space-y-3">
+            {results.map((location) => (
+              <li
+                key={location.locationCode}
+                className="flex items-center justify-between rounded-md border border-neutral-200 bg-surface px-4 py-3"
+              >
+                <span className="text-base text-neutral-900">
+                  {location.displayName}
+                </span>
+                {!location.hasInventory && (
+                  <Badge tone="neutral">No inventory available</Badge>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </main>
   );
