@@ -25,7 +25,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **FND-16** — build the itinerary builder screen with per location cards and alternate selection panel
 - [ ] **FND-17** — add locale market selection alongside existing multi currency support
 - [ ] **FND-18** — add a root and per route errorboundary
-- [ ] **FND-19** — add eslint flat config with jsx a11y
+- [x] **FND-19** — add eslint flat config with jsx a11y
 - [ ] **FND-20** — resolve the path alias half configuration
 - [ ] **FND-21** — propagate a correlation id traceid across the async event listener boundary
 - [ ] **FND-22** — adopt rfc 7807 problem details error responses with per module controlleradvice
