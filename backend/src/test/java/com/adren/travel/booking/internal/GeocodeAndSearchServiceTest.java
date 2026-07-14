@@ -30,7 +30,7 @@ class GeocodeAndSearchServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new GeocodeAndSearchService(new GeocodingService(), supplierSearchApi);
+        service = new GeocodeAndSearchService(new GeocodingService(), supplierSearchApi, new DefaultSelectionService());
     }
 
     @Test
@@ -39,7 +39,7 @@ class GeocodeAndSearchServiceTest {
         LocalDate checkOut = checkIn.plusDays(3);
         when(supplierSearchApi.searchHotels(eq("Goa"), any(), any())).thenReturn(List.of(
             new SupplierSearchResult(SupplierId.HOTELBEDS, "r1", "Hotel A", "Deluxe",
-                new Money(BigDecimal.valueOf(5000), CurrencyCode.INR))));
+                new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), 4.0)));
         when(supplierSearchApi.searchHotels(eq("Antarctica"), any(), any())).thenReturn(List.of());
 
         List<GeocodedLocation> result = service.geocodeAndSearch(List.of("Goa", "Antarctica"), checkIn, checkOut);
@@ -47,8 +47,10 @@ class GeocodeAndSearchServiceTest {
         assertThat(result).hasSize(2);
         assertThat(result.get(0).locationCode()).isEqualTo("Goa");
         assertThat(result.get(0).hasInventory()).isTrue();
+        assertThat(result.get(0).autoSelectedSupplierRateId()).isEqualTo("r1");
         assertThat(result.get(1).locationCode()).isEqualTo("Antarctica");
         assertThat(result.get(1).hasInventory()).isFalse();
+        assertThat(result.get(1).autoSelectedSupplierRateId()).isNull();
     }
 
     @Test

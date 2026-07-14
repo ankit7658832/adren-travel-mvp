@@ -20,7 +20,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **FND-11** — store adren owned supplier credentials in secrets manager not plaintext config
 - [ ] **FND-12** — store byos credentials as row level per consultant encrypted secrets
 - [x] **FND-13** — extend search dashboard with map based multi location multi select search
-- [ ] **FND-14** — implement the default selection algorithm for per location product pre selection
+- [x] **FND-14** — implement the default selection algorithm for per location product pre selection
 - [ ] **FND-15** — surface auto selected best available match label on defaulted line items
 - [ ] **FND-16** — build the itinerary builder screen with per location cards and alternate selection panel
 - [ ] **FND-17** — add locale market selection alongside existing multi currency support

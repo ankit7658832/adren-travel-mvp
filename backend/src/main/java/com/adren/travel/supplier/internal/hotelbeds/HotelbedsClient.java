@@ -45,7 +45,8 @@ public class HotelbedsClient {
             "stub-rate-key",
             "Stub Hotel — replace with live Hotelbeds response",
             "Deluxe Room",
-            new Money(BigDecimal.valueOf(5000), CurrencyCode.INR)
+            new Money(BigDecimal.valueOf(5000), CurrencyCode.INR),
+            null // real rating requires supplier content sync (PRD §10.5) — not wired for any supplier yet
         ));
     }
 
