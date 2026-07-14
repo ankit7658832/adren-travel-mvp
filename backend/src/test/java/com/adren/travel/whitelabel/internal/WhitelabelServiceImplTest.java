@@ -5,11 +5,14 @@ import com.adren.travel.security.CapabilityGrantService;
 import com.adren.travel.security.CapabilityGrantService.Capability;
 import com.adren.travel.security.Role;
 import com.adren.travel.whitelabel.AddUserCommand;
+import com.adren.travel.whitelabel.BrandingProfileView;
 import com.adren.travel.whitelabel.ConsultantStatus;
 import com.adren.travel.whitelabel.ConsultantUserView;
 import com.adren.travel.whitelabel.ConsultantView;
 import com.adren.travel.whitelabel.Market;
 import com.adren.travel.whitelabel.OnboardConsultantCommand;
+import com.adren.travel.whitelabel.UpdateBrandingCommand;
+import com.adren.travel.whitelabel.event.BrandingUpdatedEvent;
 import com.adren.travel.whitelabel.event.ConsultantOnboardedEvent;
 import com.adren.travel.whitelabel.event.ConsultantStatusChangedEvent;
 import org.junit.jupiter.api.AfterEach;
@@ -51,6 +54,9 @@ class WhitelabelServiceImplTest {
     ConsultantUserRepository consultantUserRepository;
 
     @Mock
+    BrandingProfileRepository brandingProfileRepository;
+
+    @Mock
     CapabilityGrantService capabilityGrantService;
 
     @Mock
@@ -60,8 +66,8 @@ class WhitelabelServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new WhitelabelServiceImpl(
-            consultantRepository, consultantUserRepository, new MarketKycRuleProvider(), capabilityGrantService, events);
+        service = new WhitelabelServiceImpl(consultantRepository, consultantUserRepository, brandingProfileRepository,
+            new MarketKycRuleProvider(), capabilityGrantService, events);
     }
 
     @AfterEach
@@ -240,6 +246,77 @@ class WhitelabelServiceImplTest {
         when(consultantRepository.findById(consultantId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.requireConsultantActive(consultantId))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void updateBrandingCreatesAProfileWhenNoneExistsYetAndPublishesEvent() {
+        UUID consultantId = UUID.randomUUID();
+        when(consultantRepository.findById(consultantId))
+            .thenReturn(Optional.of(new Consultant(consultantId, "Test Co", Market.INDIA, Map.of())));
+        when(brandingProfileRepository.findById(consultantId)).thenReturn(Optional.empty());
+        var command = new UpdateBrandingCommand(consultantId, "https://cdn/logo.png", null,
+            "#FFFFFF", "#000000", "#111111", "consultant.example.com");
+
+        service.updateBranding(command);
+
+        ArgumentCaptor<BrandingProfile> captor = ArgumentCaptor.forClass(BrandingProfile.class);
+        verify(brandingProfileRepository).save(captor.capture());
+        assertThat(captor.getValue().getConsultantId()).isEqualTo(consultantId);
+        assertThat(captor.getValue().getDomain()).isEqualTo("consultant.example.com");
+
+        ArgumentCaptor<BrandingUpdatedEvent> eventCaptor = ArgumentCaptor.forClass(BrandingUpdatedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().consultantId()).isEqualTo(consultantId);
+        assertThat(eventCaptor.getValue().domain()).isEqualTo("consultant.example.com");
+    }
+
+    @Test
+    void updateBrandingUpdatesAnExistingProfileInPlace() {
+        UUID consultantId = UUID.randomUUID();
+        when(consultantRepository.findById(consultantId))
+            .thenReturn(Optional.of(new Consultant(consultantId, "Test Co", Market.INDIA, Map.of())));
+        BrandingProfile existing = new BrandingProfile(consultantId, null, null, "#FFFFFF", "#000000", "#111111", null);
+        when(brandingProfileRepository.findById(consultantId)).thenReturn(Optional.of(existing));
+        var command = new UpdateBrandingCommand(consultantId, "https://cdn/new-logo.png", null,
+            "#EEEEEE", "#222222", "#333333", "new-domain.example.com");
+
+        service.updateBranding(command);
+
+        verify(brandingProfileRepository).save(existing);
+        assertThat(existing.getLogoUrl()).isEqualTo("https://cdn/new-logo.png");
+        assertThat(existing.getDomain()).isEqualTo("new-domain.example.com");
+    }
+
+    @Test
+    void updateBrandingRejectsAnUnknownConsultantId() {
+        UUID consultantId = UUID.randomUUID();
+        when(consultantRepository.findById(consultantId)).thenReturn(Optional.empty());
+        var command = new UpdateBrandingCommand(consultantId, null, null, "#FFFFFF", "#000000", "#111111", null);
+
+        assertThatThrownBy(() -> service.updateBranding(command))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void findBrandingReturnsTheCurrentProfile() {
+        UUID consultantId = UUID.randomUUID();
+        BrandingProfile profile = new BrandingProfile(consultantId, "https://cdn/logo.png", null,
+            "#FFFFFF", "#000000", "#111111", "consultant.example.com");
+        when(brandingProfileRepository.findById(consultantId)).thenReturn(Optional.of(profile));
+
+        BrandingProfileView view = service.findBranding(consultantId);
+
+        assertThat(view.consultantId()).isEqualTo(consultantId);
+        assertThat(view.domain()).isEqualTo("consultant.example.com");
+    }
+
+    @Test
+    void findBrandingRejectsAConsultantWithNoBrandingProfileYet() {
+        UUID consultantId = UUID.randomUUID();
+        when(brandingProfileRepository.findById(consultantId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.findBranding(consultantId))
             .isInstanceOf(IllegalArgumentException.class);
     }
 

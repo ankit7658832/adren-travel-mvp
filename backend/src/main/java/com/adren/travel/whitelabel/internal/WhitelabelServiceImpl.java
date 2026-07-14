@@ -4,13 +4,16 @@ import com.adren.travel.security.CapabilityGrantService;
 import com.adren.travel.security.CapabilityGrantService.Capability;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.whitelabel.AddUserCommand;
+import com.adren.travel.whitelabel.BrandingProfileView;
 import com.adren.travel.whitelabel.ConsultantStatus;
 import com.adren.travel.whitelabel.ConsultantUserView;
 import com.adren.travel.whitelabel.ConsultantView;
 import com.adren.travel.whitelabel.KycFieldDefinition;
 import com.adren.travel.whitelabel.Market;
 import com.adren.travel.whitelabel.OnboardConsultantCommand;
+import com.adren.travel.whitelabel.UpdateBrandingCommand;
 import com.adren.travel.whitelabel.WhitelabelApi;
+import com.adren.travel.whitelabel.event.BrandingUpdatedEvent;
 import com.adren.travel.whitelabel.event.ConsultantOnboardedEvent;
 import com.adren.travel.whitelabel.event.ConsultantStatusChangedEvent;
 import org.springframework.context.ApplicationEventPublisher;
@@ -29,15 +32,17 @@ class WhitelabelServiceImpl implements WhitelabelApi {
 
     private final ConsultantRepository consultantRepository;
     private final ConsultantUserRepository consultantUserRepository;
+    private final BrandingProfileRepository brandingProfileRepository;
     private final MarketKycRuleProvider kycRuleProvider;
     private final CapabilityGrantService capabilityGrantService;
     private final ApplicationEventPublisher events;
 
     WhitelabelServiceImpl(ConsultantRepository consultantRepository, ConsultantUserRepository consultantUserRepository,
-                           MarketKycRuleProvider kycRuleProvider, CapabilityGrantService capabilityGrantService,
-                           ApplicationEventPublisher events) {
+                           BrandingProfileRepository brandingProfileRepository, MarketKycRuleProvider kycRuleProvider,
+                           CapabilityGrantService capabilityGrantService, ApplicationEventPublisher events) {
         this.consultantRepository = consultantRepository;
         this.consultantUserRepository = consultantUserRepository;
+        this.brandingProfileRepository = brandingProfileRepository;
         this.kycRuleProvider = kycRuleProvider;
         this.capabilityGrantService = capabilityGrantService;
         this.events = events;
@@ -133,6 +138,36 @@ class WhitelabelServiceImpl implements WhitelabelApi {
             throw new AccessDeniedException("Consultant " + consultantId + " is " + consultant.getStatus()
                 + " and cannot search or book until reinstated");
         }
+    }
+
+    @Override
+    @Transactional
+    public void updateBranding(UpdateBrandingCommand command) {
+        findConsultantOrThrow(command.consultantId());
+        BrandingProfile profile = brandingProfileRepository.findById(command.consultantId())
+            .map(existing -> {
+                existing.update(command.logoUrl(), command.backgroundImageUrl(), command.backgroundColor(),
+                    command.textColorPrimary(), command.textColorSecondary(), command.domain());
+                return existing;
+            })
+            .orElseGet(() -> new BrandingProfile(command.consultantId(), command.logoUrl(), command.backgroundImageUrl(),
+                command.backgroundColor(), command.textColorPrimary(), command.textColorSecondary(), command.domain()));
+        brandingProfileRepository.save(profile);
+
+        events.publishEvent(new BrandingUpdatedEvent(command.consultantId(), command.domain()));
+    }
+
+    @Override
+    public BrandingProfileView findBranding(UUID consultantId) {
+        return brandingProfileRepository.findById(consultantId)
+            .map(WhitelabelServiceImpl::toBrandingView)
+            .orElseThrow(() -> new IllegalArgumentException("No branding profile for consultant: " + consultantId));
+    }
+
+    private static BrandingProfileView toBrandingView(BrandingProfile profile) {
+        return new BrandingProfileView(profile.getConsultantId(), profile.getLogoUrl(), profile.getBackgroundImageUrl(),
+            profile.getBackgroundColor(), profile.getTextColorPrimary(), profile.getTextColorSecondary(),
+            profile.getDomain(), profile.getUpdatedAt());
     }
 
     private Consultant findConsultantOrThrow(UUID consultantId) {

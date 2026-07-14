@@ -68,4 +68,11 @@ public interface WhitelabelApi {
      * the Consultant is SUSPENDED.
      */
     void requireConsultantActive(UUID consultantId);
+
+    /** Configures a Consultant's storefront branding (PRD §13.2, FND-06) — Super Admin only. */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    void updateBranding(UpdateBrandingCommand command);
+
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    BrandingProfileView findBranding(UUID consultantId);
 }

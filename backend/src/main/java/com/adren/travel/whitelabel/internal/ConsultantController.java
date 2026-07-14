@@ -1,10 +1,12 @@
 package com.adren.travel.whitelabel.internal;
 
 import com.adren.travel.shared.PageResponse;
+import com.adren.travel.whitelabel.BrandingProfileView;
 import com.adren.travel.whitelabel.ConsultantView;
 import com.adren.travel.whitelabel.KycFieldDefinition;
 import com.adren.travel.whitelabel.Market;
 import com.adren.travel.whitelabel.OnboardConsultantCommand;
+import com.adren.travel.whitelabel.UpdateBrandingCommand;
 import com.adren.travel.whitelabel.WhitelabelApi;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
@@ -61,5 +63,17 @@ class ConsultantController {
             case SUSPENDED -> whitelabelApi.suspendConsultant(consultantId);
             case ACTIVE -> whitelabelApi.reinstateConsultant(consultantId);
         }
+    }
+
+    @PatchMapping("/{consultantId}/branding")
+    void updateBranding(@PathVariable UUID consultantId, @Valid @RequestBody UpdateBrandingRequest request) {
+        whitelabelApi.updateBranding(new UpdateBrandingCommand(consultantId, request.logoUrl(),
+            request.backgroundImageUrl(), request.backgroundColor(), request.textColorPrimary(),
+            request.textColorSecondary(), request.domain()));
+    }
+
+    @GetMapping("/{consultantId}/branding")
+    BrandingProfileView getBranding(@PathVariable UUID consultantId) {
+        return whitelabelApi.findBranding(consultantId);
     }
 }

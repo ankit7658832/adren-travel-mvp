@@ -2,6 +2,7 @@ package com.adren.travel.whitelabel;
 
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
+import com.adren.travel.whitelabel.event.BrandingUpdatedEvent;
 import com.adren.travel.whitelabel.event.ConsultantOnboardedEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -85,6 +86,32 @@ class WhitelabelModuleIntegrationTests {
 
         var page = whitelabelApi.findUsersByConsultant(PageRequest.of(0, 20));
         assertThat(page.getContent()).extracting(ConsultantUserView::userId).contains(userId);
+    }
+
+    @Test
+    void updatingBrandingPublishesBrandingUpdatedEvent(Scenario scenario) {
+        authenticateAs(Role.SUPER_ADMIN, null);
+        UUID consultantId = whitelabelApi.onboardConsultant(
+            new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x")));
+        var command = new UpdateBrandingCommand(consultantId, "https://cdn/logo.png", null,
+            "#FFFFFF", "#000000", "#111111", "consultant.example.com");
+
+        scenario.stimulate(() -> whitelabelApi.updateBranding(command))
+            .andWaitForEventOfType(BrandingUpdatedEvent.class)
+            .matchingMappedValue(BrandingUpdatedEvent::domain, "consultant.example.com");
+
+        BrandingProfileView saved = whitelabelApi.findBranding(consultantId);
+        assertThat(saved.domain()).isEqualTo("consultant.example.com");
+        assertThat(saved.backgroundColor()).isEqualTo("#FFFFFF");
+    }
+
+    @Test
+    void aConsultantPrincipalCannotUpdateBranding() {
+        authenticateAs(Role.CONSULTANT);
+        var command = new UpdateBrandingCommand(UUID.randomUUID(), null, null, "#FFFFFF", "#000000", "#111111", null);
+
+        assertThatThrownBy(() -> whitelabelApi.updateBranding(command))
+            .isInstanceOf(AccessDeniedException.class);
     }
 
     private static void authenticateAs(Role role) {

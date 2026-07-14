@@ -1,10 +1,12 @@
 package com.adren.travel.whitelabel.internal;
 
 import com.adren.travel.shared.TraceIds;
+import com.adren.travel.whitelabel.BrandingProfileView;
 import com.adren.travel.whitelabel.ConsultantStatus;
 import com.adren.travel.whitelabel.ConsultantView;
 import com.adren.travel.whitelabel.KycFieldDefinition;
 import com.adren.travel.whitelabel.Market;
+import com.adren.travel.whitelabel.UpdateBrandingCommand;
 import com.adren.travel.whitelabel.WhitelabelApi;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -139,5 +141,40 @@ class ConsultantControllerTest {
                 .contentType("application/json")
                 .content("{}"))
             .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void updatesBrandingWithTheGivenConsultantIdAndFields() throws Exception {
+        UUID consultantId = UUID.randomUUID();
+
+        mockMvc.perform(patch("/api/v1/consultants/{consultantId}/branding", consultantId)
+                .contentType("application/json")
+                .content("{\"backgroundColor\": \"#FFFFFF\", \"textColorPrimary\": \"#000000\", "
+                    + "\"textColorSecondary\": \"#111111\", \"domain\": \"consultant.example.com\"}"))
+            .andExpect(status().isOk());
+
+        verify(whitelabelApi).updateBranding(new UpdateBrandingCommand(
+            consultantId, null, null, "#FFFFFF", "#000000", "#111111", "consultant.example.com"));
+    }
+
+    @Test
+    void rejectsABrandingUpdateMissingARequiredTextColor() throws Exception {
+        mockMvc.perform(patch("/api/v1/consultants/{consultantId}/branding", UUID.randomUUID())
+                .contentType("application/json")
+                .content("{\"backgroundColor\": \"#FFFFFF\", \"textColorSecondary\": \"#111111\"}"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void returnsTheCurrentBrandingProfile() throws Exception {
+        UUID consultantId = UUID.randomUUID();
+        when(whitelabelApi.findBranding(consultantId)).thenReturn(new BrandingProfileView(
+            consultantId, "https://cdn/logo.png", null, "#FFFFFF", "#000000", "#111111",
+            "consultant.example.com", Instant.now()));
+
+        mockMvc.perform(get("/api/v1/consultants/{consultantId}/branding", consultantId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.domain").value("consultant.example.com"))
+            .andExpect(jsonPath("$.backgroundColor").value("#FFFFFF"));
     }
 }
