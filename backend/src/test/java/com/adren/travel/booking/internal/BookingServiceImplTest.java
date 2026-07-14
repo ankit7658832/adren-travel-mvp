@@ -11,8 +11,13 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -84,5 +89,19 @@ class BookingServiceImplTest {
         // any() binds to the wrong overload since BookingConfirmedEvent
         // isn't an ApplicationEvent, causing a false "not invoked" failure.
         verify(events).publishEvent(any(BookingConfirmedEvent.class));
+    }
+
+    @Test
+    void findBookingsByConsultantReturnsAPageOfItineraryIds() {
+        UUID consultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(UUID.randomUUID(), consultantId, null);
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Itinerary> page = new PageImpl<>(List.of(itinerary), pageable, 1);
+        when(itineraryRepository.findByConsultantId(consultantId, pageable)).thenReturn(page);
+
+        Page<UUID> result = service.findBookingsByConsultant(consultantId, pageable);
+
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        assertThat(result.getContent()).containsExactly(itinerary.getItineraryId());
     }
 }

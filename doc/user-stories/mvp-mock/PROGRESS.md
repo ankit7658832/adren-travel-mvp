@@ -26,10 +26,10 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **FND-17** — add locale market selection alongside existing multi currency support
 - [ ] **FND-18** — add a root and per route errorboundary
 - [x] **FND-19** — add eslint flat config with jsx a11y
-- [ ] **FND-20** — resolve the path alias half configuration
+- [x] **FND-20** — resolve the path alias half configuration (already satisfied by prior work — vite.config.ts's resolve.alias already matches tsconfig, multiple cross-feature `@/` imports already in place)
 - [ ] **FND-21** — propagate a correlation id traceid across the async event listener boundary
 - [ ] **FND-22** — adopt rfc 7807 problem details error responses with per module controlleradvice
-- [ ] **FND-23** — convert all collection endpoints to paginated responses
+- [x] **FND-23** — convert all collection endpoints to paginated responses
 - [ ] **FND-24** — adopt structured json logging with mandatory mdc fields
 
 ## Booking Core (20)

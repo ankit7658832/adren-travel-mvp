@@ -5,9 +5,10 @@ import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
 import com.adren.travel.shared.Money;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -56,9 +57,8 @@ class BookingServiceImpl implements BookingApi {
     }
 
     @Override
-    public List<UUID> findBookingsByConsultant(UUID consultantId) {
-        return itineraryRepository.findByConsultantId(consultantId).stream()
-            .map(Itinerary::getItineraryId)
-            .toList();
+    public Page<UUID> findBookingsByConsultant(UUID consultantId, Pageable pageable) {
+        return itineraryRepository.findByConsultantId(consultantId, pageable)
+            .map(Itinerary::getItineraryId);
     }
 }

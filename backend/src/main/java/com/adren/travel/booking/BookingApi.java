@@ -1,8 +1,9 @@
 package com.adren.travel.booking;
 
 import com.adren.travel.shared.Money;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -26,5 +27,10 @@ public interface BookingApi {
      */
     UUID confirmBooking(UUID quotationOrPackageId, Money totalSellPrice);
 
-    List<UUID> findBookingsByConsultant(UUID consultantId);
+    /**
+     * Paginated per RULES.md §3.4 — never a bare {@code List<UUID>} at a
+     * public Api boundary a controller might wire up unbounded, given a
+     * Consultant can accumulate thousands of bookings over time.
+     */
+    Page<UUID> findBookingsByConsultant(UUID consultantId, Pageable pageable);
 }
