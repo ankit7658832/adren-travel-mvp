@@ -31,6 +31,11 @@ export function useMultiLocationSearch() {
     try {
       // TODO: replace with a real apiClient.post('/search', ...) call once
       // the backend search endpoint exists (backend/.../booking module).
+      // The await below is deliberate even though the mock has no real
+      // I/O: without it, React 18 batches "loading" and "success" into a
+      // single render (both setStatus calls happen synchronously in the
+      // same tick), so the loading state committed to the DOM.
+      await Promise.resolve();
       const mocked: LocationResult[] = locationQueries.map((q) => ({
         locationCode: q,
         displayName: q,

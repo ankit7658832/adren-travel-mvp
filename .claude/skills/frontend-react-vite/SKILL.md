@@ -36,11 +36,11 @@ src/shared/
 
 ## Provider stack (`src/main.tsx`)
 
-Current order, outer→inner: `React.StrictMode` → `QueryClientProvider` (retry: 1, staleTime: 30_000) → `BrowserRouter` → `App`. Any new app-wide provider (theme, auth context) slots in between `QueryClientProvider` and `BrowserRouter` unless it specifically needs router context. No `ErrorBoundary` wraps the tree yet — see `RULES.md` §7.4 reconciliation item.
+Current order, outer→inner: `React.StrictMode` → `QueryClientProvider` (retry: 1, staleTime: 30_000) → `AppProviders` (FES-02 slot, `src/shared/providers/AppProviders.tsx`) → `BrowserRouter` → `App`. Any new app-wide **context provider** (auth — FES-06/FES-07) nests inside `AppProviders`, between `QueryClientProvider` and `BrowserRouter`, unless it specifically needs router context. `AppProviders` is currently empty — theme/branding state is a **Zustand store** (`src/shared/theming/tenantThemeStore.ts`), not a Context, per `RULES.md` §7.1, so it doesn't occupy this slot; don't assume every app-wide concern needs to land here. No `ErrorBoundary` wraps the tree yet — see `RULES.md` §7.4 reconciliation item.
 
 ## Path alias status
 
-`tsconfig.json` declares `"@/*": ["src/*"]` but `vite.config.ts` has no matching `resolve.alias`, and nothing uses it yet — this is a known half-configured item, see `RULES.md` §7.5. Until it's resolved one way or the other, use relative imports (`./useMultiLocationSearch`) matching the existing code, don't introduce `@/`-prefixed imports that won't resolve at build time.
+**Resolved.** `vite.config.ts`'s `resolve.alias` matches `tsconfig.json`'s `"@/*": ["src/*"]`. Convention: `@/`-prefixed imports for cross-feature imports (e.g. `@/shared/design-system/Button`), relative imports within a feature folder (e.g. `./useMultiLocationSearch`). See `doc/DESIGN.md` §13 and `RULES.md` §7.5.
 
 ## Running locally
 

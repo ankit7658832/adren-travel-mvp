@@ -1,0 +1,70 @@
+/**
+ * Layer 1 (Adren product chrome) design tokens — doc/DESIGN.md §2, §4, §5.
+ * Static. Never overridden by tenant/branding input — see
+ * doc/DESIGN.md §3.1 and .claude/skills/frontend-design-system/SKILL.md.
+ */
+:root {
+  /* Primary / secondary — doc/DESIGN.md §2.1 */
+  --color-primary-50: #f3edfb;
+  --color-primary-600: #5b2a9e;
+  --color-primary-700: #4a2180;
+  --color-secondary-700: #334063;
+  --color-secondary-900: #1f2a44;
+
+  /* Status colors — doc/DESIGN.md §2.2 (text-safe -700 variants are
+     deliberate; the brief's raw -500/-600 shades fail AA as text, see doc) */
+  --color-success-50: #e9f8ee;
+  --color-success-500: #1e9e4a;
+  --color-success-700: #167c3d;
+
+  --color-warning-50: #fef6dc;
+  --color-warning-500: #f2b705;
+  --color-warning-700: #8a6100;
+
+  --color-info-50: #eaf1fd;
+  --color-info-600: #2e6fe0;
+  --color-info-700: #1f52ac;
+
+  --color-error-50: #fdeae9;
+  --color-error-600: #e2231a;
+  --color-error-700: #b01912;
+
+  /* Neutrals & surfaces — doc/DESIGN.md §2.3 */
+  --color-neutral-50: #f8f9fb;
+  --color-neutral-100: #f1f3f6;
+  --color-neutral-200: #e3e7ed;
+  --color-neutral-300: #c7ccd6;
+  --color-neutral-400: #8b93a3;
+  --color-neutral-500: #6b7280;
+  --color-neutral-600: #525a6b;
+  --color-neutral-700: #3d4354;
+  --color-neutral-900: #1a1d26;
+  --color-surface: #ffffff;
+
+  /* Focus ring — fixed on both layers, doc/DESIGN.md §11 */
+  --color-focus-ring: var(--color-info-600);
+
+  /* Typography — doc/DESIGN.md §4 */
+  --font-sans: "Inter", "Noto Sans", "Noto Sans Devanagari", system-ui,
+    -apple-system, sans-serif;
+
+  /* Spacing scale (4px base) — doc/DESIGN.md §5 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  /* Motion — doc/DESIGN.md §9, fixed on both layers */
+  --motion-micro: 120ms ease-out;
+  --motion-standard: 200ms ease-out;
+  --motion-page: 250ms ease-in-out;
+
+  color-scheme: light;
+}
