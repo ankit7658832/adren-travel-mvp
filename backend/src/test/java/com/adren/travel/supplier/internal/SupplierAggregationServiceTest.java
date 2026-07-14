@@ -39,11 +39,15 @@ class SupplierAggregationServiceTest {
     @Mock
     SupplierCredentialAuditLogRepository auditLogRepository;
 
+    @Mock
+    SupplierSecretsService supplierSecretsService;
+
     SupplierAggregationService service;
 
     @BeforeEach
     void setUp() {
-        service = new SupplierAggregationService(hotelbedsClient, credentialRepository, auditLogRepository);
+        service = new SupplierAggregationService(
+            hotelbedsClient, credentialRepository, auditLogRepository, supplierSecretsService);
     }
 
     @AfterEach
@@ -53,20 +57,41 @@ class SupplierAggregationServiceTest {
 
     @Test
     void updateSupplierCredentialCreatesANewRowAndWritesAnAuditLogEntry() {
-        UUID userId = authenticateAsSuperAdmin();
+        authenticateAsSuperAdmin();
         when(credentialRepository.findById(SupplierId.HOTELBEDS)).thenReturn(Optional.empty());
+        when(supplierSecretsService.storeSecret(SupplierId.HOTELBEDS, "secret-abc"))
+            .thenReturn("arn:aws:secretsmanager:ap-south-1:000000000000:secret:adren/supplier-credentials/HOTELBEDS");
 
         service.updateSupplierCredential(new UpdateSupplierCredentialCommand(SupplierId.HOTELBEDS, "secret-abc"));
 
-        verify(credentialRepository).save(org.mockito.ArgumentMatchers.any());
+        ArgumentCaptor<SupplierCredential> credentialCaptor = ArgumentCaptor.forClass(SupplierCredential.class);
+        verify(credentialRepository).save(credentialCaptor.capture());
+        assertThat(credentialCaptor.getValue().getSecretArn())
+            .isEqualTo("arn:aws:secretsmanager:ap-south-1:000000000000:secret:adren/supplier-credentials/HOTELBEDS");
+
         ArgumentCaptor<SupplierCredentialAuditLog> captor = ArgumentCaptor.forClass(SupplierCredentialAuditLog.class);
         verify(auditLogRepository).save(captor.capture());
         assertThat(captor.getValue()).isNotNull();
     }
 
     @Test
+    void updateSupplierCredentialNeverPersistsTheRawSecretValueFND11() {
+        authenticateAsSuperAdmin();
+        when(credentialRepository.findById(SupplierId.HOTELBEDS)).thenReturn(Optional.empty());
+        when(supplierSecretsService.storeSecret(SupplierId.HOTELBEDS, "super-secret-raw-value"))
+            .thenReturn("arn:aws:secretsmanager:ap-south-1:000000000000:secret:adren/supplier-credentials/HOTELBEDS");
+
+        service.updateSupplierCredential(new UpdateSupplierCredentialCommand(SupplierId.HOTELBEDS, "super-secret-raw-value"));
+
+        ArgumentCaptor<SupplierCredential> captor = ArgumentCaptor.forClass(SupplierCredential.class);
+        verify(credentialRepository).save(captor.capture());
+        assertThat(captor.getValue().getSecretArn()).doesNotContain("super-secret-raw-value");
+    }
+
+    @Test
     void listSupplierCredentialsNeverExposesTheRawSecretValue() {
-        SupplierCredential credential = new SupplierCredential(SupplierId.HOTELBEDS, "super-secret", UUID.randomUUID());
+        SupplierCredential credential = new SupplierCredential(SupplierId.HOTELBEDS,
+            "arn:aws:secretsmanager:ap-south-1:000000000000:secret:adren/supplier-credentials/HOTELBEDS", UUID.randomUUID());
         when(credentialRepository.findAll()).thenReturn(List.of(credential));
 
         List<SupplierCredentialSummary> summaries = service.listSupplierCredentials();
@@ -74,9 +99,10 @@ class SupplierAggregationServiceTest {
         assertThat(summaries).hasSize(1);
         assertThat(summaries.get(0).supplierId()).isEqualTo(SupplierId.HOTELBEDS);
         assertThat(summaries.get(0).configured()).isTrue();
-        // SupplierCredentialSummary has no secretValue field at all — the
-        // absence itself is the guarantee; this assertion documents intent.
-        assertThat(summaries.get(0).toString()).doesNotContain("super-secret");
+        // SupplierCredentialSummary has no secretValue/secretArn field at
+        // all — the absence itself is the guarantee; this assertion
+        // documents intent.
+        assertThat(summaries.get(0).toString()).doesNotContain("secretsmanager");
     }
 
     private static UUID authenticateAsSuperAdmin() {

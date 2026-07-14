@@ -28,15 +28,18 @@ class SupplierAggregationService implements SupplierSearchApi {
     private final HotelbedsClient hotelbedsClient;
     private final SupplierCredentialRepository credentialRepository;
     private final SupplierCredentialAuditLogRepository auditLogRepository;
+    private final SupplierSecretsService supplierSecretsService;
     // TODO: inject StubaClient, TboClient, LocalDmcRepository, ByosClient
     // as each is built out, following the HotelbedsClient pattern
     // (PRD Section 10.2.2 - 10.2.9).
 
     SupplierAggregationService(HotelbedsClient hotelbedsClient, SupplierCredentialRepository credentialRepository,
-                               SupplierCredentialAuditLogRepository auditLogRepository) {
+                               SupplierCredentialAuditLogRepository auditLogRepository,
+                               SupplierSecretsService supplierSecretsService) {
         this.hotelbedsClient = hotelbedsClient;
         this.credentialRepository = credentialRepository;
         this.auditLogRepository = auditLogRepository;
+        this.supplierSecretsService = supplierSecretsService;
     }
 
     @Override
@@ -57,9 +60,13 @@ class SupplierAggregationService implements SupplierSearchApi {
     @Transactional
     public void updateSupplierCredential(UpdateSupplierCredentialCommand command) {
         UUID userId = CurrentPrincipal.get().userId();
+        // RULES.md §5.3 — command.secretValue() is used once, to write the
+        // real credential to Secrets Manager, and never touched again;
+        // only the resulting ARN is persisted in Postgres from here on.
+        String secretArn = supplierSecretsService.storeSecret(command.supplierId(), command.secretValue());
         SupplierCredential credential = credentialRepository.findById(command.supplierId())
-            .orElseGet(() -> new SupplierCredential(command.supplierId(), command.secretValue(), userId));
-        credential.rotate(command.secretValue(), userId);
+            .orElseGet(() -> new SupplierCredential(command.supplierId(), secretArn, userId));
+        credential.rotate(secretArn, userId);
         credentialRepository.save(credential);
 
         auditLogRepository.save(new SupplierCredentialAuditLog(UUID.randomUUID(), command.supplierId(), userId));

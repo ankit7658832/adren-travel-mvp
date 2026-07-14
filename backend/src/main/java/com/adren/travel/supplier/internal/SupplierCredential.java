@@ -1,6 +1,7 @@
 package com.adren.travel.supplier.internal;
 
 import com.adren.travel.supplier.SupplierId;
+import jakarta.persistence.Column;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Entity;
@@ -12,10 +13,11 @@ import java.util.UUID;
 
 /**
  * An Adren-owned supplier's credential (PRD §21.6/§10.2) — package-private,
- * own table. {@code secretValue} is a placeholder for FND-11's Secrets
- * Manager wiring (which replaces this column with an ARN reference) — it
- * is never returned or logged raw from this module's public surface today
- * either, only via {@code SupplierCredentialSummary}'s masked view.
+ * own table. {@code secretArn} is the Secrets Manager ARN returned by
+ * {@link SupplierSecretsService#storeSecret} (FND-11, RULES.md §5.3) — the
+ * raw credential value itself is never persisted in Postgres, logged, or
+ * returned from this module's public surface (only via
+ * {@code SupplierCredentialSummary}'s masked view).
  */
 @Entity
 @Table(name = "supplier_credential")
@@ -25,7 +27,9 @@ class SupplierCredential {
     @Enumerated(EnumType.STRING)
     private SupplierId supplierId;
 
-    private String secretValue;
+    @Column(name = "secret_arn")
+    private String secretArn;
+
     private UUID lastModifiedByUserId;
     private Instant lastModifiedAt;
 
@@ -33,21 +37,25 @@ class SupplierCredential {
         // JPA
     }
 
-    SupplierCredential(SupplierId supplierId, String secretValue, UUID lastModifiedByUserId) {
+    SupplierCredential(SupplierId supplierId, String secretArn, UUID lastModifiedByUserId) {
         this.supplierId = supplierId;
-        this.secretValue = secretValue;
+        this.secretArn = secretArn;
         this.lastModifiedByUserId = lastModifiedByUserId;
         this.lastModifiedAt = Instant.now();
     }
 
-    void rotate(String secretValue, UUID lastModifiedByUserId) {
-        this.secretValue = secretValue;
+    void rotate(String secretArn, UUID lastModifiedByUserId) {
+        this.secretArn = secretArn;
         this.lastModifiedByUserId = lastModifiedByUserId;
         this.lastModifiedAt = Instant.now();
     }
 
     SupplierId getSupplierId() {
         return supplierId;
+    }
+
+    String getSecretArn() {
+        return secretArn;
     }
 
     UUID getLastModifiedByUserId() {

@@ -60,9 +60,15 @@ class SupplierSearchApiMethodSecurityTest {
         }
 
         @Bean
+        SupplierSecretsService supplierSecretsService() {
+            return Mockito.mock(SupplierSecretsService.class);
+        }
+
+        @Bean
         SupplierSearchApi supplierSearchApi(HotelbedsClient hotelbedsClient, SupplierCredentialRepository repo,
-                                             SupplierCredentialAuditLogRepository auditRepo) {
-            return new SupplierAggregationService(hotelbedsClient, repo, auditRepo);
+                                             SupplierCredentialAuditLogRepository auditRepo,
+                                             SupplierSecretsService supplierSecretsService) {
+            return new SupplierAggregationService(hotelbedsClient, repo, auditRepo, supplierSecretsService);
         }
     }
 
