@@ -1,5 +1,8 @@
 package com.adren.travel.whitelabel;
 
+import com.adren.travel.security.CapabilityGrantService.Capability;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
@@ -25,4 +28,23 @@ public interface WhitelabelApi {
      * can render before a Consultant record exists yet.
      */
     List<KycFieldDefinition> requiredKycFieldsFor(Market market);
+
+    /**
+     * Adds a User under the CALLING Consultant's own account (PRD §3.3,
+     * §6 "Add/manage Users under own account": Consultant only).
+     * {@code command} never carries a consultantId — see its Javadoc.
+     */
+    @PreAuthorize("hasRole('CONSULTANT')")
+    UUID addUser(AddUserCommand command);
+
+    /**
+     * Grants or revokes a capability for a User under the calling
+     * Consultant's own account — rejected if the target User belongs to a
+     * different Consultant (RULES.md §5.2).
+     */
+    @PreAuthorize("hasRole('CONSULTANT')")
+    void setUserCapability(UUID userId, Capability capability, boolean granted);
+
+    @PreAuthorize("hasRole('CONSULTANT')")
+    Page<ConsultantUserView> findUsersByConsultant(Pageable pageable);
 }

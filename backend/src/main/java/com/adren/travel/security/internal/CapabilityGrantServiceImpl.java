@@ -25,4 +25,12 @@ class CapabilityGrantServiceImpl implements CapabilityGrantService {
             .map(CapabilityGrant::isGranted)
             .orElse(false);
     }
+
+    @Override
+    public void setGranted(UUID userId, Capability capability, boolean granted) {
+        CapabilityGrant grant = repository.findByUserIdAndCapability(userId, capability)
+            .orElseGet(() -> new CapabilityGrant(UUID.randomUUID(), userId, capability, false));
+        grant.setGranted(granted);
+        repository.save(grant);
+    }
 }

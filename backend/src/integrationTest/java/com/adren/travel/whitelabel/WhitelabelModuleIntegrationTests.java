@@ -7,6 +7,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.modulith.test.Scenario;
 import org.springframework.security.access.AccessDeniedException;
@@ -21,19 +22,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * {@code @ApplicationModuleTest} for the whitelabel module — real Spring
  * wiring + real (local) Postgres, verifying the event-publication contract
  * (FND-04) and that {@code @PreAuthorize} actually gates onboarding to
- * SUPER_ADMIN (PRD §6). Method security isn't active in this module's own
- * slice by default (the "security" module isn't a real compile-time
- * dependency of "whitelabel," just a library-level annotation import) —
- * {@code @EnableMethodSecurity} is enabled locally, mirroring
- * {@code BookingApiMethodSecurityTest}'s approach.
+ * SUPER_ADMIN (PRD §6). {@code DIRECT_DEPENDENCIES} is required since
+ * FND-09: {@code WhitelabelServiceImpl} now has a real constructor
+ * dependency on {@code security.CapabilityGrantService}.
+ * {@code @EnableMethodSecurity} is enabled locally since a module test's
+ * slice doesn't include {@code security.internal.SecurityConfig} (mirrors
+ * {@code BookingApiMethodSecurityTest}'s approach).
  */
-@ApplicationModuleTest
+@ApplicationModuleTest(ApplicationModuleTest.BootstrapMode.DIRECT_DEPENDENCIES)
 class WhitelabelModuleIntegrationTests {
 
     @TestConfiguration
@@ -68,9 +71,28 @@ class WhitelabelModuleIntegrationTests {
             .isInstanceOf(AccessDeniedException.class);
     }
 
+    @Test
+    void aConsultantCanAddAndListTheirOwnUsers() {
+        // consultant_user.consultant_id has a real FK to consultant (same
+        // module's own tables) — a genuine Consultant row must exist first,
+        // unlike the pure-authorization tests above.
+        authenticateAs(Role.SUPER_ADMIN, null);
+        UUID consultantId = whitelabelApi.onboardConsultant(
+            new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x")));
+
+        authenticateAs(Role.CONSULTANT, consultantId);
+        UUID userId = whitelabelApi.addUser(new AddUserCommand("staff@example.com", "Staff"));
+
+        var page = whitelabelApi.findUsersByConsultant(PageRequest.of(0, 20));
+        assertThat(page.getContent()).extracting(ConsultantUserView::userId).contains(userId);
+    }
+
     private static void authenticateAs(Role role) {
-        AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), role,
-            role == Role.SUPER_ADMIN ? null : UUID.randomUUID());
+        authenticateAs(role, role == Role.SUPER_ADMIN ? null : UUID.randomUUID());
+    }
+
+    private static void authenticateAs(Role role, UUID consultantId) {
+        AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), role, consultantId);
         List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
         var authentication = new UsernamePasswordAuthenticationToken(principal, null, authorities);
         SecurityContext securityContext = SecurityContextHolder.createEmptyContext();

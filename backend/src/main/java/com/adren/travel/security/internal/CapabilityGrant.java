@@ -43,4 +43,8 @@ class CapabilityGrant {
     boolean isGranted() {
         return granted;
     }
+
+    void setGranted(boolean granted) {
+        this.granted = granted;
+    }
 }

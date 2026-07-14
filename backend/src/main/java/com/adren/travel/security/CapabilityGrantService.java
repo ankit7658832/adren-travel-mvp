@@ -18,6 +18,13 @@ public interface CapabilityGrantService {
      */
     boolean isGranted(UUID userId, Capability capability);
 
+    /**
+     * Sets (or revokes) a capability grant for a User — called by whichever
+     * module owns "who can grant what" (whitelabel, for a Consultant
+     * granting their own User a capability per FND-09).
+     */
+    void setGranted(UUID userId, Capability capability, boolean granted);
+
     enum Capability {
         CREATE_PACKAGE
     }

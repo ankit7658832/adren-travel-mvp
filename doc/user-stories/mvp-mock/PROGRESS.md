@@ -15,7 +15,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **FND-06** — configure consultant white label branding logo colors domain
 - [ ] **FND-07** — propagate branding domain changes to the live storefront without a redeploy
 - [ ] **FND-08** — enforce dynamic per consultant cors allow list for white label domains
-- [ ] **FND-09** — consultant manages users staff sub agents under their own account
+- [x] **FND-09** — consultant manages users staff sub agents under their own account
 - [ ] **FND-10** — super admin manages adren owned supplier api credentials
 - [ ] **FND-11** — store adren owned supplier credentials in secrets manager not plaintext config
 - [ ] **FND-12** — store byos credentials as row level per consultant encrypted secrets
