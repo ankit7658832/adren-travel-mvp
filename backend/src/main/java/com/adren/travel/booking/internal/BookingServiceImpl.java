@@ -1,17 +1,21 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.Money;
+import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.whitelabel.WhitelabelApi;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -31,12 +35,14 @@ class BookingServiceImpl implements BookingApi {
     private final ItineraryRepository itineraryRepository;
     private final ApplicationEventPublisher events;
     private final WhitelabelApi whitelabelApi;
+    private final SupplierSearchApi supplierSearchApi;
 
     BookingServiceImpl(ItineraryRepository itineraryRepository, ApplicationEventPublisher events,
-                        WhitelabelApi whitelabelApi) {
+                        WhitelabelApi whitelabelApi, SupplierSearchApi supplierSearchApi) {
         this.itineraryRepository = itineraryRepository;
         this.events = events;
         this.whitelabelApi = whitelabelApi;
+        this.supplierSearchApi = supplierSearchApi;
     }
 
     @Override
@@ -78,6 +84,21 @@ class BookingServiceImpl implements BookingApi {
         if (!CurrentPrincipal.get().isSuperAdmin()) {
             whitelabelApi.requireConsultantActive(consultantId);
         }
+    }
+
+    @Override
+    public List<AlternateOption> findAlternates(
+        UUID itineraryId, String locationCode, String category, LocalDate checkIn, LocalDate checkOut) {
+        requireActiveUnlessSuperAdmin(CurrentPrincipal.get().consultantId());
+
+        if (category != null && !category.isBlank() && !category.equalsIgnoreCase("hotel")) {
+            return List.of();
+        }
+        return supplierSearchApi.searchHotels(locationCode, checkIn, checkOut).stream()
+            .map(result -> new AlternateOption(result.supplierId().name(), result.supplierRateId(),
+                result.propertyName(), result.roomType(), result.netRate().amount(), result.netRate().currency(),
+                result.rating()))
+            .toList();
     }
 
     @Override

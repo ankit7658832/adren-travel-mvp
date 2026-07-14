@@ -49,11 +49,11 @@ class GeocodeAndSearchService {
                 // (FIN-01, Financial Layer) — the algorithm already honors
                 // one once that lands, nothing here needs to change.
                 SupplierId noPreferenceConfiguredYet = null;
-                String autoSelectedSupplierRateId = defaultSelectionService.selectDefault(options, noPreferenceConfiguredYet)
-                    .map(SupplierSearchResult::supplierRateId)
-                    .orElse(null);
+                var autoSelected = defaultSelectionService.selectDefault(options, noPreferenceConfiguredYet);
+                String autoSelectedSupplierId = autoSelected.map(r -> r.supplierId().name()).orElse(null);
+                String autoSelectedSupplierRateId = autoSelected.map(SupplierSearchResult::supplierRateId).orElse(null);
                 return new GeocodedLocation(query, query, point.latitude(), point.longitude(),
-                    !options.isEmpty(), autoSelectedSupplierRateId);
+                    !options.isEmpty(), autoSelectedSupplierId, autoSelectedSupplierRateId);
             })
             .toList();
     }

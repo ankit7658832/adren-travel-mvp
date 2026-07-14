@@ -3,6 +3,7 @@ package com.adren.travel.booking.internal;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
+import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.whitelabel.WhitelabelApi;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -59,9 +60,14 @@ class BookingApiMethodSecurityTest {
         }
 
         @Bean
+        SupplierSearchApi supplierSearchApi() {
+            return Mockito.mock(SupplierSearchApi.class);
+        }
+
+        @Bean
         BookingApi bookingApi(ItineraryRepository repository, ApplicationEventPublisher publisher,
-                               WhitelabelApi whitelabelApi) {
-            return new BookingServiceImpl(repository, publisher, whitelabelApi);
+                               WhitelabelApi whitelabelApi, SupplierSearchApi supplierSearchApi) {
+            return new BookingServiceImpl(repository, publisher, whitelabelApi, supplierSearchApi);
         }
     }
 

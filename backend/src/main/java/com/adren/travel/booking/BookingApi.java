@@ -5,6 +5,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 
+import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -47,4 +49,20 @@ public interface BookingApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     Page<UUID> findBookingsByConsultant(UUID consultantId, Pageable pageable);
+
+    /**
+     * The Itinerary Builder's alternate-selection side panel (PRD §21.2,
+     * FND-16) — every alternate available for one location/category, for
+     * the Consultant to filter/sort (price, rating, supplier) client-side
+     * and swap the location's current line item for. {@code category} is
+     * accepted for PRD §21.2's up-to-five-product-type URL shape but only
+     * {@code "hotel"} has real inventory today (PRD §10.5's supplier
+     * content sync for other categories is production-tier, not yet
+     * built) — any other category returns an empty list rather than
+     * erroring, matching {@code GeocodeAndSearchService}'s
+     * never-throw-on-no-inventory convention.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    List<AlternateOption> findAlternates(
+        UUID itineraryId, String locationCode, String category, LocalDate checkIn, LocalDate checkOut);
 }

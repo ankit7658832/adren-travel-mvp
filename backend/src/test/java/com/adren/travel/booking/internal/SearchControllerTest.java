@@ -61,8 +61,8 @@ class SearchControllerTest {
     @Test
     void returnsAGeocodedLocationPerQuery() throws Exception {
         when(geocodeAndSearchService.geocodeAndSearch(any(), any(), any())).thenReturn(List.of(
-            new GeocodedLocation("Goa", "Goa", 15.5, 73.8, true, "rate-1"),
-            new GeocodedLocation("Antarctica", "Antarctica", 20.0, 80.0, false, null)
+            new GeocodedLocation("Goa", "Goa", 15.5, 73.8, true, "HOTELBEDS", "rate-1"),
+            new GeocodedLocation("Antarctica", "Antarctica", 20.0, 80.0, false, null, null)
         ));
 
         mockMvc.perform(post("/api/v1/search")

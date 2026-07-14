@@ -1,11 +1,15 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
+import com.adren.travel.supplier.SupplierId;
+import com.adren.travel.supplier.SupplierSearchApi;
+import com.adren.travel.supplier.SupplierSearchResult;
 import com.adren.travel.whitelabel.WhitelabelApi;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +31,7 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -56,11 +61,14 @@ class BookingServiceImplTest {
     @Mock
     WhitelabelApi whitelabelApi;
 
+    @Mock
+    SupplierSearchApi supplierSearchApi;
+
     BookingServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new BookingServiceImpl(itineraryRepository, events, whitelabelApi);
+        service = new BookingServiceImpl(itineraryRepository, events, whitelabelApi, supplierSearchApi);
     }
 
     @AfterEach
@@ -187,6 +195,49 @@ class BookingServiceImplTest {
         service.confirmBooking(UUID.randomUUID(), price);
 
         verify(whitelabelApi, org.mockito.Mockito.never()).requireConsultantActive(any());
+    }
+
+    @Test
+    void findAlternatesReturnsEveryHotelOptionForTheLocationFND16() {
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        LocalDate checkIn = LocalDate.now().plusDays(30);
+        LocalDate checkOut = checkIn.plusDays(3);
+        when(supplierSearchApi.searchHotels("Goa", checkIn, checkOut)).thenReturn(List.of(
+            new SupplierSearchResult(SupplierId.HOTELBEDS, "rate-1", "Hotel A", "Deluxe",
+                new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), 4.2)));
+
+        List<AlternateOption> alternates =
+            service.findAlternates(UUID.randomUUID(), "Goa", "hotel", checkIn, checkOut);
+
+        assertThat(alternates).hasSize(1);
+        assertThat(alternates.get(0).supplierId()).isEqualTo("HOTELBEDS");
+        assertThat(alternates.get(0).supplierRateId()).isEqualTo("rate-1");
+        assertThat(alternates.get(0).netRateAmount()).isEqualByComparingTo("5000.00");
+        assertThat(alternates.get(0).netRateCurrency()).isEqualTo(CurrencyCode.INR);
+        assertThat(alternates.get(0).rating()).isEqualTo(4.2);
+    }
+
+    @Test
+    void findAlternatesReturnsEmptyForANonHotelCategoryFND16() {
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        LocalDate checkIn = LocalDate.now().plusDays(30);
+
+        List<AlternateOption> alternates =
+            service.findAlternates(UUID.randomUUID(), "Goa", "flight", checkIn, checkIn.plusDays(3));
+
+        assertThat(alternates).isEmpty();
+    }
+
+    @Test
+    void findAlternatesRejectsASuspendedConsultantsUserFND16() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.USER, consultantId);
+        org.mockito.Mockito.doThrow(new AccessDeniedException("suspended"))
+            .when(whitelabelApi).requireConsultantActive(consultantId);
+        LocalDate checkIn = LocalDate.now().plusDays(30);
+
+        assertThatThrownBy(() -> service.findAlternates(UUID.randomUUID(), "Goa", "hotel", checkIn, checkIn.plusDays(3)))
+            .isInstanceOf(AccessDeniedException.class);
     }
 
     @Test

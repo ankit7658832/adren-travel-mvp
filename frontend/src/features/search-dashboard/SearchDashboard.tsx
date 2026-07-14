@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useMultiLocationSearch } from "./useMultiLocationSearch";
 import { MapPanel } from "./MapPanel";
 import { Button } from "@/shared/design-system/Button";
 import { Badge } from "@/shared/design-system/Badge";
+import { useItineraryDraftStore } from "@/features/itinerary-builder/itineraryDraftStore";
 
 /**
  * PRD Section 21.1 — Search Dashboard. Layer 1 (Adren product chrome) —
@@ -16,6 +18,9 @@ import { Badge } from "@/shared/design-system/Badge";
 export function SearchDashboard() {
   const [locationInput, setLocationInput] = useState("");
   const { status, results, errorMessage, search } = useMultiLocationSearch();
+  const startDraft = useItineraryDraftStore((s) => s.startDraft);
+  const setLineItem = useItineraryDraftStore((s) => s.setLineItem);
+  const navigate = useNavigate();
 
   function handleSearch() {
     const locations = locationInput
@@ -23,6 +28,27 @@ export function SearchDashboard() {
       .map((l) => l.trim())
       .filter(Boolean);
     search(locations);
+  }
+
+  // PRD §9.1 Flow A steps 5-6 — hand every location's FND-14 auto-selected
+  // default off to the Itinerary Builder (FND-16) via the cross-step
+  // Zustand draft store (RULES.md §7.1); Search Dashboard itself never
+  // holds this state past the moment of navigation.
+  function handleBuildItinerary() {
+    const itineraryId = crypto.randomUUID();
+    startDraft(itineraryId);
+    for (const location of results) {
+      if (location.hasInventory && location.autoSelectedSupplierId && location.autoSelectedSupplierRateId) {
+        setLineItem({
+          locationCode: location.locationCode,
+          category: "hotel",
+          supplierId: location.autoSelectedSupplierId,
+          supplierRateId: location.autoSelectedSupplierRateId,
+          autoSelected: true,
+        });
+      }
+    }
+    navigate(`/itinerary/${itineraryId}`);
   }
 
   return (
@@ -102,6 +128,11 @@ export function SearchDashboard() {
               </li>
             ))}
           </ul>
+          {results.some((location) => location.hasInventory) && (
+            <div className="mt-6 flex justify-end">
+              <Button onClick={handleBuildItinerary}>Build Itinerary</Button>
+            </div>
+          )}
         </>
       )}
     </main>

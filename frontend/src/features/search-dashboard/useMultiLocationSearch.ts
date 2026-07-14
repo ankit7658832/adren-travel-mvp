@@ -7,6 +7,9 @@ export interface LocationResult {
   latitude: number;
   longitude: number;
   hasInventory: boolean; // PRD 9.4 / 21.1 — zero-inventory locations must still render, distinctly
+  /** FND-14's Default Selection Algorithm's output for this location — null when there's no inventory. */
+  autoSelectedSupplierId: string | null;
+  autoSelectedSupplierRateId: string | null;
 }
 
 interface SearchResponseDto {

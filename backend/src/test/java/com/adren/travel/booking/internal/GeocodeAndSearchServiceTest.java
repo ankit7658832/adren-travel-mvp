@@ -77,9 +77,11 @@ class GeocodeAndSearchServiceTest {
         assertThat(result.get(0).locationCode()).isEqualTo("Goa");
         assertThat(result.get(0).hasInventory()).isTrue();
         assertThat(result.get(0).autoSelectedSupplierRateId()).isEqualTo("r1");
+        assertThat(result.get(0).autoSelectedSupplierId()).isEqualTo("HOTELBEDS");
         assertThat(result.get(1).locationCode()).isEqualTo("Antarctica");
         assertThat(result.get(1).hasInventory()).isFalse();
         assertThat(result.get(1).autoSelectedSupplierRateId()).isNull();
+        assertThat(result.get(1).autoSelectedSupplierId()).isNull();
     }
 
     @Test

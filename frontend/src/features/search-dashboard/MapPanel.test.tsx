@@ -11,8 +11,8 @@ describe("MapPanel", () => {
 
   it("renders one pin per location, including one with no inventory (T1)", () => {
     const locations: LocationResult[] = [
-      { locationCode: "GOA", displayName: "Goa", latitude: 15.5, longitude: 73.8, hasInventory: true },
-      { locationCode: "ANT", displayName: "Antarctica", latitude: 10, longitude: 90, hasInventory: false },
+      { locationCode: "GOA", displayName: "Goa", latitude: 15.5, longitude: 73.8, hasInventory: true, autoSelectedSupplierId: "HOTELBEDS", autoSelectedSupplierRateId: "rate-1" },
+      { locationCode: "ANT", displayName: "Antarctica", latitude: 10, longitude: 90, hasInventory: false, autoSelectedSupplierId: null, autoSelectedSupplierRateId: null },
     ];
 
     render(<MapPanel locations={locations} />);
@@ -25,7 +25,7 @@ describe("MapPanel", () => {
   });
 
   it("exposes an accessible name via role=img for screen readers", () => {
-    render(<MapPanel locations={[{ locationCode: "GOA", displayName: "Goa", latitude: 15, longitude: 74, hasInventory: true }]} />);
+    render(<MapPanel locations={[{ locationCode: "GOA", displayName: "Goa", latitude: 15, longitude: 74, hasInventory: true, autoSelectedSupplierId: "HOTELBEDS", autoSelectedSupplierRateId: "rate-1" }]} />);
 
     expect(screen.getByRole("img", { name: /map showing 1 searched location/i })).toBeInTheDocument();
   });
