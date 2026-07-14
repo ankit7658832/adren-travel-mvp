@@ -13,7 +13,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **FND-04** — super admin onboards a consultant via a market driven kyc wizard
 - [x] **FND-05** — super admin manages consultant lifecycle view suspend reinstate
 - [x] **FND-06** — configure consultant white label branding logo colors domain
-- [ ] **FND-07** — propagate branding domain changes to the live storefront without a redeploy
+- [x] **FND-07** — propagate branding domain changes to the live storefront without a redeploy
 - [ ] **FND-08** — enforce dynamic per consultant cors allow list for white label domains
 - [x] **FND-09** — consultant manages users staff sub agents under their own account
 - [x] **FND-10** — super admin manages adren owned supplier api credentials

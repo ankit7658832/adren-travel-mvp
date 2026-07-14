@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -34,18 +35,20 @@ class WhitelabelServiceImpl implements WhitelabelApi {
     private final ConsultantRepository consultantRepository;
     private final ConsultantUserRepository consultantUserRepository;
     private final BrandingProfileRepository brandingProfileRepository;
+    private final BrandingCache brandingCache;
     private final MarketKycRuleProvider kycRuleProvider;
     private final MarketLocaleProvider localeProvider;
     private final CapabilityGrantService capabilityGrantService;
     private final ApplicationEventPublisher events;
 
     WhitelabelServiceImpl(ConsultantRepository consultantRepository, ConsultantUserRepository consultantUserRepository,
-                           BrandingProfileRepository brandingProfileRepository, MarketKycRuleProvider kycRuleProvider,
-                           MarketLocaleProvider localeProvider, CapabilityGrantService capabilityGrantService,
-                           ApplicationEventPublisher events) {
+                           BrandingProfileRepository brandingProfileRepository, BrandingCache brandingCache,
+                           MarketKycRuleProvider kycRuleProvider, MarketLocaleProvider localeProvider,
+                           CapabilityGrantService capabilityGrantService, ApplicationEventPublisher events) {
         this.consultantRepository = consultantRepository;
         this.consultantUserRepository = consultantUserRepository;
         this.brandingProfileRepository = brandingProfileRepository;
+        this.brandingCache = brandingCache;
         this.kycRuleProvider = kycRuleProvider;
         this.localeProvider = localeProvider;
         this.capabilityGrantService = capabilityGrantService;
@@ -163,9 +166,18 @@ class WhitelabelServiceImpl implements WhitelabelApi {
 
     @Override
     public BrandingProfileView findBranding(UUID consultantId) {
-        return brandingProfileRepository.findById(consultantId)
+        // FND-07 / PRD §24.5 — read-through cache; BrandingCacheInvalidationListener
+        // evicts the entry the instant a save commits, so this never serves
+        // stale data to a Consultant reading back their own just-saved change.
+        Optional<BrandingProfileView> cached = brandingCache.get(consultantId);
+        if (cached.isPresent()) {
+            return cached.get();
+        }
+        BrandingProfileView profile = brandingProfileRepository.findById(consultantId)
             .map(WhitelabelServiceImpl::toBrandingView)
             .orElseThrow(() -> new IllegalArgumentException("No branding profile for consultant: " + consultantId));
+        brandingCache.put(consultantId, profile);
+        return profile;
     }
 
     @Override

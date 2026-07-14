@@ -42,6 +42,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -58,6 +59,9 @@ class WhitelabelServiceImplTest {
     BrandingProfileRepository brandingProfileRepository;
 
     @Mock
+    BrandingCache brandingCache;
+
+    @Mock
     CapabilityGrantService capabilityGrantService;
 
     @Mock
@@ -68,7 +72,7 @@ class WhitelabelServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new WhitelabelServiceImpl(consultantRepository, consultantUserRepository, brandingProfileRepository,
-            new MarketKycRuleProvider(), new MarketLocaleProvider(), capabilityGrantService, events);
+            brandingCache, new MarketKycRuleProvider(), new MarketLocaleProvider(), capabilityGrantService, events);
     }
 
     @AfterEach
@@ -319,6 +323,32 @@ class WhitelabelServiceImplTest {
 
         assertThatThrownBy(() -> service.findBranding(consultantId))
             .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void findBrandingPopulatesTheCacheOnAMissFND07() {
+        UUID consultantId = UUID.randomUUID();
+        BrandingProfile profile = new BrandingProfile(consultantId, "https://cdn/logo.png", null,
+            "#FFFFFF", "#000000", "#111111", "consultant.example.com");
+        when(brandingProfileRepository.findById(consultantId)).thenReturn(Optional.of(profile));
+
+        BrandingProfileView view = service.findBranding(consultantId);
+
+        verify(brandingCache).put(eq(consultantId), any());
+        assertThat(view.domain()).isEqualTo("consultant.example.com");
+    }
+
+    @Test
+    void findBrandingServesACacheHitWithoutQueryingTheRepositoryFND07() {
+        UUID consultantId = UUID.randomUUID();
+        BrandingProfileView cachedView = new BrandingProfileView(consultantId, "https://cdn/logo.png", null,
+            "#FFFFFF", "#000000", "#111111", "cached.example.com", java.time.Instant.now());
+        when(brandingCache.get(consultantId)).thenReturn(Optional.of(cachedView));
+
+        BrandingProfileView view = service.findBranding(consultantId);
+
+        assertThat(view).isEqualTo(cachedView);
+        org.mockito.Mockito.verifyNoInteractions(brandingProfileRepository);
     }
 
     @Test

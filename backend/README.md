@@ -12,7 +12,7 @@ your build environment; this scaffold was authored against a Java 21 JDK).
 | `supplier` | Supplier & Inventory Integration (Section 10) | Reference implementation (Hotelbeds stub; STUBA/TBO/others follow the same pattern) |
 | `ai` | AI Itinerary & Governance (Section 11) | Package-info stub — build next |
 | `payments` | Payments, Yield/Markup & Wallet (Section 12) | Package-info stub |
-| `whitelabel` | White-Label & Admin Console (Section 13) | Consultant onboarding + market-driven KYC (FND-04), lifecycle suspend/reinstate (FND-05), and branding config (FND-06) implemented |
+| `whitelabel` | White-Label & Admin Console (Section 13) | Consultant onboarding + market-driven KYC (FND-04), lifecycle suspend/reinstate (FND-05), branding config with a 30s-TTL cache + commit-time invalidation (FND-06/FND-07), and locale/market selection (FND-17) implemented |
 | `ads` | Ads/Campaign Management (Section 14) | Package-info stub |
 | `notification` | Notifications (Section 15) | Reference event listener implemented |
 | `compliance` | Regional Compliance & Localization (Section 17) | Package-info stub |

@@ -106,6 +106,27 @@ class WhitelabelModuleIntegrationTests {
     }
 
     @Test
+    void aSecondBrandingSaveIsVisibleOnTheNextReadWithoutWaitingForTheCacheTtlFND07() {
+        authenticateAs(Role.SUPER_ADMIN, null);
+        UUID consultantId = whitelabelApi.onboardConsultant(
+            new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x")));
+        whitelabelApi.updateBranding(new UpdateBrandingCommand(consultantId, "https://cdn/logo.png", null,
+            "#FFFFFF", "#000000", "#111111", "first.example.com"));
+        // Populate the cache with the first version, the same way a live
+        // storefront read would (FND-07's BrandingCache).
+        assertThat(whitelabelApi.findBranding(consultantId).domain()).isEqualTo("first.example.com");
+
+        // PRD §24.5 — this second save must be visible on the very next
+        // read, not after BrandingCache.TTL (30s) expires; if
+        // BrandingCacheInvalidationListener weren't evicting on commit,
+        // this assertion would still see "first.example.com" for up to 30s.
+        whitelabelApi.updateBranding(new UpdateBrandingCommand(consultantId, "https://cdn/logo.png", null,
+            "#EEEEEE", "#222222", "#333333", "second.example.com"));
+
+        assertThat(whitelabelApi.findBranding(consultantId).domain()).isEqualTo("second.example.com");
+    }
+
+    @Test
     void aConsultantPrincipalCannotUpdateBranding() {
         authenticateAs(Role.CONSULTANT);
         var command = new UpdateBrandingCommand(UUID.randomUUID(), null, null, "#FFFFFF", "#000000", "#111111", null);
