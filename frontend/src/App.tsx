@@ -41,6 +41,11 @@ const ConsultantDashboard = lazy(() =>
 const SuperAdminConsole = lazy(() =>
   import("./features/super-admin-console/SuperAdminConsole").then((m) => ({ default: m.SuperAdminConsole }))
 );
+const ConsultantOnboardingWizard = lazy(() =>
+  import("./features/consultant-onboarding/ConsultantOnboardingWizard").then((m) => ({
+    default: m.ConsultantOnboardingWizard,
+  }))
+);
 const WalletBilling = lazy(() =>
   import("./features/wallet-billing/WalletBilling").then((m) => ({ default: m.WalletBilling }))
 );
@@ -85,6 +90,7 @@ export default function App() {
         <Route path="/booking/:packageId" element={routeElement(<BookingPaymentFlow />)} />
         <Route path="/dashboard" element={routeElement(<ConsultantDashboard />)} />
         <Route path="/admin" element={routeElement(<SuperAdminConsole />)} />
+        <Route path="/admin/consultants/new" element={routeElement(<ConsultantOnboardingWizard />)} />
         <Route path="/wallet" element={routeElement(<WalletBilling />)} />
         <Route path="/campaigns/new" element={routeElement(<CampaignBuilder />)} />
         <Route path="/pnr" element={routeElement(<PnrSearch />)} />

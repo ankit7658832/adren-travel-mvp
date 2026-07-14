@@ -12,11 +12,12 @@ your build environment; this scaffold was authored against a Java 21 JDK).
 | `supplier` | Supplier & Inventory Integration (Section 10) | Reference implementation (Hotelbeds stub; STUBA/TBO/others follow the same pattern) |
 | `ai` | AI Itinerary & Governance (Section 11) | Package-info stub — build next |
 | `payments` | Payments, Yield/Markup & Wallet (Section 12) | Package-info stub |
-| `whitelabel` | White-Label & Admin Console (Section 13) | Package-info stub |
+| `whitelabel` | White-Label & Admin Console (Section 13) | Consultant onboarding + market-driven KYC implemented (FND-04); branding/lifecycle follow |
 | `ads` | Ads/Campaign Management (Section 14) | Package-info stub |
 | `notification` | Notifications (Section 15) | Reference event listener implemented |
 | `compliance` | Regional Compliance & Localization (Section 17) | Package-info stub |
-| `shared` | Shared kernel (Money, CurrencyCode) | Complete |
+| `shared` | Shared kernel (Money, CurrencyCode, PageResponse, TraceIds) | Complete |
+| `security` | AuthN/AuthZ (Section 6) | Stateless JWT + method-level @PreAuthorize implemented (FND-01/FND-02) |
 
 Each module follows the same shape:
 ```

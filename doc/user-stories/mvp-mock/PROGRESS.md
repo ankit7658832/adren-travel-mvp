@@ -10,7 +10,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **FND-01** — stand up stateless spring security with role and tenant aware principal
 - [x] **FND-02** — enforce prd 6 role matrix via method level preauthorize on module api interfaces
 - [x] **FND-03** — close tenant isolation gap on itinerary booking lookups
-- [ ] **FND-04** — super admin onboards a consultant via a market driven kyc wizard
+- [x] **FND-04** — super admin onboards a consultant via a market driven kyc wizard
 - [ ] **FND-05** — super admin manages consultant lifecycle view suspend reinstate
 - [ ] **FND-06** — configure consultant white label branding logo colors domain
 - [ ] **FND-07** — propagate branding domain changes to the live storefront without a redeploy
