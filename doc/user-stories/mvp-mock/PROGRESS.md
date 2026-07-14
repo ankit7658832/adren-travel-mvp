@@ -142,7 +142,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 
 ## Frontend Shell (10)
 
-- [ ] **FES-01** — register all prd part 21 screens as code split routes
+- [x] **FES-01** — register all prd part 21 screens as code split routes
 - [ ] **FES-02** — establish the app wide provider stack slot for theme branding context
 - [ ] **FES-03** — introduce a zustand store for the in progress itinerary builder draft
 - [ ] **FES-04** — build shared ui primitives button card textfield select
