@@ -1,7 +1,9 @@
 package com.adren.travel.booking.internal;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -11,6 +13,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -21,7 +24,14 @@ class SearchControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new SearchController(geocodeAndSearchService)).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(new SearchController(geocodeAndSearchService))
+            .setControllerAdvice(new BookingControllerAdvice())
+            .build();
+    }
+
+    @AfterEach
+    void clearMdc() {
+        MDC.clear();
     }
 
     @Test
@@ -30,6 +40,22 @@ class SearchControllerTest {
                 .contentType("application/json")
                 .content("{\"locationQueries\": []}"))
             .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void anEmptyLocationListProducesAnRfc7807ProblemDetailWithFieldErrorsAndTraceId() throws Exception {
+        MDC.put(com.adren.travel.shared.TraceIds.MDC_KEY, "trace-search-1");
+
+        mockMvc.perform(post("/api/v1/search")
+                .contentType("application/json")
+                .content("{\"locationQueries\": []}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+            .andExpect(jsonPath("$.type").value("https://docs.adren.travel/errors/validation-failed"))
+            .andExpect(jsonPath("$.title").value("Validation failed"))
+            .andExpect(jsonPath("$.status").value(400))
+            .andExpect(jsonPath("$.traceId").value("trace-search-1"))
+            .andExpect(jsonPath("$.errors[0].field").value("locationQueries"));
     }
 
     @Test

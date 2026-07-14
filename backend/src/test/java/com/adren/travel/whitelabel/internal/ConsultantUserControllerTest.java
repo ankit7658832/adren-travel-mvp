@@ -1,10 +1,13 @@
 package com.adren.travel.whitelabel.internal;
 
 import com.adren.travel.security.CapabilityGrantService.Capability;
+import com.adren.travel.shared.TraceIds;
 import com.adren.travel.whitelabel.ConsultantUserView;
 import com.adren.travel.whitelabel.WhitelabelApi;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
@@ -22,6 +25,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -34,7 +38,13 @@ class ConsultantUserControllerTest {
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(new ConsultantUserController(whitelabelApi))
             .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
+            .setControllerAdvice(new WhitelabelControllerAdvice())
             .build();
+    }
+
+    @AfterEach
+    void clearMdc() {
+        MDC.clear();
     }
 
     @Test
@@ -55,6 +65,20 @@ class ConsultantUserControllerTest {
                 .contentType("application/json")
                 .content("{\"email\": \"not-an-email\", \"displayName\": \"Staff\"}"))
             .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void anInvalidEmailProducesAnRfc7807ProblemDetailWithFieldErrorsAndTraceId() throws Exception {
+        MDC.put(TraceIds.MDC_KEY, "trace-user-1");
+
+        mockMvc.perform(post("/api/v1/users")
+                .contentType("application/json")
+                .content("{\"email\": \"not-an-email\", \"displayName\": \"Staff\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+            .andExpect(jsonPath("$.type").value("https://docs.adren.travel/errors/validation-failed"))
+            .andExpect(jsonPath("$.traceId").value("trace-user-1"))
+            .andExpect(jsonPath("$.errors[0].field").value("email"));
     }
 
     @Test
