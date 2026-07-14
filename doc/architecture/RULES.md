@@ -181,7 +181,7 @@ Every request body and non-trivial path/query parameter is validated via `jakart
 
 ## 5. Security Rules
 
-**Current state, stated plainly:** there is no authentication or authorization mechanism in the codebase at all today — no Spring Security dependency, no filter chain, no principal. This is appropriate for a pre-auth scaffold stage, but it means every rule in this section is a **build requirement**, not a tightening of something already loose. Do not let a second or third controller get built against real Consultant/traveler data before this section is addressed — a booking engine with no authorization layer is not an MVP with a gap, it's a data breach waiting for its first real tenant.
+**Current state, stated plainly (updated as of FND-01):** stateless JWT authentication is now real — `security.internal.SecurityConfig` wires a `SecurityFilterChain` (`@EnableWebSecurity`/`@EnableMethodSecurity`, stateless session policy) and `JwtAuthenticationFilter` parses a `Bearer` token into an `AdrenPrincipal` (userId/role/consultantId) via `JwtTokenService`; every endpoint except `/actuator/health`/`/actuator/info` requires it (401 via `RestAuthenticationEntryPoint` otherwise), matching this story's acceptance criteria. What's still open, tracked as follow-on stories rather than silently assumed done: method-level `@PreAuthorize` expressions enforcing the PRD §6 role matrix on `Api` interfaces (`FND-02`), and the tenant-isolation check on itinerary/booking lookups (`FND-03`) — a valid JWT today proves *who* the caller is, not yet *what* they're allowed to touch. Don't let a second/third controller ship against real Consultant/traveler data before FND-02/FND-03 land.
 
 ### 5.1 AuthN/AuthZ per the role matrix (PRD §6)
 
@@ -339,7 +339,7 @@ Copy the relevant block into a PR description, or use this as a reviewer's pass/
 Pulled together from the ⚠️ boxes above, roughly in priority order:
 
 1. Add `@Transactional` to `BookingServiceImpl.saveAsQuotation`/`confirmBooking` (§4.3) — outbox atomicity is currently unguaranteed.
-2. Stand up Spring Security + tenant-scoped authorization before any second real endpoint ships (§5.1–5.2) — no authZ exists today.
+2. ~~Stand up Spring Security~~ **Done (FND-01)** — stateless JWT authN is real. Remaining: method-level `@PreAuthorize` role-matrix enforcement (`FND-02`) and tenant-scoped authorization on lookups (`FND-03`) before a second real endpoint ships against real Consultant/traveler data (§5.1–5.2).
 3. Fix `BookingConfirmedEvent` to carry `Money` instead of decomposed `BigDecimal`+`CurrencyCode` (§2.3) — cheap now, expensive after a real listener depends on the current shape.
 4. Add correlation-ID context propagation across the `@ApplicationModuleListener` async boundary before the notification listener's real body ships (§6.1).
 5. Add an `eslint.config.js` with `jsx-a11y` — `npm run lint` currently has nothing to run (§7.3).

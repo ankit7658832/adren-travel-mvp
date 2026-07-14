@@ -50,7 +50,12 @@ dependencies {
 
     // --- Spring Modulith: modular monolith structure + event publication registry ---
     implementation("org.springframework.modulith:spring-modulith-starter-core")
-    implementation("org.springframework.modulith:spring-modulith-starter-jpa") // event publication log (outbox-style)
+    // JDBC-backed (not JPA-entity-backed) event publication registry: its
+    // schema is a plain SQL table Flyway owns (V3__init_modulith_event_publication.sql),
+    // matching RULES.md §4.2's "ddl-auto: validate, never generate schema"
+    // rule — the JPA variant has no bundled schema script and only works
+    // with a relaxed ddl-auto, which this project deliberately never allows.
+    implementation("org.springframework.modulith:spring-modulith-starter-jdbc") // event publication log (outbox-style)
     implementation("org.springframework.modulith:spring-modulith-events-api")
     implementation("org.springframework.modulith:spring-modulith-actuator")
     implementation("org.springframework.modulith:spring-modulith-observability")
@@ -64,7 +69,12 @@ dependencies {
 
     // --- Persistence ---
     runtimeOnly("org.postgresql:postgresql")
-    implementation("org.flywaydb:flyway-core")
+    // Spring Boot 4 split Flyway's Spring auto-configuration glue out of the
+    // monolithic spring-boot-autoconfigure jar into its own module (same
+    // restructuring as spring-boot-hibernate, spring-boot-jdbc, etc.) — the
+    // raw org.flywaydb:flyway-core/-database-postgresql libraries alone are
+    // NOT enough to make Spring actually run migrations on startup anymore.
+    implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.flywaydb:flyway-database-postgresql")
 
     // --- Lombok (optional, remove if the team prefers records/plain POJOs) ---
@@ -78,6 +88,11 @@ dependencies {
 
     // --- Test ---
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    // Spring Boot 4 split web MVC's test-slice support (@WebMvcTest) out of
+    // the monolithic spring-boot-test-autoconfigure jar, same restructuring
+    // as the Flyway split above — spring-boot-starter-test alone no longer
+    // pulls it in since not every project uses Spring MVC.
+    testImplementation("org.springframework.boot:spring-boot-webmvc-test")
     testImplementation("org.mockito:mockito-junit-jupiter")
     testImplementation("org.springframework.modulith:spring-modulith-starter-test")
     testImplementation("org.springframework.modulith:spring-modulith-docs")

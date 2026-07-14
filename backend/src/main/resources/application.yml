@@ -17,7 +17,10 @@ spring:
   modulith:
     events:
       jdbc-schema-initialization:
-        enabled: true
+        # Flyway (V3__init_modulith_event_publication.sql) owns this table,
+        # not Modulith's own runtime initializer — ddl-auto: validate means
+        # nothing but Flyway is allowed to create schema (RULES.md §4.2).
+        enabled: false
 
 # Groq (free-tier LLM) — MVP substitute for the AI Governance module's model
 # provider (PRD Section 11). Groq's API is OpenAI-compatible.
