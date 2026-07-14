@@ -45,6 +45,16 @@ adren:
 server:
   port: 8080
 
+# RULES.md §6.2 — JSON-structured console logs so log aggregation/search
+# (not tailing a file) is the primary debugging tool across six
+# jurisdictions. Spring Boot's built-in ECS structured formatter includes
+# every MDC entry (traceId, consultantId, currency, market) as top-level
+# fields automatically — no custom Logback encoder needed.
+logging:
+  structured:
+    format:
+      console: ecs
+
 management:
   endpoints:
     web:

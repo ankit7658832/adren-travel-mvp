@@ -2,9 +2,11 @@ package com.adren.travel.security.internal;
 
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
+import com.adren.travel.shared.LogFields;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -12,6 +14,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -24,6 +27,7 @@ class JwtAuthenticationFilterTest {
     @AfterEach
     void clearContext() {
         SecurityContextHolder.clearContext();
+        MDC.clear();
     }
 
     @Test
@@ -45,6 +49,28 @@ class JwtAuthenticationFilterTest {
             .extracting(Object::toString)
             .containsExactly("ROLE_CONSULTANT");
         verify(chain).doFilter(request, response);
+    }
+
+    @Test
+    void putsTheConsultantIdInMdcForTheDurationOfTheRequestThenClearsIt() throws Exception {
+        UUID consultantId = UUID.randomUUID();
+        AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), Role.CONSULTANT, consultantId);
+        String token = jwtTokenService.generateToken(principal);
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer " + token);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+        String[] mdcDuringChain = new String[1];
+        doAnswer(invocation -> {
+            mdcDuringChain[0] = MDC.get(LogFields.CONSULTANT_ID);
+            return null;
+        }).when(chain).doFilter(request, response);
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(mdcDuringChain[0]).isEqualTo(consultantId.toString());
+        assertThat(MDC.get(LogFields.CONSULTANT_ID)).isNull();
     }
 
     @Test

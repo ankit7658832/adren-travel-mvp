@@ -1,6 +1,7 @@
 package com.adren.travel.security.internal;
 
 import com.adren.travel.security.AdrenPrincipal;
+import com.adren.travel.shared.LogFields;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -8,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -67,12 +69,22 @@ class JwtAuthenticationFilter extends OncePerRequestFilter {
                 SecurityContext context = SecurityContextHolder.createEmptyContext();
                 context.setAuthentication(authentication);
                 SecurityContextHolder.setContext(context);
+                // RULES.md §6.2 — every log line for the rest of this request
+                // must carry consultantId; null (SUPER_ADMIN) is left unset
+                // rather than logged as the literal string "null".
+                if (principal.consultantId() != null) {
+                    MDC.put(LogFields.CONSULTANT_ID, principal.consultantId().toString());
+                }
             } catch (JwtException | IllegalArgumentException e) {
                 // Malformed/expired/tampered token — leave context empty, see class Javadoc.
                 log.debug("Rejected invalid bearer token: {}", e.getMessage());
                 SecurityContextHolder.clearContext();
             }
         }
-        filterChain.doFilter(request, response);
+        try {
+            filterChain.doFilter(request, response);
+        } finally {
+            MDC.remove(LogFields.CONSULTANT_ID);
+        }
     }
 }

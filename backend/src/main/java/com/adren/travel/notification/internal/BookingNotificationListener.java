@@ -1,6 +1,7 @@
 package com.adren.travel.notification.internal;
 
 import com.adren.travel.booking.event.BookingConfirmedEvent;
+import com.adren.travel.shared.LogFields;
 import com.adren.travel.shared.TraceIds;
 import org.slf4j.MDC;
 import org.slf4j.Logger;
@@ -37,12 +38,21 @@ class BookingNotificationListener {
 
     @ApplicationModuleListener
     void on(BookingConfirmedEvent event) {
-        // FND-21: this log line's traceId must match the request that
-        // triggered confirmBooking(), proving MdcTaskDecorator carried MDC
-        // context across the @Async executor boundary — see
-        // NotificationTraceIdPropagationTest.
-        log.info("Booking confirmed notification stub invoked, bookingId={}, traceId={}",
-            event.bookingId(), MDC.get(TraceIds.MDC_KEY));
+        // FND-24: consultantId and currency go in MDC (not just the message
+        // text) so this line is auditable as structured fields, per
+        // RULES.md §6.2 — a monetary log line is never just a bare number.
+        // putCloseable auto-removes on close, scoping these fields to this
+        // one log statement rather than leaking into whatever runs next on
+        // this (pooled) async thread.
+        try (var consultantScope = MDC.putCloseable(LogFields.CONSULTANT_ID, event.consultantId().toString());
+             var currencyScope = MDC.putCloseable(LogFields.CURRENCY, event.currency().name())) {
+            // FND-21: this log line's traceId must match the request that
+            // triggered confirmBooking(), proving MdcTaskDecorator carried MDC
+            // context across the @Async executor boundary — see
+            // NotificationTraceIdPropagationTest.
+            log.info("Booking confirmed notification stub invoked, bookingId={}, totalSellPrice={} {}, traceId={}",
+                event.bookingId(), event.totalSellPrice(), event.currency(), MDC.get(TraceIds.MDC_KEY));
+        }
         // TODO: resolve the Consultant's region-configured notification
         // channel (PRD Section 15) and publish to the SNS topic backing it
         // (LocalStack in dev/test, real SNS in production).
