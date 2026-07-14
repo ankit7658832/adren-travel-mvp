@@ -1,5 +1,6 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { Routes, Route } from "react-router-dom";
+import { RouteErrorBoundary } from "./shared/components/RouteErrorBoundary";
 
 /**
  * Route scaffold matching PRD Part 21 (Screen-by-Screen UI Specification).
@@ -66,22 +67,29 @@ function RouteLoadingFallback() {
   );
 }
 
+// One boundary instance per route (RULES.md §7.4) — a crash in one screen
+// must not take down navigation or another in-progress screen, which a
+// single shared boundary around <Routes> would not guarantee.
+function routeElement(screen: ReactNode) {
+  return <RouteErrorBoundary>{screen}</RouteErrorBoundary>;
+}
+
 export default function App() {
   return (
     <Suspense fallback={<RouteLoadingFallback />}>
       <Routes>
-        <Route path="/" element={<SearchDashboard />} />
-        <Route path="/search" element={<SearchDashboard />} />
-        <Route path="/itinerary/:id" element={<ItineraryBuilder />} />
-        <Route path="/packages/new" element={<PackageBuilder />} />
-        <Route path="/booking/:packageId" element={<BookingPaymentFlow />} />
-        <Route path="/dashboard" element={<ConsultantDashboard />} />
-        <Route path="/admin" element={<SuperAdminConsole />} />
-        <Route path="/wallet" element={<WalletBilling />} />
-        <Route path="/campaigns/new" element={<CampaignBuilder />} />
-        <Route path="/pnr" element={<PnrSearch />} />
-        <Route path="/notifications" element={<NotificationPreferences />} />
-        <Route path="/storefront" element={<ConsultantStorefront />} />
+        <Route path="/" element={routeElement(<SearchDashboard />)} />
+        <Route path="/search" element={routeElement(<SearchDashboard />)} />
+        <Route path="/itinerary/:id" element={routeElement(<ItineraryBuilder />)} />
+        <Route path="/packages/new" element={routeElement(<PackageBuilder />)} />
+        <Route path="/booking/:packageId" element={routeElement(<BookingPaymentFlow />)} />
+        <Route path="/dashboard" element={routeElement(<ConsultantDashboard />)} />
+        <Route path="/admin" element={routeElement(<SuperAdminConsole />)} />
+        <Route path="/wallet" element={routeElement(<WalletBilling />)} />
+        <Route path="/campaigns/new" element={routeElement(<CampaignBuilder />)} />
+        <Route path="/pnr" element={routeElement(<PnrSearch />)} />
+        <Route path="/notifications" element={routeElement(<NotificationPreferences />)} />
+        <Route path="/storefront" element={routeElement(<ConsultantStorefront />)} />
       </Routes>
     </Suspense>
   );
