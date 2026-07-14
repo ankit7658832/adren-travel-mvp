@@ -1,5 +1,6 @@
 package com.adren.travel.whitelabel.internal;
 
+import com.adren.travel.whitelabel.ConsultantStatus;
 import com.adren.travel.whitelabel.Market;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;

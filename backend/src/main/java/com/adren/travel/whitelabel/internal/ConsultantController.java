@@ -1,12 +1,17 @@
 package com.adren.travel.whitelabel.internal;
 
+import com.adren.travel.shared.PageResponse;
+import com.adren.travel.whitelabel.ConsultantView;
 import com.adren.travel.whitelabel.KycFieldDefinition;
 import com.adren.travel.whitelabel.Market;
 import com.adren.travel.whitelabel.OnboardConsultantCommand;
 import com.adren.travel.whitelabel.WhitelabelApi;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -43,5 +48,18 @@ class ConsultantController {
     @GetMapping("/kyc-rules")
     List<KycFieldDefinition> kycRules(@RequestParam Market market) {
         return whitelabelApi.requiredKycFieldsFor(market);
+    }
+
+    @GetMapping
+    PageResponse<ConsultantView> listConsultants(Pageable pageable) {
+        return PageResponse.of(whitelabelApi.listConsultants(pageable));
+    }
+
+    @PatchMapping("/{consultantId}/status")
+    void updateStatus(@PathVariable UUID consultantId, @Valid @RequestBody UpdateConsultantStatusRequest request) {
+        switch (request.status()) {
+            case SUSPENDED -> whitelabelApi.suspendConsultant(consultantId);
+            case ACTIVE -> whitelabelApi.reinstateConsultant(consultantId);
+        }
     }
 }

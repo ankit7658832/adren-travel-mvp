@@ -3,8 +3,10 @@ package com.adren.travel.booking.internal;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
+import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.Money;
+import com.adren.travel.whitelabel.WhitelabelApi;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -28,10 +30,13 @@ class BookingServiceImpl implements BookingApi {
 
     private final ItineraryRepository itineraryRepository;
     private final ApplicationEventPublisher events;
+    private final WhitelabelApi whitelabelApi;
 
-    BookingServiceImpl(ItineraryRepository itineraryRepository, ApplicationEventPublisher events) {
+    BookingServiceImpl(ItineraryRepository itineraryRepository, ApplicationEventPublisher events,
+                        WhitelabelApi whitelabelApi) {
         this.itineraryRepository = itineraryRepository;
         this.events = events;
+        this.whitelabelApi = whitelabelApi;
     }
 
     @Override
@@ -44,6 +49,7 @@ class BookingServiceImpl implements BookingApi {
         // itinerary_id alone is not an access-control mechanism, it's just
         // a key that's hard to guess.
         CurrentPrincipal.resolveTenantScope(itinerary.getConsultantId());
+        requireActiveUnlessSuperAdmin(itinerary.getConsultantId());
 
         itinerary.markAsQuotation();
         itineraryRepository.save(itinerary);
@@ -55,12 +61,23 @@ class BookingServiceImpl implements BookingApi {
 
     @Override
     public UUID confirmBooking(UUID quotationOrPackageId, Money totalSellPrice) {
+        AdrenPrincipal principal = CurrentPrincipal.get();
+        requireActiveUnlessSuperAdmin(principal.consultantId());
+
         UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
         UUID consultantId = UUID.randomUUID(); // resolved from the quotation/package in a full implementation
 
         events.publishEvent(new BookingConfirmedEvent(
             bookingId, consultantId, totalSellPrice.amount(), totalSellPrice.currency()));
         return bookingId;
+    }
+
+    // FND-05 — a SUSPENDED Consultant's Users can no longer search/book;
+    // SUPER_ADMIN has no consultantId and is exempt from this gate.
+    private void requireActiveUnlessSuperAdmin(UUID consultantId) {
+        if (!CurrentPrincipal.get().isSuperAdmin()) {
+            whitelabelApi.requireConsultantActive(consultantId);
+        }
     }
 
     @Override

@@ -1,19 +1,29 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.security.AdrenPrincipal;
+import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
 import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.supplier.SupplierId;
 import com.adren.travel.supplier.SupplierSearchResult;
+import com.adren.travel.whitelabel.WhitelabelApi;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -26,11 +36,30 @@ class GeocodeAndSearchServiceTest {
     @Mock
     SupplierSearchApi supplierSearchApi;
 
+    @Mock
+    WhitelabelApi whitelabelApi;
+
     GeocodeAndSearchService service;
 
     @BeforeEach
     void setUp() {
-        service = new GeocodeAndSearchService(new GeocodingService(), supplierSearchApi, new DefaultSelectionService());
+        service = new GeocodeAndSearchService(
+            new GeocodingService(), supplierSearchApi, new DefaultSelectionService(), whitelabelApi);
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    private static void authenticateAs(Role role, UUID consultantId) {
+        AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), role, consultantId);
+        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
+        var authentication = new UsernamePasswordAuthenticationToken(principal, null, authorities);
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(authentication);
+        SecurityContextHolder.setContext(securityContext);
     }
 
     @Test
@@ -51,6 +80,19 @@ class GeocodeAndSearchServiceTest {
         assertThat(result.get(1).locationCode()).isEqualTo("Antarctica");
         assertThat(result.get(1).hasInventory()).isFalse();
         assertThat(result.get(1).autoSelectedSupplierRateId()).isNull();
+    }
+
+    @Test
+    void aSuspendedConsultantsUserCannotSearchFND05() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.USER, consultantId);
+        org.mockito.Mockito.doThrow(new org.springframework.security.access.AccessDeniedException("suspended"))
+            .when(whitelabelApi).requireConsultantActive(consultantId);
+        LocalDate checkIn = LocalDate.now().plusDays(30);
+
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(
+                () -> service.geocodeAndSearch(List.of("Goa"), checkIn, checkIn.plusDays(3))))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
     }
 
     @Test

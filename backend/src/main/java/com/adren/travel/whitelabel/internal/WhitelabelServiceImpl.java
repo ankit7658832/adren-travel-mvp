@@ -4,12 +4,15 @@ import com.adren.travel.security.CapabilityGrantService;
 import com.adren.travel.security.CapabilityGrantService.Capability;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.whitelabel.AddUserCommand;
+import com.adren.travel.whitelabel.ConsultantStatus;
 import com.adren.travel.whitelabel.ConsultantUserView;
+import com.adren.travel.whitelabel.ConsultantView;
 import com.adren.travel.whitelabel.KycFieldDefinition;
 import com.adren.travel.whitelabel.Market;
 import com.adren.travel.whitelabel.OnboardConsultantCommand;
 import com.adren.travel.whitelabel.WhitelabelApi;
 import com.adren.travel.whitelabel.event.ConsultantOnboardedEvent;
+import com.adren.travel.whitelabel.event.ConsultantStatusChangedEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -98,6 +101,48 @@ class WhitelabelServiceImpl implements WhitelabelApi {
             .map(user -> new ConsultantUserView(
                 user.getUserId(), user.getEmail(), user.getDisplayName(),
                 capabilityGrantService.isGranted(user.getUserId(), Capability.CREATE_PACKAGE)));
+    }
+
+    @Override
+    public Page<ConsultantView> listConsultants(Pageable pageable) {
+        return consultantRepository.findAll(pageable).map(WhitelabelServiceImpl::toView);
+    }
+
+    @Override
+    @Transactional
+    public void suspendConsultant(UUID consultantId) {
+        Consultant consultant = findConsultantOrThrow(consultantId);
+        consultant.suspend();
+        consultantRepository.save(consultant);
+        events.publishEvent(new ConsultantStatusChangedEvent(consultantId, ConsultantStatus.SUSPENDED));
+    }
+
+    @Override
+    @Transactional
+    public void reinstateConsultant(UUID consultantId) {
+        Consultant consultant = findConsultantOrThrow(consultantId);
+        consultant.reinstate();
+        consultantRepository.save(consultant);
+        events.publishEvent(new ConsultantStatusChangedEvent(consultantId, ConsultantStatus.ACTIVE));
+    }
+
+    @Override
+    public void requireConsultantActive(UUID consultantId) {
+        Consultant consultant = findConsultantOrThrow(consultantId);
+        if (consultant.getStatus() != ConsultantStatus.ACTIVE) {
+            throw new AccessDeniedException("Consultant " + consultantId + " is " + consultant.getStatus()
+                + " and cannot search or book until reinstated");
+        }
+    }
+
+    private Consultant findConsultantOrThrow(UUID consultantId) {
+        return consultantRepository.findById(consultantId)
+            .orElseThrow(() -> new IllegalArgumentException("No such consultant: " + consultantId));
+    }
+
+    private static ConsultantView toView(Consultant consultant) {
+        return new ConsultantView(consultant.getConsultantId(), consultant.getBusinessName(),
+            consultant.getHomeMarket(), consultant.getStatus(), consultant.getCreatedAt());
     }
 
     private static boolean isBlank(String value) {

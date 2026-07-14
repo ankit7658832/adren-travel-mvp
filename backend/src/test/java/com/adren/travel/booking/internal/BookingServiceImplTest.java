@@ -6,6 +6,7 @@ import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
+import com.adren.travel.whitelabel.WhitelabelApi;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,11 +53,14 @@ class BookingServiceImplTest {
     @Mock
     ApplicationEventPublisher events;
 
+    @Mock
+    WhitelabelApi whitelabelApi;
+
     BookingServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new BookingServiceImpl(itineraryRepository, events);
+        service = new BookingServiceImpl(itineraryRepository, events, whitelabelApi);
     }
 
     @AfterEach
@@ -122,6 +126,21 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void savingAsQuotationRejectsASuspendedConsultantsUserFND05() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        org.mockito.Mockito.doThrow(new AccessDeniedException("suspended"))
+            .when(whitelabelApi).requireConsultantActive(consultantId);
+
+        assertThatThrownBy(() -> service.saveAsQuotation(itineraryId))
+            .isInstanceOf(AccessDeniedException.class);
+        assertThat(draft.getStatus()).isEqualTo(ItineraryStatus.DRAFT);
+    }
+
+    @Test
     void aSuperAdminCanSaveAnyConsultantsItineraryAsQuotation() {
         UUID itineraryId = UUID.randomUUID();
         Itinerary draft = new Itinerary(itineraryId, UUID.randomUUID(), null);
@@ -136,6 +155,7 @@ class BookingServiceImplTest {
     @Test
     void confirmBookingPublishesBookingConfirmedEventWithCorrectAmount() {
         Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
 
         service.confirmBooking(UUID.randomUUID(), price);
 
@@ -144,6 +164,29 @@ class BookingServiceImplTest {
         // any() binds to the wrong overload since BookingConfirmedEvent
         // isn't an ApplicationEvent, causing a false "not invoked" failure.
         verify(events).publishEvent(any(BookingConfirmedEvent.class));
+    }
+
+    @Test
+    void confirmBookingRejectsASuspendedConsultantsUserFND05() {
+        UUID consultantId = UUID.randomUUID();
+        Money price = new Money(BigDecimal.valueOf(1000), CurrencyCode.INR);
+        authenticateAs(Role.USER, consultantId);
+        org.mockito.Mockito.doThrow(new AccessDeniedException("suspended"))
+            .when(whitelabelApi).requireConsultantActive(consultantId);
+
+        assertThatThrownBy(() -> service.confirmBooking(UUID.randomUUID(), price))
+            .isInstanceOf(AccessDeniedException.class);
+        verify(events, org.mockito.Mockito.never()).publishEvent(any(BookingConfirmedEvent.class));
+    }
+
+    @Test
+    void confirmBookingSkipsTheActiveGateForASuperAdmin() {
+        Money price = new Money(BigDecimal.valueOf(1000), CurrencyCode.INR);
+        authenticateAs(Role.SUPER_ADMIN, null);
+
+        service.confirmBooking(UUID.randomUUID(), price);
+
+        verify(whitelabelApi, org.mockito.Mockito.never()).requireConsultantActive(any());
     }
 
     @Test

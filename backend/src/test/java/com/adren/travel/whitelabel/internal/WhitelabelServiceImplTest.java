@@ -5,10 +5,13 @@ import com.adren.travel.security.CapabilityGrantService;
 import com.adren.travel.security.CapabilityGrantService.Capability;
 import com.adren.travel.security.Role;
 import com.adren.travel.whitelabel.AddUserCommand;
+import com.adren.travel.whitelabel.ConsultantStatus;
 import com.adren.travel.whitelabel.ConsultantUserView;
+import com.adren.travel.whitelabel.ConsultantView;
 import com.adren.travel.whitelabel.Market;
 import com.adren.travel.whitelabel.OnboardConsultantCommand;
 import com.adren.travel.whitelabel.event.ConsultantOnboardedEvent;
+import com.adren.travel.whitelabel.event.ConsultantStatusChangedEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -165,6 +168,79 @@ class WhitelabelServiceImplTest {
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).canCreatePackage()).isTrue();
+    }
+
+    @Test
+    void listConsultantsReturnsAPageOfConsultantViews() {
+        Consultant consultant = new Consultant(UUID.randomUUID(), "Test Co", Market.INDIA, Map.of());
+        Page<Consultant> page = new PageImpl<>(List.of(consultant), PageRequest.of(0, 20), 1);
+        when(consultantRepository.findAll(PageRequest.of(0, 20))).thenReturn(page);
+
+        Page<ConsultantView> result = service.listConsultants(PageRequest.of(0, 20));
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).businessName()).isEqualTo("Test Co");
+        assertThat(result.getContent().get(0).status()).isEqualTo(ConsultantStatus.ACTIVE);
+    }
+
+    @Test
+    void suspendConsultantTransitionsStatusAndPublishesEvent() {
+        UUID consultantId = UUID.randomUUID();
+        Consultant consultant = new Consultant(consultantId, "Test Co", Market.INDIA, Map.of());
+        when(consultantRepository.findById(consultantId)).thenReturn(Optional.of(consultant));
+
+        service.suspendConsultant(consultantId);
+
+        assertThat(consultant.getStatus()).isEqualTo(ConsultantStatus.SUSPENDED);
+        verify(consultantRepository).save(consultant);
+        ArgumentCaptor<ConsultantStatusChangedEvent> captor = ArgumentCaptor.forClass(ConsultantStatusChangedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().consultantId()).isEqualTo(consultantId);
+        assertThat(captor.getValue().newStatus()).isEqualTo(ConsultantStatus.SUSPENDED);
+    }
+
+    @Test
+    void reinstateConsultantTransitionsStatusAndPublishesEvent() {
+        UUID consultantId = UUID.randomUUID();
+        Consultant consultant = new Consultant(consultantId, "Test Co", Market.INDIA, Map.of());
+        consultant.suspend();
+        when(consultantRepository.findById(consultantId)).thenReturn(Optional.of(consultant));
+
+        service.reinstateConsultant(consultantId);
+
+        assertThat(consultant.getStatus()).isEqualTo(ConsultantStatus.ACTIVE);
+        ArgumentCaptor<ConsultantStatusChangedEvent> captor = ArgumentCaptor.forClass(ConsultantStatusChangedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().newStatus()).isEqualTo(ConsultantStatus.ACTIVE);
+    }
+
+    @Test
+    void requireConsultantActiveIsANoOpForAnActiveConsultant() {
+        UUID consultantId = UUID.randomUUID();
+        Consultant consultant = new Consultant(consultantId, "Test Co", Market.INDIA, Map.of());
+        when(consultantRepository.findById(consultantId)).thenReturn(Optional.of(consultant));
+
+        service.requireConsultantActive(consultantId);
+    }
+
+    @Test
+    void requireConsultantActiveRejectsASuspendedConsultantFND05() {
+        UUID consultantId = UUID.randomUUID();
+        Consultant consultant = new Consultant(consultantId, "Test Co", Market.INDIA, Map.of());
+        consultant.suspend();
+        when(consultantRepository.findById(consultantId)).thenReturn(Optional.of(consultant));
+
+        assertThatThrownBy(() -> service.requireConsultantActive(consultantId))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void requireConsultantActiveRejectsAnUnknownConsultantId() {
+        UUID consultantId = UUID.randomUUID();
+        when(consultantRepository.findById(consultantId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.requireConsultantActive(consultantId))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

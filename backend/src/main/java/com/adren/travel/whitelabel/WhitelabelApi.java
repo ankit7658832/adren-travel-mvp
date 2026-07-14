@@ -47,4 +47,25 @@ public interface WhitelabelApi {
 
     @PreAuthorize("hasRole('CONSULTANT')")
     Page<ConsultantUserView> findUsersByConsultant(Pageable pageable);
+
+    /** Super Admin Console's Consultants list (PRD §21.6, FND-05), paginated per RULES.md §3.4. */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    Page<ConsultantView> listConsultants(Pageable pageable);
+
+    /** Pauses a Consultant's access (PRD §3.1) — its Users can no longer search/book until reinstated. */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    void suspendConsultant(UUID consultantId);
+
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    void reinstateConsultant(UUID consultantId);
+
+    /**
+     * The tenant-status gate `booking`'s search/booking entry points call
+     * before letting a request proceed (FND-05) — not role-restricted
+     * itself, since it's consulted mid-flow by an already-authenticated
+     * CONSULTANT/USER, not invoked directly as its own endpoint. Throws
+     * {@link org.springframework.security.access.AccessDeniedException} if
+     * the Consultant is SUSPENDED.
+     */
+    void requireConsultantActive(UUID consultantId);
 }

@@ -46,6 +46,9 @@ const ConsultantOnboardingWizard = lazy(() =>
     default: m.ConsultantOnboardingWizard,
   }))
 );
+const ConsultantList = lazy(() =>
+  import("./features/consultant-management/ConsultantList").then((m) => ({ default: m.ConsultantList }))
+);
 const UserManagement = lazy(() =>
   import("./features/user-management/UserManagement").then((m) => ({ default: m.UserManagement }))
 );
@@ -99,6 +102,7 @@ export default function App() {
         <Route path="/dashboard" element={routeElement(<ConsultantDashboard />)} />
         <Route path="/admin" element={routeElement(<SuperAdminConsole />)} />
         <Route path="/admin/consultants/new" element={routeElement(<ConsultantOnboardingWizard />)} />
+        <Route path="/admin/consultants" element={routeElement(<ConsultantList />)} />
         <Route path="/users" element={routeElement(<UserManagement />)} />
         <Route path="/admin/suppliers" element={routeElement(<SupplierCredentialManagement />)} />
         <Route path="/wallet" element={routeElement(<WalletBilling />)} />

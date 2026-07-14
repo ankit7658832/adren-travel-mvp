@@ -1,8 +1,10 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.supplier.SupplierId;
 import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.supplier.SupplierSearchResult;
+import com.adren.travel.whitelabel.WhitelabelApi;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -22,15 +24,23 @@ class GeocodeAndSearchService {
     private final GeocodingService geocodingService;
     private final SupplierSearchApi supplierSearchApi;
     private final DefaultSelectionService defaultSelectionService;
+    private final WhitelabelApi whitelabelApi;
 
     GeocodeAndSearchService(GeocodingService geocodingService, SupplierSearchApi supplierSearchApi,
-                             DefaultSelectionService defaultSelectionService) {
+                             DefaultSelectionService defaultSelectionService, WhitelabelApi whitelabelApi) {
         this.geocodingService = geocodingService;
         this.supplierSearchApi = supplierSearchApi;
         this.defaultSelectionService = defaultSelectionService;
+        this.whitelabelApi = whitelabelApi;
     }
 
     List<GeocodedLocation> geocodeAndSearch(List<String> locationQueries, LocalDate checkIn, LocalDate checkOut) {
+        // FND-05 — a SUSPENDED Consultant's Users can no longer search;
+        // SUPER_ADMIN has no consultantId and is exempt from this gate.
+        var principal = CurrentPrincipal.get();
+        if (!principal.isSuperAdmin()) {
+            whitelabelApi.requireConsultantActive(principal.consultantId());
+        }
         return locationQueries.stream()
             .map(query -> {
                 GeocodingService.GeoPoint point = geocodingService.geocode(query);
