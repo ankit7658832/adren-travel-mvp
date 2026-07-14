@@ -1,3 +1,4 @@
+
 # ADREN TRAVEL — Architecture Rules
 
 **Audience:** backend and frontend engineers, reviewers. **Status:** living document — update it in the same PR that changes a convention, not after.
@@ -282,7 +283,7 @@ No `ErrorBoundary` component exists anywhere in the codebase, and `main.tsx`'s p
 
 ### 7.5 Path alias — pick one convention
 
-`tsconfig.json` defines `"@/*": ["src/*"]`, but `vite.config.ts` has no matching `resolve.alias`, and no code uses it (`useMultiLocationSearch` is imported via `./useMultiLocationSearch`, a relative path). This is a dangling, half-configured convention — pick one and remove the other: either wire the alias into `vite.config.ts` and adopt `@/shared/...`-style imports going forward for cross-feature imports (relative imports still fine *within* a feature folder), or delete the unused `paths` entry from `tsconfig.json` so it stops looking like an adopted convention that isn't. Either is defensible; the half-configured middle state isn't.
+**Resolved.** `vite.config.ts` now has a matching `resolve.alias` for `tsconfig.json`'s `"@/*": ["src/*"]` — the design-system work (doc/DESIGN.md) adopted `@/shared/...`-style imports for cross-feature imports going forward; relative imports remain fine *within* a feature folder (e.g. `./useMultiLocationSearch`). Don't reintroduce the half-configured state by adding a second alias convention.
 
 ---
 
@@ -343,6 +344,6 @@ Pulled together from the ⚠️ boxes above, roughly in priority order:
 4. Add correlation-ID context propagation across the `@ApplicationModuleListener` async boundary before the notification listener's real body ships (§6.1).
 5. Add an `eslint.config.js` with `jsx-a11y` — `npm run lint` currently has nothing to run (§7.3).
 6. Add a root + per-route `ErrorBoundary` (§7.4) — none exists.
-7. Resolve the `@/*` path-alias half-configuration one way or the other (§7.5).
+7. ~~Resolve the `@/*` path-alias half-configuration one way or the other (§7.5).~~ Done — `resolve.alias` wired in `vite.config.ts`.
 8. Convert `findBookingsByConsultant` to `Page<UUID>` before it's wired to a controller (§3.4).
 9. Add circuit breakers to `SupplierAggregationService` (Resilience4j is not yet a dependency) — see `backend-best-practices` for the pattern; tracked here because it's also an NFR (PRD §24.2) the current bare try/catch doesn't satisfy.

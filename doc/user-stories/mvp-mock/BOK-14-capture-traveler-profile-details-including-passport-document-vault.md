@@ -4,7 +4,7 @@ epic: Booking Core
 phase: mock
 status: not-started
 story_points: 5
-dependencies: ["BOK-13"]
+dependencies: []
 labels: ["backend", "booking", "phase1"]
 prd_references: ["§20.10", "§23.1"]
 modules_or_screens: ["booking"]
@@ -27,7 +27,7 @@ The system captures each traveler's name, date of birth, and — when the trip r
 - **PRD reference(s):** §20.10 Traveler Profile; §23.1 (edge cases reference traveler data)
 - **Module(s)/Screen(s):** booking
 - **Story points:** 5 — New entity with encrypted document-vault references; the encryption mechanism itself is FND-12's KMS pattern reused, not rebuilt.
-- **Dependencies:** BOK-13
+- **Dependencies:** None — this is a self-contained entity + endpoint (`TravelerProfile`, `POST /api/v1/travelers`), independently buildable. **BOK-13 depends on this story, not the other way around**: BOK-13's traveler-detail form embeds this story's capture flow (see BOK-13's own Acceptance Criteria — "when the User reaches the traveler form, then document fields are required inline"). An earlier revision of this file listed `BOK-13` as a dependency here, which — combined with BOK-13 listing this story as one of its own dependencies — created an unresolvable two-story cycle (flagged in `doc/phases.md` §4); corrected by removing this back-edge.
 - **Testing tier(s):** unit, module (@ApplicationModuleTest)
 
 ## Sub-tasks

@@ -1,8 +1,26 @@
+/* Self-hosted fonts — doc/DESIGN.md §4 (no third-party font CDN, GDPR-safe
+   for the UK/Denmark markets). Weights used across the type scale. */
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+@import "@fontsource/noto-sans/400.css";
+@import "@fontsource/noto-sans-devanagari/400.css";
+
+@import "./shared/design-system/tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   color-scheme: light;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
 }
 
 body {
   margin: 0;
+  background-color: var(--color-neutral-50);
+  color: var(--color-neutral-900);
+  font-variant-numeric: tabular-nums;
 }

@@ -4,7 +4,7 @@ epic: Booking Core
 phase: mock
 status: not-started
 story_points: 8
-dependencies: ["BOK-12", "FIN-06", "FIN-08", "BOK-14"]
+dependencies: ["BOK-12", "FIN-06", "BOK-14"]
 labels: ["backend", "frontend", "booking", "phase1"]
 prd_references: ["§9.1", "§21.4"]
 modules_or_screens: ["booking", "payments", "Booking & Payment Flow (21.4) — NEW feature folder"]
@@ -27,7 +27,7 @@ Customers can search available trip packages or build a custom itinerary, enter 
 - **PRD reference(s):** §9.1 Flow C; §21.4 Booking & Payment Flow
 - **Module(s)/Screen(s):** booking, payments, Booking & Payment Flow (21.4) — NEW feature folder
 - **Story points:** 8 — New end-to-end screen orchestrating booking, traveler profile, and payment method selection — the largest single frontend surface in Booking Core.
-- **Dependencies:** BOK-12, FIN-06, FIN-08, BOK-14
+- **Dependencies:** BOK-12, FIN-06, BOK-14. **Not FIN-08**, despite the payment step needing to surface a credit-limit-breach block: FIN-07 (hold placement) is itself invoked from this story's `confirmBooking` flow, and FIN-08 depends on FIN-07 — so FIN-08 depending on this story too would create an unresolvable cycle (flagged in `doc/phases.md` §4, now fixed). Build order in practice: this story's `confirmBooking` scaffold lands first (wallet-hold and breach-block calls stubbed), then FIN-07 and FIN-08 are built against that scaffold and wired in as a follow-up integration, not a blocking prerequisite for starting this story.
 - **Testing tier(s):** unit, module (@ApplicationModuleTest), component test, e2e
 
 ## Sub-tasks
