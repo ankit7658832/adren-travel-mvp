@@ -2,6 +2,7 @@ package com.adren.travel.supplier.internal.hotelbeds;
 
 import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
+import com.adren.travel.supplier.SupplierId;
 import com.adren.travel.supplier.SupplierSearchResult;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -40,7 +41,7 @@ public class HotelbedsClient {
         // per the Hotelbeds field-mapping table (hotelCode, rateKey,
         // hotelName, boardName, net, cancellationPolicies[], rooms[].name).
         return List.of(new SupplierSearchResult(
-            SupplierSearchResult.SupplierId.HOTELBEDS,
+            SupplierId.HOTELBEDS,
             "stub-rate-key",
             "Stub Hotel — replace with live Hotelbeds response",
             "Deluxe Room",

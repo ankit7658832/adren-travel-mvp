@@ -3,6 +3,7 @@ package com.adren.travel.booking.internal;
 import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
 import com.adren.travel.supplier.SupplierSearchApi;
+import com.adren.travel.supplier.SupplierId;
 import com.adren.travel.supplier.SupplierSearchResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,7 +38,7 @@ class GeocodeAndSearchServiceTest {
         LocalDate checkIn = LocalDate.now().plusDays(30);
         LocalDate checkOut = checkIn.plusDays(3);
         when(supplierSearchApi.searchHotels(eq("Goa"), any(), any())).thenReturn(List.of(
-            new SupplierSearchResult(SupplierSearchResult.SupplierId.HOTELBEDS, "r1", "Hotel A", "Deluxe",
+            new SupplierSearchResult(SupplierId.HOTELBEDS, "r1", "Hotel A", "Deluxe",
                 new Money(BigDecimal.valueOf(5000), CurrencyCode.INR))));
         when(supplierSearchApi.searchHotels(eq("Antarctica"), any(), any())).thenReturn(List.of());
 

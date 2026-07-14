@@ -19,4 +19,15 @@ public interface SupplierSearchApi {
 
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     List<SupplierSearchResult> searchHotels(String locationCode, java.time.LocalDate checkIn, java.time.LocalDate checkOut);
+
+    /**
+     * Adds/rotates an Adren-owned supplier credential (PRD §21.6, §10.2) —
+     * Super Admin only per PRD §6. Never logs or returns the raw
+     * {@code secretValue} (RULES.md §5.3/§6.2).
+     */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    void updateSupplierCredential(UpdateSupplierCredentialCommand command);
+
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    List<SupplierCredentialSummary> listSupplierCredentials();
 }

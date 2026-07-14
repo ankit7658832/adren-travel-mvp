@@ -13,5 +13,4 @@ public record SupplierSearchResult(
     String roomType,
     Money netRate
 ) {
-    public enum SupplierId { HOTELBEDS, STUBA, TBO, LOCAL_DMC, BYOS }
 }

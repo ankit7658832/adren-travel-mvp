@@ -1,13 +1,18 @@
 package com.adren.travel.supplier.internal;
 
+import com.adren.travel.security.CurrentPrincipal;
+import com.adren.travel.supplier.SupplierCredentialSummary;
 import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.supplier.SupplierSearchResult;
+import com.adren.travel.supplier.UpdateSupplierCredentialCommand;
 import com.adren.travel.supplier.internal.hotelbeds.HotelbedsClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Aggregates all connected suppliers behind {@link SupplierSearchApi}.
@@ -21,12 +26,17 @@ import java.util.List;
 class SupplierAggregationService implements SupplierSearchApi {
 
     private final HotelbedsClient hotelbedsClient;
+    private final SupplierCredentialRepository credentialRepository;
+    private final SupplierCredentialAuditLogRepository auditLogRepository;
     // TODO: inject StubaClient, TboClient, LocalDmcRepository, ByosClient
     // as each is built out, following the HotelbedsClient pattern
     // (PRD Section 10.2.2 - 10.2.9).
 
-    SupplierAggregationService(HotelbedsClient hotelbedsClient) {
+    SupplierAggregationService(HotelbedsClient hotelbedsClient, SupplierCredentialRepository credentialRepository,
+                               SupplierCredentialAuditLogRepository auditLogRepository) {
         this.hotelbedsClient = hotelbedsClient;
+        this.credentialRepository = credentialRepository;
+        this.auditLogRepository = auditLogRepository;
     }
 
     @Override
@@ -41,5 +51,24 @@ class SupplierAggregationService implements SupplierSearchApi {
         // TODO: merge STUBA/TBO/Local DMC/BYOS results here, then apply the
         // deduplication + Default Selection Algorithm (PRD Section 9.2, 9.4).
         return results;
+    }
+
+    @Override
+    @Transactional
+    public void updateSupplierCredential(UpdateSupplierCredentialCommand command) {
+        UUID userId = CurrentPrincipal.get().userId();
+        SupplierCredential credential = credentialRepository.findById(command.supplierId())
+            .orElseGet(() -> new SupplierCredential(command.supplierId(), command.secretValue(), userId));
+        credential.rotate(command.secretValue(), userId);
+        credentialRepository.save(credential);
+
+        auditLogRepository.save(new SupplierCredentialAuditLog(UUID.randomUUID(), command.supplierId(), userId));
+    }
+
+    @Override
+    public List<SupplierCredentialSummary> listSupplierCredentials() {
+        return credentialRepository.findAll().stream()
+            .map(c -> new SupplierCredentialSummary(c.getSupplierId(), true, c.getLastModifiedByUserId(), c.getLastModifiedAt()))
+            .toList();
     }
 }
