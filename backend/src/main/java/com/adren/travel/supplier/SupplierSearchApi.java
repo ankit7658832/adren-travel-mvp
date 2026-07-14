@@ -1,5 +1,7 @@
 package com.adren.travel.supplier;
 
+import org.springframework.security.access.prepost.PreAuthorize;
+
 import java.util.List;
 
 /**
@@ -7,8 +9,14 @@ import java.util.List;
  * (PRD Section 10.1) into {@link SupplierSearchResult} so the Booking module
  * never needs to know which supplier a given result came from until it's
  * displayed (PRD Section 9.4 — duplicate/normalization handling).
+ * <p>
+ * PRD §6's "Search &amp; build itinerary" row is Yes/Yes/Yes across Super
+ * Admin/Consultant/User — see {@link com.adren.travel.booking.BookingApi}'s
+ * class Javadoc for why that's still an explicit {@code @PreAuthorize}
+ * rather than left unannotated.
  */
 public interface SupplierSearchApi {
 
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     List<SupplierSearchResult> searchHotels(String locationCode, java.time.LocalDate checkIn, java.time.LocalDate checkOut);
 }
