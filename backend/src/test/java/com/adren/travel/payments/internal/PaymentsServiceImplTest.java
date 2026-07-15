@@ -4,9 +4,13 @@ import com.adren.travel.payments.ApplyCurrencyBufferCommand;
 import com.adren.travel.payments.CalculateCommissionCommand;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
+import com.adren.travel.payments.CreatePaymentIntentCommand;
 import com.adren.travel.payments.FxRateSnapshot;
+import com.adren.travel.payments.HandleStripeWebhookCommand;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
+import com.adren.travel.payments.PaymentIntentStatus;
+import com.adren.travel.payments.PaymentIntentView;
 import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.SnapshotFxRateCommand;
 import com.adren.travel.payments.WalletView;
@@ -14,6 +18,7 @@ import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
+import com.adren.travel.payments.event.StripePaymentSucceededEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
@@ -24,6 +29,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -58,14 +65,20 @@ class PaymentsServiceImplTest {
     WalletRepository walletRepository;
 
     @Mock
+    PaymentIntentRepository paymentIntentRepository;
+
+    @Mock
     ApplicationEventPublisher events;
+
+    @Mock
+    StripeClient stripeClient;
 
     PaymentsServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new PaymentsServiceImpl(markupRuleRepository, walletRepository, events,
-            new PricingPipeline(markupRuleRepository, events));
+        service = new PaymentsServiceImpl(markupRuleRepository, walletRepository, paymentIntentRepository, events,
+            new PricingPipeline(markupRuleRepository, events), stripeClient);
     }
 
     @AfterEach
@@ -409,6 +422,85 @@ class PaymentsServiceImplTest {
             BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.valueOf(5));
 
         assertThatThrownBy(() -> service.calculateSellRate(command)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @ParameterizedTest
+    @EnumSource(CurrencyCode.class)
+    void createsAPaymentIntentForEachOfTheSixSettlementCurrenciesFIN11(CurrencyCode currency) {
+        UUID bookingReferenceId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money amount = new Money(BigDecimal.valueOf(1_000), currency);
+        when(stripeClient.createPaymentIntent(amount, bookingReferenceId)).thenReturn(
+            new StripePaymentIntent("pi_123", "pi_123_secret_abc", amount, PaymentIntentStatus.REQUIRES_PAYMENT_METHOD));
+
+        PaymentIntentView view = service.createPaymentIntent(
+            new CreatePaymentIntentCommand(bookingReferenceId, consultantId, amount));
+
+        assertThat(view.paymentIntentId()).isEqualTo("pi_123");
+        assertThat(view.clientSecret()).isEqualTo("pi_123_secret_abc");
+        assertThat(view.amount()).isEqualTo(amount);
+        assertThat(view.status()).isEqualTo(PaymentIntentStatus.REQUIRES_PAYMENT_METHOD);
+
+        ArgumentCaptor<PaymentIntentRecord> captor = ArgumentCaptor.forClass(PaymentIntentRecord.class);
+        verify(paymentIntentRepository).save(captor.capture());
+        assertThat(captor.getValue().getBookingReferenceId()).isEqualTo(bookingReferenceId);
+        assertThat(captor.getValue().getCurrency()).isEqualTo(currency);
+    }
+
+    @Test
+    void aConsultantCannotCreateAPaymentIntentForAnotherConsultantFIN11() {
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        var command = new CreatePaymentIntentCommand(UUID.randomUUID(), UUID.randomUUID(),
+            new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR));
+
+        assertThatThrownBy(() -> service.createPaymentIntent(command)).isInstanceOf(AccessDeniedException.class);
+        verifyNoInteractions(stripeClient);
+    }
+
+    @Test
+    void aSucceededWebhookMarksTheRecordAndPublishesStripePaymentSucceededEventFIN11() {
+        UUID bookingReferenceId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        PaymentIntentRecord record = new PaymentIntentRecord("pi_123", bookingReferenceId, consultantId,
+            BigDecimal.valueOf(1_000), CurrencyCode.INR, PaymentIntentStatus.REQUIRES_PAYMENT_METHOD);
+        when(paymentIntentRepository.findById("pi_123")).thenReturn(Optional.of(record));
+
+        service.handleStripeWebhook(new HandleStripeWebhookCommand("payment_intent.succeeded", "pi_123"));
+
+        assertThat(record.getStatus()).isEqualTo(PaymentIntentStatus.SUCCEEDED);
+        ArgumentCaptor<StripePaymentSucceededEvent> eventCaptor = ArgumentCaptor.forClass(StripePaymentSucceededEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().bookingReferenceId()).isEqualTo(bookingReferenceId);
+        assertThat(eventCaptor.getValue().consultantId()).isEqualTo(consultantId);
+    }
+
+    @Test
+    void aFailedWebhookMarksTheRecordFailedWithoutPublishingAnEventFIN11() {
+        PaymentIntentRecord record = new PaymentIntentRecord("pi_123", UUID.randomUUID(), UUID.randomUUID(),
+            BigDecimal.valueOf(1_000), CurrencyCode.INR, PaymentIntentStatus.REQUIRES_PAYMENT_METHOD);
+        when(paymentIntentRepository.findById("pi_123")).thenReturn(Optional.of(record));
+
+        service.handleStripeWebhook(new HandleStripeWebhookCommand("payment_intent.payment_failed", "pi_123"));
+
+        assertThat(record.getStatus()).isEqualTo(PaymentIntentStatus.FAILED);
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void rejectsAWebhookForAnUnknownPaymentIntentFIN11() {
+        when(paymentIntentRepository.findById("pi_unknown")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.handleStripeWebhook(
+            new HandleStripeWebhookCommand("payment_intent.succeeded", "pi_unknown")))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void ignoresAWebhookEventTypeItDoesNotActOnFIN11() {
+        service.handleStripeWebhook(new HandleStripeWebhookCommand("charge.refunded", "pi_123"));
+
+        verifyNoInteractions(paymentIntentRepository, events);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

@@ -81,4 +81,28 @@ public interface PaymentsApi {
      * shape as the steps it composes — no {@code @PreAuthorize}.
      */
     SellRateCalculation calculateSellRate(CalculateSellRateCommand command);
+
+    /**
+     * Creates a Stripe PaymentIntent for a booking (PRD §12.4, §24.4,
+     * FIN-11). {@code consultantId} is checked against the caller's own
+     * tenant via {@code CurrentPrincipal.resolveTenantScope}, matching
+     * every other tenant-scoped write. {@code USER} is included since
+     * paying for a booking is the same "make a booking" action PRD §6
+     * grants Users.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    PaymentIntentView createPaymentIntent(CreatePaymentIntentCommand command);
+
+    /**
+     * Handles a Stripe webhook event (PRD §12.4, FIN-11) — not
+     * {@code @PreAuthorize}-gated since the caller is Stripe itself, not
+     * an authenticated Adren principal (a real deployment authenticates
+     * this call via the {@code Stripe-Signature} header, verified in front
+     * of this method — see {@link HandleStripeWebhookCommand}'s Javadoc).
+     * On {@code "payment_intent.succeeded"}, publishes {@link
+     * com.adren.travel.payments.event.StripePaymentSucceededEvent}, which
+     * the Booking module listens for to gate {@code confirmBooking} on
+     * webhook receipt rather than confirming on submission alone.
+     */
+    void handleStripeWebhook(HandleStripeWebhookCommand command);
 }

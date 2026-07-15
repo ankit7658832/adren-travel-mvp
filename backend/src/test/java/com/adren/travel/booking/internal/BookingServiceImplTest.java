@@ -237,6 +237,21 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void confirmBookingFromPaymentWebhookPublishesTheEventWithoutRequiringAPrincipalFIN11() {
+        UUID consultantId = UUID.randomUUID();
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+
+        UUID bookingId = service.confirmBookingFromPaymentWebhook(UUID.randomUUID(), consultantId, price);
+
+        assertThat(bookingId).isNotNull();
+        ArgumentCaptor<BookingConfirmedEvent> captor = ArgumentCaptor.forClass(BookingConfirmedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().consultantId()).isEqualTo(consultantId);
+        assertThat(captor.getValue().totalSellPrice()).isEqualTo(price);
+        verify(whitelabelApi, org.mockito.Mockito.never()).requireConsultantActive(any());
+    }
+
+    @Test
     void findAlternatesReturnsEveryHotelOptionForTheLocationFND16() {
         authenticateAs(Role.CONSULTANT, UUID.randomUUID());
         LocalDate checkIn = LocalDate.now().plusDays(30);

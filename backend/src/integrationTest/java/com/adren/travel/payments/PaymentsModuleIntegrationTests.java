@@ -4,6 +4,7 @@ import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
+import com.adren.travel.payments.event.StripePaymentSucceededEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
@@ -208,6 +209,35 @@ class PaymentsModuleIntegrationTests {
             UUID.randomUUID(), UUID.randomUUID(), CurrencyCode.AED, CurrencyCode.INR, BigDecimal.valueOf(24.1)));
 
         assertThat(snapshot.rate()).isEqualByComparingTo("23.5");
+    }
+
+    @Test
+    void createsAPaymentIntentThenAWebhookMarksItSucceededAndPublishesTheEventFIN11(Scenario scenario) {
+        UUID bookingReferenceId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.GBP);
+
+        PaymentIntentView intent = paymentsApi.createPaymentIntent(
+            new CreatePaymentIntentCommand(bookingReferenceId, consultantId, amount));
+
+        assertThat(intent.paymentIntentId()).isNotBlank();
+        assertThat(intent.clientSecret()).isNotBlank();
+        assertThat(intent.status()).isEqualTo(PaymentIntentStatus.REQUIRES_PAYMENT_METHOD);
+
+        var webhookCommand = new HandleStripeWebhookCommand("payment_intent.succeeded", intent.paymentIntentId());
+        scenario.stimulate(() -> paymentsApi.handleStripeWebhook(webhookCommand))
+            .andWaitForEventOfType(StripePaymentSucceededEvent.class)
+            .matchingMappedValue(StripePaymentSucceededEvent::bookingReferenceId, bookingReferenceId);
+    }
+
+    @Test
+    void aUserCannotCreateAPaymentIntentForAnotherConsultantFIN11() {
+        authenticateAs(Role.USER, UUID.randomUUID());
+        var command = new CreatePaymentIntentCommand(UUID.randomUUID(), UUID.randomUUID(),
+            new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR));
+
+        assertThatThrownBy(() -> paymentsApi.createPaymentIntent(command)).isInstanceOf(AccessDeniedException.class);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

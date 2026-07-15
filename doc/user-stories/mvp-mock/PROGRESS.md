@@ -67,7 +67,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **FIN-08** — block booking confirmation on credit limit breach with an actionable message
 - [ ] **FIN-09** — build the wallet billing screen with pre payment breach warning
 - [ ] **FIN-10** — guarantee atomic idempotent wallet ledger writes
-- [ ] **FIN-11** — integrate stripe for payment collection across six settlement currencies
+- [x] **FIN-11** — integrate stripe for payment collection across six settlement currencies
 - [ ] **FIN-12** — support on account billing as a payment method
 - [ ] **FIN-13** — process refunds and credit notes tied to supplier cancellation policy
 - [ ] **FIN-14** — reuse the original fx snapshot when calculating a refund

@@ -89,9 +89,18 @@ class BookingServiceImpl implements BookingApi {
         AdrenPrincipal principal = CurrentPrincipal.get();
         requireActiveUnlessSuperAdmin(principal.consultantId());
 
-        UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
         UUID consultantId = UUID.randomUUID(); // resolved from the quotation/package in a full implementation
+        return doConfirmBooking(totalSellPrice, consultantId);
+    }
 
+    @Override
+    @Transactional
+    public UUID confirmBookingFromPaymentWebhook(UUID quotationOrPackageId, UUID consultantId, Money totalSellPrice) {
+        return doConfirmBooking(totalSellPrice, consultantId);
+    }
+
+    private UUID doConfirmBooking(Money totalSellPrice, UUID consultantId) {
+        UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
         events.publishEvent(new BookingConfirmedEvent(bookingId, consultantId, totalSellPrice));
         return bookingId;
     }
