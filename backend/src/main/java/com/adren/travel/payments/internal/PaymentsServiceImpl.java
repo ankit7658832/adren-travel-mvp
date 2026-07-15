@@ -3,12 +3,15 @@ package com.adren.travel.payments.internal;
 import com.adren.travel.payments.ApplyCurrencyBufferCommand;
 import com.adren.travel.payments.CalculateCommissionCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
+import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
 import com.adren.travel.payments.PaymentsApi;
+import com.adren.travel.payments.SnapshotFxRateCommand;
 import com.adren.travel.payments.WalletView;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
+import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.CurrentPrincipal;
@@ -18,6 +21,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -94,6 +98,15 @@ class PaymentsServiceImpl implements PaymentsApi {
         events.publishEvent(new CurrencyBufferAppliedEvent(command.bookingId(), command.consultantId(),
             command.fxConvertedBase(), bufferedAmount));
         return bufferedAmount;
+    }
+
+    @Override
+    @Transactional
+    public FxRateSnapshot snapshotFxRate(SnapshotFxRateCommand command) {
+        FxRateSnapshot snapshot = new FxRateSnapshot(command.supplierCurrency(), command.sellCurrency(),
+            command.rate(), Instant.now());
+        events.publishEvent(new FxRateSnapshotTakenEvent(command.bookingId(), command.consultantId(), snapshot));
+        return snapshot;
     }
 
     // PRD §12.1 — a percentage-based rule carries only percentageValue; a

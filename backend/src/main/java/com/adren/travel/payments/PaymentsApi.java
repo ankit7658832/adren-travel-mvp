@@ -61,4 +61,14 @@ public interface PaymentsApi {
      * {@link #calculateCommission} — no {@code @PreAuthorize}.
      */
     Money applyCurrencyBuffer(ApplyCurrencyBufferCommand command);
+
+    /**
+     * Captures and locks a booking's FX rate at quotation time (PRD §12.2,
+     * §22.4 T7, FIN-04). Same internal-pricing-pipeline-step shape as
+     * {@link #calculateCommission}/{@link #applyCurrencyBuffer} — no
+     * {@code @PreAuthorize}. The returned {@link FxRateSnapshot} is what
+     * every later calculation on this booking must reuse; nothing in this
+     * module re-fetches or recomputes it afterward.
+     */
+    FxRateSnapshot snapshotFxRate(SnapshotFxRateCommand command);
 }

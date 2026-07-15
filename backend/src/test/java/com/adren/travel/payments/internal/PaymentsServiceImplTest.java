@@ -3,11 +3,14 @@ package com.adren.travel.payments.internal;
 import com.adren.travel.payments.ApplyCurrencyBufferCommand;
 import com.adren.travel.payments.CalculateCommissionCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
+import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
+import com.adren.travel.payments.SnapshotFxRateCommand;
 import com.adren.travel.payments.WalletView;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
+import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.AdrenPrincipal;
@@ -306,6 +309,49 @@ class PaymentsServiceImplTest {
 
         assertThatThrownBy(() -> new ApplyCurrencyBufferCommand(
             UUID.randomUUID(), UUID.randomUUID(), fxConvertedBase, BigDecimal.valueOf(-1)))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void snapshotsAndLocksTheFxRateAndPublishesTheEventFIN04() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        var command = new SnapshotFxRateCommand(bookingId, consultantId, CurrencyCode.AED, CurrencyCode.INR,
+            BigDecimal.valueOf(23.5));
+
+        FxRateSnapshot snapshot = service.snapshotFxRate(command);
+
+        assertThat(snapshot.supplierCurrency()).isEqualTo(CurrencyCode.AED);
+        assertThat(snapshot.sellCurrency()).isEqualTo(CurrencyCode.INR);
+        assertThat(snapshot.rate()).isEqualByComparingTo("23.5");
+        assertThat(snapshot.snapshotAt()).isNotNull();
+
+        ArgumentCaptor<FxRateSnapshotTakenEvent> eventCaptor = ArgumentCaptor.forClass(FxRateSnapshotTakenEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().bookingId()).isEqualTo(bookingId);
+        assertThat(eventCaptor.getValue().snapshot()).isEqualTo(snapshot);
+    }
+
+    @Test
+    void aLaterMarketMovementDoesNotChangeAnAlreadyTakenSnapshotFIN04() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        FxRateSnapshot originalSnapshot = service.snapshotFxRate(new SnapshotFxRateCommand(
+            bookingId, consultantId, CurrencyCode.AED, CurrencyCode.INR, BigDecimal.valueOf(23.5)));
+
+        // Simulates the market rate moving before booking confirmation
+        // (T7) — a fresh snapshot for a DIFFERENT booking must not mutate
+        // or replace the one already taken above.
+        service.snapshotFxRate(new SnapshotFxRateCommand(
+            UUID.randomUUID(), consultantId, CurrencyCode.AED, CurrencyCode.INR, BigDecimal.valueOf(24.1)));
+
+        assertThat(originalSnapshot.rate()).isEqualByComparingTo("23.5");
+    }
+
+    @Test
+    void rejectsANonPositiveRateFIN04() {
+        assertThatThrownBy(() -> new SnapshotFxRateCommand(
+            UUID.randomUUID(), UUID.randomUUID(), CurrencyCode.AED, CurrencyCode.INR, BigDecimal.ZERO))
             .isInstanceOf(IllegalArgumentException.class);
     }
 

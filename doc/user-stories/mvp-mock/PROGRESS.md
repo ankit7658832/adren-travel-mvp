@@ -60,7 +60,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **FIN-01** — configure per consultant per category markup rules
 - [x] **FIN-02** — track adren commission separately from consultant markup
 - [x] **FIN-03** — apply a configurable currency buffer on top of markup
-- [ ] **FIN-04** — snapshot and lock the fx rate at quotation time
+- [x] **FIN-04** — snapshot and lock the fx rate at quotation time
 - [ ] **FIN-05** — calculate sell rate through the full net buffer markup commission pipeline
 - [x] **FIN-06** — model the wallet with balance credit limit and pending holds
 - [ ] **FIN-07** — place a hold on booking confirmation release or debit on final confirmation

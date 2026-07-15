@@ -2,6 +2,7 @@ package com.adren.travel.payments;
 
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
+import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.AdrenPrincipal;
@@ -184,6 +185,29 @@ class PaymentsModuleIntegrationTests {
             UUID.randomUUID(), UUID.randomUUID(), fxConvertedBase, BigDecimal.valueOf(3)));
 
         assertThat(buffered.amount()).isEqualByComparingTo("9888.00");
+    }
+
+    @Test
+    void snapshottingTheFxRatePublishesFxRateSnapshotTakenEventFIN04(Scenario scenario) {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        var command = new SnapshotFxRateCommand(bookingId, consultantId, CurrencyCode.AED, CurrencyCode.INR,
+            BigDecimal.valueOf(23.5));
+
+        scenario.stimulate(() -> paymentsApi.snapshotFxRate(command))
+            .andWaitForEventOfType(FxRateSnapshotTakenEvent.class)
+            .matchingMappedValue(FxRateSnapshotTakenEvent::bookingId, bookingId);
+    }
+
+    @Test
+    void theSnapshotIsLockedRegardlessOfLaterCallsForOtherBookingsFIN04() {
+        FxRateSnapshot snapshot = paymentsApi.snapshotFxRate(new SnapshotFxRateCommand(
+            UUID.randomUUID(), UUID.randomUUID(), CurrencyCode.AED, CurrencyCode.INR, BigDecimal.valueOf(23.5)));
+
+        paymentsApi.snapshotFxRate(new SnapshotFxRateCommand(
+            UUID.randomUUID(), UUID.randomUUID(), CurrencyCode.AED, CurrencyCode.INR, BigDecimal.valueOf(24.1)));
+
+        assertThat(snapshot.rate()).isEqualByComparingTo("23.5");
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {
