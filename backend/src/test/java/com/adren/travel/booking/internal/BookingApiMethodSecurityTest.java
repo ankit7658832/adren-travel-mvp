@@ -232,6 +232,22 @@ class BookingApiMethodSecurityTest {
         assertThat(bookingApi.convertQuotationToPackage(quotationId, sampleConvertCommand())).isNotNull();
     }
 
+    @Test
+    void allowsAConsultantPrincipalToPublishAPackageBOK12() {
+        UUID packageId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        TravelPackageRepository travelPackageRepository = context.getBean(TravelPackageRepository.class);
+        TravelPackage travelPackage = new TravelPackage(packageId, UUID.randomUUID(), consultantId, "Goa Getaway",
+            null, java.time.LocalDate.now().plusDays(30), java.time.LocalDate.now().plusDays(90),
+            java.math.BigDecimal.valueOf(11_371.20), java.math.BigDecimal.valueOf(500),
+            com.adren.travel.shared.CurrencyCode.INR, 4);
+        when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        assertThat(bookingApi.publishPackage(packageId, false)).isEqualTo(packageId);
+    }
+
     private static UUID stubQuotationAndItinerary(UUID itineraryId, UUID consultantId) {
         ItineraryRepository itineraryRepository = context.getBean(ItineraryRepository.class);
         Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);

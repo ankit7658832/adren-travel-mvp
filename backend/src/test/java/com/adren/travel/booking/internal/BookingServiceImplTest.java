@@ -9,6 +9,7 @@ import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
 import com.adren.travel.booking.event.PackageCreatedEvent;
+import com.adren.travel.booking.event.PackagePublishedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.FxRateSnapshot;
@@ -634,6 +635,80 @@ class BookingServiceImplTest {
         assertThatThrownBy(() -> service.convertQuotationToPackage(quotationId, command))
             .isInstanceOf(AccessDeniedException.class);
         verify(travelPackageRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void publishingAPackageTransitionsToPublishedAndPublishesTheEventBOK12() {
+        UUID packageId = UUID.randomUUID();
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        TravelPackage travelPackage = new TravelPackage(packageId, itineraryId, consultantId, "Goa Getaway",
+            "A relaxing beach trip", LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(11_371.20), BigDecimal.valueOf(500), CurrencyCode.INR, 4);
+        when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+
+        service.publishPackage(packageId, true);
+
+        assertThat(travelPackage.getStatus()).isEqualTo(PackageStatus.PUBLISHED);
+        assertThat(travelPackage.isPromotedViaAds()).isTrue();
+        verify(travelPackageRepository).save(travelPackage);
+
+        ArgumentCaptor<PackagePublishedEvent> captor = ArgumentCaptor.forClass(PackagePublishedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().packageId()).isEqualTo(packageId);
+        assertThat(captor.getValue().sourceItineraryId()).isEqualTo(itineraryId);
+        assertThat(captor.getValue().consultantId()).isEqualTo(consultantId);
+        assertThat(captor.getValue().promotedViaAds()).isTrue();
+    }
+
+    @Test
+    void publishingAnAlreadyPublishedPackageFailsBOK12() {
+        UUID packageId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        TravelPackage travelPackage = new TravelPackage(packageId, UUID.randomUUID(), consultantId, "Goa Getaway",
+            null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(11_371.20), BigDecimal.valueOf(500), CurrencyCode.INR, 4);
+        travelPackage.publish(false);
+        when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+
+        assertThatThrownBy(() -> service.publishPackage(packageId, true))
+            .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void aConsultantCannotPublishAnotherConsultantsPackageBOK12() {
+        UUID packageId = UUID.randomUUID();
+        UUID ownerConsultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        TravelPackage travelPackage = new TravelPackage(packageId, UUID.randomUUID(), ownerConsultantId, "Goa Getaway",
+            null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(11_371.20), BigDecimal.valueOf(500), CurrencyCode.INR, 4);
+        when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+
+        assertThatThrownBy(() -> service.publishPackage(packageId, false))
+            .isInstanceOf(AccessDeniedException.class);
+        verify(travelPackageRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void findPublishedPackagesByConsultantReturnsOnlyPublishedOnesFromTheRepositoryQueryBOK12() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        TravelPackage published = new TravelPackage(UUID.randomUUID(), UUID.randomUUID(), consultantId,
+            "Goa Getaway", null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(11_371.20), BigDecimal.valueOf(500), CurrencyCode.INR, 4);
+        published.publish(false);
+        Pageable pageable = PageRequest.of(0, 20);
+        when(travelPackageRepository.findByConsultantIdAndStatus(consultantId, PackageStatus.PUBLISHED, pageable))
+            .thenReturn(new PageImpl<>(List.of(published)));
+
+        Page<com.adren.travel.booking.PackageView> result =
+            service.findPublishedPackagesByConsultant(consultantId, pageable);
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).name()).isEqualTo("Goa Getaway");
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

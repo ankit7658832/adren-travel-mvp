@@ -4,6 +4,7 @@ import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
 import com.adren.travel.booking.event.PackageCreatedEvent;
+import com.adren.travel.booking.event.PackagePublishedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.MarkupType;
@@ -19,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.modulith.test.Scenario;
@@ -309,6 +312,38 @@ class BookingModuleIntegrationTests {
         String status = jdbcTemplate.queryForObject(
             "SELECT status FROM travel_package WHERE package_id = ?", String.class, packageId);
         assertThat(status).isEqualTo("DRAFT");
+    }
+
+    @Test
+    void publishingAPackagePublishesPackagePublishedEventBOK12(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(consultantId);
+        var createCommand = new ConvertQuotationToPackageCommand("Goa Getaway", "A relaxing beach trip",
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 4);
+        UUID packageId = bookingApi.convertQuotationToPackage(quotationId, createCommand);
+
+        scenario.stimulate(() -> bookingApi.publishPackage(packageId, true))
+            .andWaitForEventOfType(PackagePublishedEvent.class)
+            .matchingMappedValue(PackagePublishedEvent::promotedViaAds, true);
+    }
+
+    @Test
+    void aPublishedPackageBecomesVisibleToTheConsultantsUsersBOK12() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(consultantId);
+        var createCommand = new ConvertQuotationToPackageCommand("Goa Getaway", "A relaxing beach trip",
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 4);
+        UUID packageId = bookingApi.convertQuotationToPackage(quotationId, createCommand);
+
+        Page<PackageView> beforePublish = bookingApi.findPublishedPackagesByConsultant(consultantId, PageRequest.of(0, 20));
+        assertThat(beforePublish.getContent()).isEmpty();
+
+        bookingApi.publishPackage(packageId, false);
+
+        Page<PackageView> afterPublish = bookingApi.findPublishedPackagesByConsultant(consultantId, PageRequest.of(0, 20));
+        assertThat(afterPublish.getContent()).extracting(PackageView::packageId).containsExactly(packageId);
     }
 
     private UUID savedQuotationWithOneLineItem(UUID consultantId) {

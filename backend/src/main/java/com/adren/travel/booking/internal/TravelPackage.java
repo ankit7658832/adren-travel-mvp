@@ -78,6 +78,25 @@ class TravelPackage {
         this.createdAt = Instant.now();
     }
 
+    /**
+     * DRAFT → PUBLISHED (PRD §9.1 Flow B step 3, §22.3, BOK-12) — makes the
+     * package visible to the Consultant's Users. {@code promoteViaAds}
+     * records whether the Consultant opted into Meta campaign promotion
+     * (PRD §20.7's {@code promoted_via_ads}); the actual hand-off into the
+     * Ads Campaign Builder (ADS-03) is a frontend navigation concern, not
+     * modeled here. The UK ATOL disclosure gate (BOK-11) is deferred: this
+     * vertical slice has no Flight line item type yet, so {@code
+     * dynamicFlightHotelCombo} can never actually be true and a gate
+     * checking it would be unreachable, untestable code.
+     */
+    void publish(boolean promoteViaAds) {
+        if (status == PackageStatus.PUBLISHED) {
+            throw new IllegalStateException("Package " + packageId + " is already PUBLISHED");
+        }
+        this.status = PackageStatus.PUBLISHED;
+        this.promotedViaAds = promoteViaAds;
+    }
+
     UUID getPackageId() {
         return packageId;
     }
@@ -120,6 +139,14 @@ class TravelPackage {
 
     boolean isDynamicFlightHotelCombo() {
         return dynamicFlightHotelCombo;
+    }
+
+    boolean isPromotedViaAds() {
+        return promotedViaAds;
+    }
+
+    String getDescription() {
+        return description;
     }
 
     PackageStatus getStatus() {

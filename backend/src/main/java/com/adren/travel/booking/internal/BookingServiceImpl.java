@@ -5,10 +5,12 @@ import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
+import com.adren.travel.booking.PackageView;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
 import com.adren.travel.booking.event.PackageCreatedEvent;
+import com.adren.travel.booking.event.PackagePublishedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.PaymentsApi;
@@ -256,5 +258,35 @@ class BookingServiceImpl implements BookingApi {
 
         events.publishEvent(new PackageCreatedEvent(packageId, quotation.getItineraryId(), itinerary.getConsultantId()));
         return packageId;
+    }
+
+    @Override
+    @Transactional
+    public UUID publishPackage(UUID packageId, boolean promoteViaAds) {
+        TravelPackage travelPackage = travelPackageRepository.findById(packageId)
+            .orElseThrow(() -> new IllegalArgumentException("No package: " + packageId));
+        CurrentPrincipal.resolveTenantScope(travelPackage.getConsultantId());
+        requireActiveUnlessSuperAdmin(travelPackage.getConsultantId());
+
+        travelPackage.publish(promoteViaAds);
+        travelPackageRepository.save(travelPackage);
+
+        events.publishEvent(new PackagePublishedEvent(packageId, travelPackage.getSourceItineraryId(),
+            travelPackage.getConsultantId(), promoteViaAds));
+        return packageId;
+    }
+
+    @Override
+    public Page<PackageView> findPublishedPackagesByConsultant(UUID consultantId, Pageable pageable) {
+        UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(consultantId);
+        return travelPackageRepository.findByConsultantIdAndStatus(scopedConsultantId, PackageStatus.PUBLISHED, pageable)
+            .map(BookingServiceImpl::toPackageView);
+    }
+
+    private static PackageView toPackageView(TravelPackage travelPackage) {
+        return new PackageView(travelPackage.getPackageId(), travelPackage.getSourceItineraryId(),
+            travelPackage.getName(), travelPackage.getDescription(), travelPackage.getValidityStart(),
+            travelPackage.getValidityEnd(), travelPackage.getBasePrice(), travelPackage.getMarkupPrice(),
+            travelPackage.getCurrency(), travelPackage.getMaxPax(), travelPackage.isPromotedViaAds());
     }
 }

@@ -45,7 +45,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **BOK-09** — create quotation entity with fx rate validity window
 - [x] **BOK-10** — convert a quotation to a package
 - [ ] **BOK-11** — build the package builder screen with uk atol disclosure gate
-- [ ] **BOK-12** — publish a package making it visible to users
+- [x] **BOK-12** — publish a package making it visible to users (ATOL gate deferred to BOK-11/BOK-04 — see backend README)
 - [ ] **BOK-13** — build the direct booking payment flow user facing
 - [x] **BOK-14** — capture traveler profile details including passport document vault
 - [ ] **BOK-15** — generate a voucher on booking confirmation including atol certificate for uk dynamic packages
