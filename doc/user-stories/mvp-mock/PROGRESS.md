@@ -126,7 +126,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 
 ## Hardening (13)
 
-- [ ] **HRD-01** — implement notification dispatch for email plus region configurable secondary channel
+- [x] **HRD-01** — implement notification dispatch for email plus region configurable secondary channel
 - [ ] **HRD-02** — wire all prd 15 notification trigger events
 - [ ] **HRD-03** — make every notification listener idempotent
 - [ ] **HRD-04** — build the notification preferences screen
