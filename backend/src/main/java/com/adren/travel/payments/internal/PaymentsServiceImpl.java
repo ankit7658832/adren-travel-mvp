@@ -1,14 +1,17 @@
 package com.adren.travel.payments.internal;
 
+import com.adren.travel.payments.CalculateCommissionCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
 import com.adren.travel.payments.PaymentsApi;
 import com.adren.travel.payments.WalletView;
+import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.CurrencyCode;
+import com.adren.travel.shared.Money;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -71,6 +74,15 @@ class PaymentsServiceImpl implements PaymentsApi {
         walletRepository.save(wallet);
         events.publishEvent(new WalletProvisionedEvent(consultantId));
         return wallet;
+    }
+
+    @Override
+    @Transactional
+    public Money calculateCommission(CalculateCommissionCommand command) {
+        Money commissionAmount = command.netRate().percentOf(command.commissionPercent());
+        events.publishEvent(new CommissionCalculatedEvent(command.bookingId(), command.consultantId(),
+            command.netRate(), commissionAmount));
+        return commissionAmount;
     }
 
     // PRD §12.1 — a percentage-based rule carries only percentageValue; a

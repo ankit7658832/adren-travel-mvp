@@ -1,5 +1,6 @@
 package com.adren.travel.payments;
 
+import com.adren.travel.shared.Money;
 import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
@@ -41,4 +42,15 @@ public interface PaymentsApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     WalletView getWallet(UUID consultantId);
+
+    /**
+     * Calculates Adren's commission on a booking's supplier net rate,
+     * kept separate from the Consultant's own markup (PRD §12.1 Worked
+     * Example A, FIN-02). Invoked internally as part of sell-rate
+     * calculation (FIN-05), not exposed as its own user-facing REST
+     * action — no {@code @PreAuthorize} here, the same shape as
+     * {@code WhitelabelApi#requireConsultantActive}: it's consulted
+     * mid-flow by an already-authorized caller, not invoked directly.
+     */
+    Money calculateCommission(CalculateCommissionCommand command);
 }

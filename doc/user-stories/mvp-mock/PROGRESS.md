@@ -58,7 +58,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 ## Financial Layer (18)
 
 - [x] **FIN-01** — configure per consultant per category markup rules
-- [ ] **FIN-02** — track adren commission separately from consultant markup
+- [x] **FIN-02** — track adren commission separately from consultant markup
 - [ ] **FIN-03** — apply a configurable currency buffer on top of markup
 - [ ] **FIN-04** — snapshot and lock the fx rate at quotation time
 - [ ] **FIN-05** — calculate sell rate through the full net buffer markup commission pipeline

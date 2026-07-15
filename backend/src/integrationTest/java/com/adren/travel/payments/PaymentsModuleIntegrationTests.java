@@ -1,10 +1,12 @@
 package com.adren.travel.payments;
 
+import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
+import com.adren.travel.shared.Money;
 import com.adren.travel.shared.ProductCategory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -131,6 +133,34 @@ class PaymentsModuleIntegrationTests {
         WalletView wallet = paymentsApi.getWallet(consultantId);
 
         assertThat(wallet.consultantId()).isEqualTo(consultantId);
+    }
+
+    @Test
+    void calculatingCommissionPublishesCommissionCalculatedEventFIN02(Scenario scenario) {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money netRate = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        var command = new CalculateCommissionCommand(bookingId, consultantId, netRate, BigDecimal.valueOf(5));
+
+        scenario.stimulate(() -> paymentsApi.calculateCommission(command))
+            .andWaitForEventOfType(CommissionCalculatedEvent.class)
+            .matchingMappedValue(CommissionCalculatedEvent::bookingId, bookingId);
+    }
+
+    @Test
+    void commissionOnNetIsKeptSeparateFromConsultantMarkupFIN02() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money netRate = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        paymentsApi.configureMarkup(consultantId, new ConfigureMarkupCommand(
+            ProductCategory.HOTEL, MarkupType.PERCENTAGE, BigDecimal.valueOf(15), null, null));
+
+        Money commission = paymentsApi.calculateCommission(
+            new CalculateCommissionCommand(UUID.randomUUID(), consultantId, netRate, BigDecimal.valueOf(5)));
+        List<MarkupRuleView> rules = paymentsApi.findMarkupRules(consultantId);
+
+        assertThat(commission.amount()).isEqualByComparingTo("500.00");
+        assertThat(rules.get(0).percentageValue()).isEqualByComparingTo("15");
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

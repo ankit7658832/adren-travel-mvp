@@ -1,14 +1,17 @@
 package com.adren.travel.payments.internal;
 
+import com.adren.travel.payments.CalculateCommissionCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
 import com.adren.travel.payments.WalletView;
+import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
+import com.adren.travel.shared.Money;
 import com.adren.travel.shared.ProductCategory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -209,6 +212,59 @@ class PaymentsServiceImplTest {
 
         assertThatThrownBy(() -> service.getWallet(otherConsultantId))
             .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void calculatesCommissionAsAPercentageOfNetRateAndPublishesTheEventFIN02() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money netRate = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        var command = new CalculateCommissionCommand(bookingId, consultantId, netRate, BigDecimal.valueOf(5));
+
+        Money commission = service.calculateCommission(command);
+
+        assertThat(commission.amount()).isEqualByComparingTo("500.00");
+        assertThat(commission.currency()).isEqualTo(CurrencyCode.INR);
+
+        ArgumentCaptor<CommissionCalculatedEvent> eventCaptor = ArgumentCaptor.forClass(CommissionCalculatedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().bookingId()).isEqualTo(bookingId);
+        assertThat(eventCaptor.getValue().consultantId()).isEqualTo(consultantId);
+        assertThat(eventCaptor.getValue().netRate()).isEqualTo(netRate);
+        assertThat(eventCaptor.getValue().commissionAmount().amount()).isEqualByComparingTo("500.00");
+    }
+
+    @Test
+    void commissionAndMarkupAreDistinctAmountsNotNettedTogetherFIN02() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(markupRuleRepository.findByConsultantIdAndCategory(consultantId, ProductCategory.HOTEL))
+            .thenReturn(Optional.empty());
+        Money netRate = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+
+        // 15% Consultant markup, per Worked Example A.
+        service.configureMarkup(consultantId, new ConfigureMarkupCommand(
+            ProductCategory.HOTEL, MarkupType.PERCENTAGE, BigDecimal.valueOf(15), null, null));
+        // 5% Adren commission on the same net rate.
+        Money commission = service.calculateCommission(
+            new CalculateCommissionCommand(UUID.randomUUID(), consultantId, netRate, BigDecimal.valueOf(5)));
+
+        ArgumentCaptor<MarkupRule> markupCaptor = ArgumentCaptor.forClass(MarkupRule.class);
+        verify(markupRuleRepository).save(markupCaptor.capture());
+        Money markupAmount = netRate.percentOf(markupCaptor.getValue().getPercentageValue());
+
+        assertThat(markupAmount.amount()).isEqualByComparingTo("1500.00");
+        assertThat(commission.amount()).isEqualByComparingTo("500.00");
+        assertThat(markupAmount.amount()).isNotEqualByComparingTo(commission.amount());
+    }
+
+    @Test
+    void rejectsANegativeCommissionPercentFIN02() {
+        Money netRate = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+
+        assertThatThrownBy(() -> new CalculateCommissionCommand(
+            UUID.randomUUID(), UUID.randomUUID(), netRate, BigDecimal.valueOf(-1)))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

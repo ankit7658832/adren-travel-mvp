@@ -38,6 +38,16 @@ public record Money(BigDecimal amount, CurrencyCode currency) {
         return multiply(factor);
     }
 
+    /**
+     * The amount that {@code percent}% of this Money represents, e.g.
+     * {@code percentOf(5)} for a 5% Adren commission on the supplier net
+     * rate (PRD Section 12.1, FIN-02) — unlike {@link #applyMarkupPercent},
+     * this returns just the percentage slice, not the original plus it.
+     */
+    public Money percentOf(BigDecimal percent) {
+        return multiply(percent.movePointLeft(2));
+    }
+
     private void requireSameCurrency(Money other) {
         if (this.currency != other.currency) {
             throw new IllegalArgumentException(
