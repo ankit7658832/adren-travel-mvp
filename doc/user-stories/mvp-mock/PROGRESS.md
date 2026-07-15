@@ -18,7 +18,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **FND-09** — consultant manages users staff sub agents under their own account
 - [x] **FND-10** — super admin manages adren owned supplier api credentials
 - [x] **FND-11** — store adren owned supplier credentials in secrets manager not plaintext config
-- [ ] **FND-12** — store byos credentials as row level per consultant encrypted secrets
+- [x] **FND-12** — store byos credentials as row level per consultant encrypted secrets
 - [x] **FND-13** — extend search dashboard with map based multi location multi select search
 - [x] **FND-14** — implement the default selection algorithm for per location product pre selection
 - [ ] **FND-15** — surface auto selected best available match label on defaulted line items

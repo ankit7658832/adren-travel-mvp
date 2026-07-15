@@ -66,6 +66,10 @@ dependencies {
     implementation("software.amazon.awssdk:sqs")
     implementation("software.amazon.awssdk:sns")
     implementation("software.amazon.awssdk:secretsmanager")
+    // FND-12 — BYOS credential envelope encryption (KMS wraps the AES data
+    // key; the actual credential ciphertext is encrypted locally, never
+    // sent to KMS itself).
+    implementation("software.amazon.awssdk:kms")
 
     // --- Persistence ---
     runtimeOnly("org.postgresql:postgresql")

@@ -41,6 +41,11 @@ adren:
     # in production by overriding this property per environment.
     endpoint-override: http://localhost:4566
     region: ap-south-1
+    # FND-12 — the CMK BYOS credentials' data keys are wrapped with. This
+    # alias must exist in whichever KMS (LocalStack or real AWS) endpoint-override
+    # resolves to; local/dev provisioning of it is tracked as a NEEDS
+    # CLARIFICATION follow-up (docker-compose has no init step for it yet).
+    kms-key-id: ${ADREN_KMS_KEY_ID:alias/adren-byos-credentials}
 
 server:
   port: 8080
