@@ -57,6 +57,7 @@ class BookingServiceImpl implements BookingApi {
     private final HotelLineItemRepository hotelLineItemRepository;
     private final QuotationRepository quotationRepository;
     private final TravelPackageRepository travelPackageRepository;
+    private final VoucherService voucherService;
     private final ApplicationEventPublisher events;
     private final WhitelabelApi whitelabelApi;
     private final SupplierSearchApi supplierSearchApi;
@@ -64,13 +65,15 @@ class BookingServiceImpl implements BookingApi {
 
     BookingServiceImpl(ItineraryRepository itineraryRepository, TravelerProfileRepository travelerProfileRepository,
                         HotelLineItemRepository hotelLineItemRepository, QuotationRepository quotationRepository,
-                        TravelPackageRepository travelPackageRepository, ApplicationEventPublisher events,
-                        WhitelabelApi whitelabelApi, SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
+                        TravelPackageRepository travelPackageRepository, VoucherService voucherService,
+                        ApplicationEventPublisher events, WhitelabelApi whitelabelApi,
+                        SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
         this.itineraryRepository = itineraryRepository;
         this.travelerProfileRepository = travelerProfileRepository;
         this.hotelLineItemRepository = hotelLineItemRepository;
         this.quotationRepository = quotationRepository;
         this.travelPackageRepository = travelPackageRepository;
+        this.voucherService = voucherService;
         this.events = events;
         this.whitelabelApi = whitelabelApi;
         this.supplierSearchApi = supplierSearchApi;
@@ -143,6 +146,11 @@ class BookingServiceImpl implements BookingApi {
 
     private UUID doConfirmBooking(Money totalSellPrice, UUID consultantId) {
         UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
+        // BOK-15: voucher generation happens synchronously, in the SAME
+        // transactional scope as the booking confirmation itself — unlike
+        // notification (deliberately async/fire-and-forget), a voucher is
+        // part of what "confirmed" means, not a side effect of it.
+        voucherService.generateFor(bookingId);
         events.publishEvent(new BookingConfirmedEvent(bookingId, consultantId, totalSellPrice));
         return bookingId;
     }

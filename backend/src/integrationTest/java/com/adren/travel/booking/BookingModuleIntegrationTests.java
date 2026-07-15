@@ -125,6 +125,22 @@ class BookingModuleIntegrationTests {
             .matchingMappedValue(BookingConfirmedEvent::totalSellPrice, price);
     }
 
+    @Test
+    void confirmingABookingGeneratesAndPersistsAVoucherReferencingItBOK15() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(UUID.randomUUID());
+
+        UUID bookingId = bookingApi.confirmBooking(quotationId, price);
+
+        String pdfReference = jdbcTemplate.queryForObject(
+            "SELECT pdf_reference FROM voucher WHERE booking_id = ?", String.class, bookingId);
+        assertThat(pdfReference).isNotBlank();
+        String atolCertificateReference = jdbcTemplate.queryForObject(
+            "SELECT atol_certificate_reference FROM voucher WHERE booking_id = ?", String.class, bookingId);
+        assertThat(atolCertificateReference).isNull();
+    }
+
     /**
      * BOK-01's actual acceptance criterion: {@code confirmBooking}'s
      * {@code @Transactional} boundary means the JPA event publication

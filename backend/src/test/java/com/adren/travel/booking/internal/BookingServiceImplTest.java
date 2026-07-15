@@ -92,6 +92,9 @@ class BookingServiceImplTest {
     TravelPackageRepository travelPackageRepository;
 
     @Mock
+    VoucherService voucherService;
+
+    @Mock
     PaymentsApi paymentsApi;
 
     BookingServiceImpl service;
@@ -99,7 +102,8 @@ class BookingServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new BookingServiceImpl(itineraryRepository, travelerProfileRepository, hotelLineItemRepository,
-            quotationRepository, travelPackageRepository, events, whitelabelApi, supplierSearchApi, paymentsApi);
+            quotationRepository, travelPackageRepository, voucherService, events, whitelabelApi, supplierSearchApi,
+            paymentsApi);
     }
 
     // BOK-08: saveAsQuotation now requires at least one line item — stub a
@@ -349,6 +353,28 @@ class BookingServiceImplTest {
         when(itineraryRepository.findById(itineraryId)).thenReturn(
             Optional.of(new Itinerary(itineraryId, consultantId, null)));
         return quotationId;
+    }
+
+    @Test
+    void confirmBookingGeneratesAVoucherInTheSameCallAsTheBookingConfirmedEventBOK15() {
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(consultantId);
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        UUID bookingId = service.confirmBooking(quotationId, price);
+
+        verify(voucherService).generateFor(bookingId);
+    }
+
+    @Test
+    void confirmBookingFromPaymentWebhookAlsoGeneratesAVoucherBOK15() {
+        UUID consultantId = UUID.randomUUID();
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+
+        UUID bookingId = service.confirmBookingFromPaymentWebhook(UUID.randomUUID(), consultantId, price);
+
+        verify(voucherService).generateFor(bookingId);
     }
 
     @Test

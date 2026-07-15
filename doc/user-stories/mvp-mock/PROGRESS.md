@@ -48,7 +48,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **BOK-12** — publish a package making it visible to users (ATOL gate deferred to BOK-11/BOK-04 — see backend README)
 - [x] **BOK-13** — build the direct booking payment flow user facing (backend confirmBooking scaffold only — frontend screen deferred, see backend README)
 - [x] **BOK-14** — capture traveler profile details including passport document vault
-- [ ] **BOK-15** — generate a voucher on booking confirmation including atol certificate for uk dynamic packages
+- [x] **BOK-15** — generate a voucher on booking confirmation including atol certificate for uk dynamic packages (ATOL cert always null in this slice — see backend README)
 - [ ] **BOK-16** — prevent double booking of the last available inventory unit under concurrent requests
 - [ ] **BOK-17** — consolidate mixed currency line items to the consultant s sell currency at checkout
 - [ ] **BOK-18** — recalculate price when traveler count changes after quotation but before booking
