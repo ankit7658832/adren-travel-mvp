@@ -1,11 +1,13 @@
 package com.adren.travel.payments.internal;
 
+import com.adren.travel.payments.ApplyCurrencyBufferCommand;
 import com.adren.travel.payments.CalculateCommissionCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
 import com.adren.travel.payments.WalletView;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
+import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.AdrenPrincipal;
@@ -264,6 +266,46 @@ class PaymentsServiceImplTest {
 
         assertThatThrownBy(() -> new CalculateCommissionCommand(
             UUID.randomUUID(), UUID.randomUUID(), netRate, BigDecimal.valueOf(-1)))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void appliesTheCurrencyBufferToTheFxConvertedBaseAndPublishesTheEventFIN03() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        // PRD §12.1 Worked Example B: EUR 100 converted to INR 9,600.
+        Money fxConvertedBase = new Money(BigDecimal.valueOf(9_600), CurrencyCode.INR);
+        var command = new ApplyCurrencyBufferCommand(bookingId, consultantId, fxConvertedBase, BigDecimal.valueOf(3));
+
+        Money buffered = service.applyCurrencyBuffer(command);
+
+        assertThat(buffered.amount()).isEqualByComparingTo("9888.00");
+
+        ArgumentCaptor<CurrencyBufferAppliedEvent> eventCaptor = ArgumentCaptor.forClass(CurrencyBufferAppliedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().bookingId()).isEqualTo(bookingId);
+        assertThat(eventCaptor.getValue().fxConvertedBase()).isEqualTo(fxConvertedBase);
+        assertThat(eventCaptor.getValue().bufferedAmount().amount()).isEqualByComparingTo("9888.00");
+    }
+
+    @Test
+    void theBufferedAmountFeedsIntoMarkupAsTheAdjustedBaseMatchingWorkedExampleBFIN03() {
+        Money fxConvertedBase = new Money(BigDecimal.valueOf(9_600), CurrencyCode.INR);
+        Money buffered = service.applyCurrencyBuffer(new ApplyCurrencyBufferCommand(
+            UUID.randomUUID(), UUID.randomUUID(), fxConvertedBase, BigDecimal.valueOf(3)));
+
+        Money sellRate = buffered.applyMarkupPercent(BigDecimal.valueOf(15));
+
+        assertThat(buffered.amount()).isEqualByComparingTo("9888.00");
+        assertThat(sellRate.amount()).isEqualByComparingTo("11371.20");
+    }
+
+    @Test
+    void rejectsANegativeBufferPercentFIN03() {
+        Money fxConvertedBase = new Money(BigDecimal.valueOf(9_600), CurrencyCode.INR);
+
+        assertThatThrownBy(() -> new ApplyCurrencyBufferCommand(
+            UUID.randomUUID(), UUID.randomUUID(), fxConvertedBase, BigDecimal.valueOf(-1)))
             .isInstanceOf(IllegalArgumentException.class);
     }
 

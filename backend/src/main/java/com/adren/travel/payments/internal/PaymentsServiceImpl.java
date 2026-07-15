@@ -1,5 +1,6 @@
 package com.adren.travel.payments.internal;
 
+import com.adren.travel.payments.ApplyCurrencyBufferCommand;
 import com.adren.travel.payments.CalculateCommissionCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.MarkupRuleView;
@@ -7,6 +8,7 @@ import com.adren.travel.payments.MarkupType;
 import com.adren.travel.payments.PaymentsApi;
 import com.adren.travel.payments.WalletView;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
+import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.CurrentPrincipal;
@@ -83,6 +85,15 @@ class PaymentsServiceImpl implements PaymentsApi {
         events.publishEvent(new CommissionCalculatedEvent(command.bookingId(), command.consultantId(),
             command.netRate(), commissionAmount));
         return commissionAmount;
+    }
+
+    @Override
+    @Transactional
+    public Money applyCurrencyBuffer(ApplyCurrencyBufferCommand command) {
+        Money bufferedAmount = command.fxConvertedBase().applyMarkupPercent(command.bufferPercent());
+        events.publishEvent(new CurrencyBufferAppliedEvent(command.bookingId(), command.consultantId(),
+            command.fxConvertedBase(), bufferedAmount));
+        return bufferedAmount;
     }
 
     // PRD §12.1 — a percentage-based rule carries only percentageValue; a

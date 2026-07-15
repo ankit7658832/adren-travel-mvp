@@ -1,6 +1,7 @@
 package com.adren.travel.payments;
 
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
+import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.AdrenPrincipal;
@@ -161,6 +162,28 @@ class PaymentsModuleIntegrationTests {
 
         assertThat(commission.amount()).isEqualByComparingTo("500.00");
         assertThat(rules.get(0).percentageValue()).isEqualByComparingTo("15");
+    }
+
+    @Test
+    void applyingTheCurrencyBufferPublishesCurrencyBufferAppliedEventFIN03(Scenario scenario) {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money fxConvertedBase = new Money(BigDecimal.valueOf(9_600), CurrencyCode.INR);
+        var command = new ApplyCurrencyBufferCommand(bookingId, consultantId, fxConvertedBase, BigDecimal.valueOf(3));
+
+        scenario.stimulate(() -> paymentsApi.applyCurrencyBuffer(command))
+            .andWaitForEventOfType(CurrencyBufferAppliedEvent.class)
+            .matchingMappedValue(CurrencyBufferAppliedEvent::bookingId, bookingId);
+    }
+
+    @Test
+    void theBufferIsAppliedToTheFxConvertedBaseBeforeMarkupMatchingWorkedExampleBFIN03() {
+        Money fxConvertedBase = new Money(BigDecimal.valueOf(9_600), CurrencyCode.INR);
+
+        Money buffered = paymentsApi.applyCurrencyBuffer(new ApplyCurrencyBufferCommand(
+            UUID.randomUUID(), UUID.randomUUID(), fxConvertedBase, BigDecimal.valueOf(3)));
+
+        assertThat(buffered.amount()).isEqualByComparingTo("9888.00");
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

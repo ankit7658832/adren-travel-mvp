@@ -53,4 +53,12 @@ public interface PaymentsApi {
      * mid-flow by an already-authorized caller, not invoked directly.
      */
     Money calculateCommission(CalculateCommissionCommand command);
+
+    /**
+     * Applies a Consultant/market's currency buffer (2-5%) to an
+     * FX-converted base rate, before markup (PRD §12.2, §12.1 Worked
+     * Example B, FIN-03). Same internal-pricing-pipeline-step shape as
+     * {@link #calculateCommission} — no {@code @PreAuthorize}.
+     */
+    Money applyCurrencyBuffer(ApplyCurrencyBufferCommand command);
 }
