@@ -2,10 +2,12 @@ package com.adren.travel.payments.internal;
 
 import com.adren.travel.payments.ApplyCurrencyBufferCommand;
 import com.adren.travel.payments.CalculateCommissionCommand;
+import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
+import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.SnapshotFxRateCommand;
 import com.adren.travel.payments.WalletView;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
@@ -62,7 +64,8 @@ class PaymentsServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new PaymentsServiceImpl(markupRuleRepository, walletRepository, events);
+        service = new PaymentsServiceImpl(markupRuleRepository, walletRepository, events,
+            new PricingPipeline(markupRuleRepository, events));
     }
 
     @AfterEach
@@ -353,6 +356,59 @@ class PaymentsServiceImplTest {
         assertThatThrownBy(() -> new SnapshotFxRateCommand(
             UUID.randomUUID(), UUID.randomUUID(), CurrencyCode.AED, CurrencyCode.INR, BigDecimal.ZERO))
             .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void reproducesWorkedExampleAExactlySingleCurrencyNoBufferFIN05() {
+        UUID consultantId = UUID.randomUUID();
+        MarkupRule rule = new MarkupRule(UUID.randomUUID(), consultantId, ProductCategory.HOTEL,
+            MarkupType.PERCENTAGE, BigDecimal.valueOf(15), null, null);
+        when(markupRuleRepository.findByConsultantIdAndCategory(consultantId, ProductCategory.HOTEL))
+            .thenReturn(Optional.of(rule));
+        var command = new CalculateSellRateCommand(UUID.randomUUID(), consultantId, ProductCategory.HOTEL,
+            new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.valueOf(5));
+
+        SellRateCalculation result = service.calculateSellRate(command);
+
+        assertThat(result.fxConvertedBase().amount()).isEqualByComparingTo("10000.00");
+        assertThat(result.bufferedAmount().amount()).isEqualByComparingTo("10000.00");
+        assertThat(result.markupAmount().amount()).isEqualByComparingTo("1500.00");
+        assertThat(result.sellRate().amount()).isEqualByComparingTo("11500.00");
+        assertThat(result.commissionAmount().amount()).isEqualByComparingTo("500.00");
+    }
+
+    @Test
+    void reproducesWorkedExampleBExactlyFxConversionPlusBufferFIN05() {
+        UUID consultantId = UUID.randomUUID();
+        MarkupRule rule = new MarkupRule(UUID.randomUUID(), consultantId, ProductCategory.HOTEL,
+            MarkupType.PERCENTAGE, BigDecimal.valueOf(15), null, null);
+        when(markupRuleRepository.findByConsultantIdAndCategory(consultantId, ProductCategory.HOTEL))
+            .thenReturn(Optional.of(rule));
+        // EUR 100 at an illustrative rate of 1 EUR = INR 96.
+        var command = new CalculateSellRateCommand(UUID.randomUUID(), consultantId, ProductCategory.HOTEL,
+            new Money(BigDecimal.valueOf(100), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.valueOf(96), BigDecimal.valueOf(3), BigDecimal.ZERO);
+
+        SellRateCalculation result = service.calculateSellRate(command);
+
+        assertThat(result.fxConvertedBase().amount()).isEqualByComparingTo("9600.00");
+        assertThat(result.bufferedAmount().amount()).isEqualByComparingTo("9888.00");
+        assertThat(result.markupAmount().amount()).isEqualByComparingTo("1483.20");
+        assertThat(result.sellRate().amount()).isEqualByComparingTo("11371.20");
+        assertThat(result.fxRateSnapshot().rate()).isEqualByComparingTo("96");
+    }
+
+    @Test
+    void rejectsCalculatingASellRateWithNoMarkupRuleConfiguredFIN05() {
+        UUID consultantId = UUID.randomUUID();
+        when(markupRuleRepository.findByConsultantIdAndCategory(consultantId, ProductCategory.HOTEL))
+            .thenReturn(Optional.empty());
+        var command = new CalculateSellRateCommand(UUID.randomUUID(), consultantId, ProductCategory.HOTEL,
+            new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.valueOf(5));
+
+        assertThatThrownBy(() -> service.calculateSellRate(command)).isInstanceOf(IllegalStateException.class);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

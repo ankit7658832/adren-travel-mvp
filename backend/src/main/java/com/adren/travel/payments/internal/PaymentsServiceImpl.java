@@ -2,11 +2,13 @@ package com.adren.travel.payments.internal;
 
 import com.adren.travel.payments.ApplyCurrencyBufferCommand;
 import com.adren.travel.payments.CalculateCommissionCommand;
+import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
 import com.adren.travel.payments.PaymentsApi;
+import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.SnapshotFxRateCommand;
 import com.adren.travel.payments.WalletView;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
@@ -31,12 +33,14 @@ class PaymentsServiceImpl implements PaymentsApi {
     private final MarkupRuleRepository markupRuleRepository;
     private final WalletRepository walletRepository;
     private final ApplicationEventPublisher events;
+    private final PricingPipeline pricingPipeline;
 
     PaymentsServiceImpl(MarkupRuleRepository markupRuleRepository, WalletRepository walletRepository,
-                         ApplicationEventPublisher events) {
+                         ApplicationEventPublisher events, PricingPipeline pricingPipeline) {
         this.markupRuleRepository = markupRuleRepository;
         this.walletRepository = walletRepository;
         this.events = events;
+        this.pricingPipeline = pricingPipeline;
     }
 
     @Override
@@ -107,6 +111,12 @@ class PaymentsServiceImpl implements PaymentsApi {
             command.rate(), Instant.now());
         events.publishEvent(new FxRateSnapshotTakenEvent(command.bookingId(), command.consultantId(), snapshot));
         return snapshot;
+    }
+
+    @Override
+    @Transactional
+    public SellRateCalculation calculateSellRate(CalculateSellRateCommand command) {
+        return pricingPipeline.calculate(command);
     }
 
     // PRD §12.1 — a percentage-based rule carries only percentageValue; a

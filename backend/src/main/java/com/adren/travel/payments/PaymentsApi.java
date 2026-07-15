@@ -71,4 +71,14 @@ public interface PaymentsApi {
      * module re-fetches or recomputes it afterward.
      */
     FxRateSnapshot snapshotFxRate(SnapshotFxRateCommand command);
+
+    /**
+     * Runs the full net→buffer→markup→commission pipeline for one line
+     * item (PRD §12.1 Worked Examples A &amp; B, FIN-05), composing
+     * {@link #snapshotFxRate}, {@link #applyCurrencyBuffer}, the
+     * Consultant's configured markup (FIN-01), and {@link
+     * #calculateCommission} in order. Same internal-pricing-pipeline-step
+     * shape as the steps it composes — no {@code @PreAuthorize}.
+     */
+    SellRateCalculation calculateSellRate(CalculateSellRateCommand command);
 }
