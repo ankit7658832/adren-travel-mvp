@@ -3,6 +3,7 @@
 **Owner:** Design/Frontend
 **Status:** Draft for Review — see [§12 Open Decisions](#12-open-decisions-requiring-sign-off) before treating this as final.
 **Companion PRD sections:** Part 3 (Personas), §13.2 (Branding Configuration), §17 (Regional Compliance & Localization), Part 21 (Screen-by-Screen UI Spec).
+**Companion UI/UX spec:** `doc/ADREN_UIUX_SPEC.md` — the 27-screen (28 as of this reconciliation, see its §12.3) end-to-end screen spec. That document defers to this one for every color, type, spacing, and component token; it never restates a hex value or redefines a component, only references this document's tokens/specs by name and adds per-screen usage notes on top.
 **Companion code:** `frontend/src/shared/design-system/` (Layer 1 tokens + Tailwind config), `frontend/src/shared/theming/` (Layer 2 runtime injection + contrast-safety utility).
 
 ---
@@ -245,7 +246,9 @@ Tenants **cannot** override the font, on Layer 2 or anywhere else — this is ex
 | `md` | ≥768px | Sidebar collapses to icon rail; map/itinerary panels **stack** (map on top) per PRD 21.1's explicit "Map panel (left/top on mobile)" note |
 | `sm` | <768px | Single column, sidebar becomes a drawer, tables switch to stacked-card view |
 
-Degradation target is "reasonable," not "equally optimized" — PRD Part 21 doesn't ask for a mobile-first rebuild, and Consultants/Users are the primary audience for the layer where this matters (Layer 1).
+**Content grid:** 12-column grid, 1280px max content width, 24px gutters, at the `xl` design target; scales down proportionally at `lg`, collapses to a single flexible column (no fixed column count) at `md`/`sm` per the stacking behavior above. This applies on both layers — Layer 2 surfaces (storefront, quotation/voucher) inherit the same grid, since grid/column structure is one of the fixed-regardless-of-tenant elements listed in §3.1.
+
+Degradation target is "reasonable," not "equally optimized" — PRD Part 21 doesn't ask for a mobile-first rebuild, and Consultants/Users are the primary audience for the layer where this matters (Layer 1). The exception: traveler-facing surfaces (Booking & Payment output, Booking Confirmation, Consultant Storefront/Quotation/Voucher — §10) must be fully usable at `sm`, since the End Traveler may open a voucher/quotation link on a phone.
 
 ---
 
@@ -324,7 +327,24 @@ Fixed timing tokens, identical on both layers (motion is not a tenant-customizab
 | 21.9 | PNR/Booking Search | **1** | |
 | 21.10 | Notification Preferences | **1** | |
 
-**Gap found while writing this document, flagged for PM/PRD follow-up (see §12):** Part 21 has no dedicated screen spec for the actual **Consultant storefront / quotation / voucher page** — the Layer 2 surface the End Traveler (persona 3.4) receives "via the Consultant's domain." §13.2's branding fields and persona 3.4 both clearly require this surface to exist, but it isn't one of the 10 numbered screens. The implementation below includes a placeholder `ConsultantStorefront` screen built from this document's §3 architecture, but its actual content/layout beyond the themed header+hero should be treated as provisional until Part 21 gets an addition for it.
+### 10.1 The 17 gap-filled screens + SCR-25 (`doc/ADREN_UIUX_SPEC.md` §1)
+
+PRD Part 21 specified 10 screens; `doc/ADREN_UIUX_SPEC.md` fills 18 more (17 identified when that document was first written, plus SCR-25 added by this reconciliation — see §12 item 4). Extending this table's Layer determination to all of them:
+
+| SCR-ID | Screen | Layer | Notes |
+|---|---|---|---|
+| SCR-00 | Login | **1** | No Consultant/tenant is identified yet at login time — there is nothing to theme. Full Layer 1, same reasoning as every other pre-tenant-context screen. |
+| SCR-00b | Forgot/Reset Password | **1** | Same reasoning as SCR-00 — pre-tenant-context. |
+| SCR-03 | Alternate-Selection Panel | **1** | Sub-component of Itinerary Builder (21.2 above); Radix Dialog/Sheet, Layer 1 styled — already implied by the 21.2 row, listed here explicitly since it carries its own SCR-ID in the UI/UX spec. |
+| SCR-04–SCR-08 | Product List pages (Hotel/Flight/Transfer/Cruise/Activity) | **1** | Reached only from the Consultant/User's internal search → itinerary workflow (Search Dashboard 21.1 → Itinerary Builder 21.2 → "Change" → this list, or the standalone list/detail browse path used when building a Quotation). Per PRD persona 3.4, the End Traveler does not log in and does not search during MVP — they only *receive* a finished itinerary/quotation/voucher via the Consultant's domain. No PRD text or UI/UX flow ever routes an End Traveler into a product list/search independently. **Determination: never End-Traveler-facing.** This is an interpretation of persona 3.4's wording, not a sentence PRD Part 21 states outright — flagged as an assumption in §12 item 7 for explicit confirmation. |
+| SCR-09–SCR-13 | Product Detail pages (Hotel/Flight/Transfer/Cruise/Activity) | **1** | Same reasoning and same determination as the List pages above — reached only via the internal List → Detail → "Add to Itinerary" path. |
+| SCR-14 | Pax/Traveler Details | **1** | Internal booking-flow step. Per PRD §21.4, the traveler-detail form is filled by the Consultant's User on behalf of the traveler — consistent with the 21.4 row's reasoning above. |
+| SCR-15 | Rate Check / Re-validation | **1** | Same reasoning as SCR-14 — an internal pre-payment safety step operated by the Consultant's User, not the traveler. |
+| SCR-16 | Global Error Modal | **1** | Per this document's own Modal spec (§7): modals are **always Layer 1 styled, regardless of trigger context**, including when triggered from inside a Layer 2 page. Stated explicitly here for consistency with that existing rule — not a new decision, just this table catching up to §7. |
+| SCR-17 | Booking Confirmation | **Mixed** | Same reasoning already applied to the Booking & Payment Flow (21.4) above: themed header/logo (Layer 2, since the End Traveler views this on the Consultant's domain) around fixed-styled (Layer 1) voucher/price/summary content. |
+| SCR-25 | Consultant Storefront / Quotation & Voucher | **Mixed** | New screen, added by this reconciliation (see §12 item 4 and `doc/ADREN_UIUX_SPEC.md` §12.3). Same Mixed pattern as SCR-17: themed header/hero (§3.4/§3.5) wrapping fixed-styled (Card spec, §7) itinerary/price content. Replaces the provisional placeholder previously referenced in §13. |
+
+**Resolved (was a gap):** an earlier draft of this document flagged that Part 21 has no dedicated Consultant storefront/quotation/voucher screen. That gap is now closed — see SCR-25 above and its full spec in `doc/ADREN_UIUX_SPEC.md` §12.3. Whether SCR-25 and SCR-17 (Booking Confirmation) should actually be the same screen with two entry contexts, rather than two separate screens, is a related open question — see §12 item 8.
 
 ---
 
@@ -345,9 +365,11 @@ These are called out explicitly rather than decided silently:
 1. **Dark mode is out of scope for MVP** (§2.4). Low risk, but it's a scope call — confirm before anyone assumes it's coming later "for free."
 2. **Tenant theming is read strictly as PRD §13.2's literal four fields** (logo, background, two text colors, domain) — Consultants do **not** get a brand/accent color for buttons/CTAs on their storefront; those stay Adren purple (§3.1, §7). This is the interpretation this whole architecture is built on. If the actual product intent is broader ("Consultants should feel like it's *their* site," not just their logo+photo+two text colors on an Adren-purple site), that's a materially bigger theming surface and changes §3's token set — needs explicit confirmation before more Layer 2 UI is built on the narrow reading.
 3. **Contrast-safety cannot be mathematically guaranteed for 100% of arbitrary uploads** — specifically, high-internal-variance images within the sampled text zone (§3.3's flagged limitation). Mitigation (scrim + fallback-chain + visual live-preview backstop) is practical, not absolute. Worth deciding whether that residual risk is acceptable for MVP or whether a stronger (and more expensive — real segmentation/OCR-region analysis) approach is required before GA.
-4. **Part 21 has no dedicated Consultant storefront/quotation/voucher screen spec** (§10) — the implementation below includes a provisional placeholder; the real screen spec needs a PRD addition and design pass beyond what this document infers.
+4. **[RESOLVED]** Part 21 had no dedicated Consultant storefront/quotation/voucher screen spec. It now does: `doc/ADREN_UIUX_SPEC.md` §12.3, SCR-25, added by the DESIGN.md/UIUX_SPEC.md reconciliation that also produced items 7 and 8 below. §10's table above reflects it.
 5. **Hindi/regional-language UI scope is ambiguous in PRD §13.3** ("English + Hindi/regional consideration"). This document treats it as font-fallback-ready (Noto Sans Devanagari included, §4) but does **not** implement actual string translation/i18n infrastructure in MVP — confirm whether that's correct or whether i18n needs to be pulled into this MVP window.
 6. **No RTL requirement currently modeled.** None of the six listed markets (India, Australia, UK, USA, Dubai/UAE, Denmark — PRD header) require an RTL UI language in-scope (Dubai's listed currency is AED but the language isn't specified as Arabic-UI in §13.3, which says expansion markets are "English-primary"). If Arabic UI is ever required for the Dubai market, RTL layout mirroring is a separate, larger effort not covered by this document — flagging now so it isn't assumed to be a small follow-on.
+7. **Are the 5 product Detail pages (and 5 List pages) ever End-Traveler-facing?** §10.1's extended table above answers **no** — they're reached only through the Consultant/User's internal search/build workflow, based on PRD persona 3.4 ("does not log in... receives itineraries/vouchers via Consultant's domain"). That's an interpretation of a persona description, not an explicit PRD sentence ruling out a future self-service traveler search/browse flow. If product scope ever intends End Travelers to browse live inventory themselves (not just receive a finished quotation), these 10 screens would need Layer 2 treatment and the full §3 contrast-safety pipeline would need to extend to them — confirm the "no" before it becomes load-bearing for more Layer 2 UI built on top of it.
+8. **Should SCR-25 (Consultant Storefront/Quotation/Voucher) and SCR-17 (Booking Confirmation) be one screen with two entry contexts, or stay separate?** They're structurally identical in the Mixed-layer sense (themed chrome, fixed-content body per the Card spec, §7) and SCR-25's Voucher state is content-wise nearly a duplicate of SCR-17 — the real difference is *how* the traveler arrives: an immediate post-payment success screen vs. a persistent shareable link opened later, possibly from email/WhatsApp on a different device/session. **Recommendation: keep them separate.** SCR-17 is a *transient* success state tied to one payment transaction (checkmark/success framing, an in-app routing target reached right after "Confirm & Pay"); SCR-25 is a *durable* linkable document that must render correctly cold, with no prior app state, days later, on a different device. Collapsing them risks either SCR-17's success framing leaking into a link opened three days later, or SCR-25's document-first framing losing the immediate-payoff moment right after paying. This is a recommendation, not a decision — confirm before both get built.
 
 ---
 
@@ -362,5 +384,5 @@ These are called out explicitly rather than decided silently:
 - `frontend/src/shared/theming/TenantThemedSurface.tsx` — runtime Layer 2 CSS-custom-property injection onto a scoped wrapper element.
 - `frontend/src/shared/providers/AppProviders.tsx` — FES-02's provider-stack slot (currently empty; theming doesn't occupy it, see above).
 - `frontend/src/features/search-dashboard/` — restyled with Layer 1 tokens as the living reference.
-- `frontend/src/features/consultant-storefront/` — placeholder Layer 2 screen demonstrating the contrast-safety algorithm against a sample uploaded background/color (see §12 item 4 for its provisional status).
+- `frontend/src/features/consultant-storefront/` — implements SCR-25 (`doc/ADREN_UIUX_SPEC.md` §12.3), the Consultant Storefront/Quotation & Voucher screen, built on this document's §3 Layer 2 architecture. No longer provisional — see §12 item 4.
 - `.claude/skills/frontend-design-system/SKILL.md` — actionable Layer 1/Layer 2 rules distilled from this document.
