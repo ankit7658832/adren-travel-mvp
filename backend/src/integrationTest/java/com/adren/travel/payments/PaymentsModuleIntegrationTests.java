@@ -5,6 +5,9 @@ import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.StripePaymentSucceededEvent;
+import com.adren.travel.payments.event.WalletHoldDebitedEvent;
+import com.adren.travel.payments.event.WalletHoldPlacedEvent;
+import com.adren.travel.payments.event.WalletHoldReleasedEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
@@ -238,6 +241,97 @@ class PaymentsModuleIntegrationTests {
             new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR));
 
         assertThatThrownBy(() -> paymentsApi.createPaymentIntent(command)).isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void placingAHoldPublishesWalletHoldPlacedEventFIN07(Scenario scenario) {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+
+        scenario.stimulate(() -> paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount)))
+            .andWaitForEventOfType(WalletHoldPlacedEvent.class)
+            .matchingMappedValue(WalletHoldPlacedEvent::bookingId, bookingId);
+    }
+
+    @Test
+    void resolvingAHoldAsDebitPublishesWalletHoldDebitedEventFIN07(Scenario scenario) {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        scenario.stimulate(() -> paymentsApi.resolveHoldAsDebit(new WalletHoldCommand(bookingId, consultantId, amount)))
+            .andWaitForEventOfType(WalletHoldDebitedEvent.class)
+            .matchingMappedValue(WalletHoldDebitedEvent::bookingId, bookingId);
+    }
+
+    @Test
+    void resolvingAHoldAsAReleasePublishesWalletHoldReleasedEventFIN07(Scenario scenario) {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
+        paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        scenario.stimulate(() -> paymentsApi.resolveHoldAsRelease(new WalletHoldCommand(bookingId, consultantId, amount)))
+            .andWaitForEventOfType(WalletHoldReleasedEvent.class)
+            .matchingMappedValue(WalletHoldReleasedEvent::bookingId, bookingId);
+    }
+
+    // Deliberately no Scenario/stimulate here (unlike the two tests above):
+    // an immediate read-back after scenario.stimulate() isn't guaranteed to
+    // see the underlying entity write in this same test method (confirmed
+    // earlier in this project via direct Postgres inspection) — direct
+    // calls avoid that flakiness entirely.
+    @Test
+    void theFullHoldThenDebitLifecycleUpdatesTheWalletCorrectlyFIN07() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+
+        paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+        WalletView afterHold = paymentsApi.getWallet(consultantId);
+        assertThat(afterHold.pendingHolds()).isEqualByComparingTo("11500");
+        assertThat(afterHold.availableBalance()).isEqualByComparingTo("0");
+
+        paymentsApi.resolveHoldAsDebit(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        WalletView afterDebit = paymentsApi.getWallet(consultantId);
+        assertThat(afterDebit.pendingHolds()).isEqualByComparingTo("0");
+        assertThat(afterDebit.availableBalance()).isEqualByComparingTo("-11500");
+    }
+
+    @Test
+    void resolvingAHoldAsAReleaseLeavesAvailableBalanceUntouchedFIN07() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
+        paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        paymentsApi.resolveHoldAsRelease(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        WalletView afterRelease = paymentsApi.getWallet(consultantId);
+        assertThat(afterRelease.pendingHolds()).isEqualByComparingTo("0");
+        assertThat(afterRelease.availableBalance()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void retryingAPlaceHoldForTheSameBookingIsANoOpFIN10() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
+
+        paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+        paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount)); // simulated retry
+
+        WalletView wallet = paymentsApi.getWallet(consultantId);
+        assertThat(wallet.pendingHolds()).isEqualByComparingTo("500");
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

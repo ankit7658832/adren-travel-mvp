@@ -14,12 +14,16 @@ import com.adren.travel.payments.PaymentIntentView;
 import com.adren.travel.payments.PaymentsApi;
 import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.SnapshotFxRateCommand;
+import com.adren.travel.payments.WalletHoldCommand;
 import com.adren.travel.payments.WalletView;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.StripePaymentSucceededEvent;
+import com.adren.travel.payments.event.WalletHoldDebitedEvent;
+import com.adren.travel.payments.event.WalletHoldPlacedEvent;
+import com.adren.travel.payments.event.WalletHoldReleasedEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.CurrencyCode;
@@ -38,16 +42,22 @@ class PaymentsServiceImpl implements PaymentsApi {
     private final MarkupRuleRepository markupRuleRepository;
     private final WalletRepository walletRepository;
     private final PaymentIntentRepository paymentIntentRepository;
+    private final WalletLedgerEntryRepository walletLedgerEntryRepository;
+    private final WalletLedgerEntryRecorder walletLedgerEntryRecorder;
     private final ApplicationEventPublisher events;
     private final PricingPipeline pricingPipeline;
     private final StripeClient stripeClient;
 
     PaymentsServiceImpl(MarkupRuleRepository markupRuleRepository, WalletRepository walletRepository,
-                         PaymentIntentRepository paymentIntentRepository, ApplicationEventPublisher events,
+                         PaymentIntentRepository paymentIntentRepository,
+                         WalletLedgerEntryRepository walletLedgerEntryRepository,
+                         WalletLedgerEntryRecorder walletLedgerEntryRecorder, ApplicationEventPublisher events,
                          PricingPipeline pricingPipeline, StripeClient stripeClient) {
         this.markupRuleRepository = markupRuleRepository;
         this.walletRepository = walletRepository;
         this.paymentIntentRepository = paymentIntentRepository;
+        this.walletLedgerEntryRepository = walletLedgerEntryRepository;
+        this.walletLedgerEntryRecorder = walletLedgerEntryRecorder;
         this.events = events;
         this.pricingPipeline = pricingPipeline;
         this.stripeClient = stripeClient;
@@ -160,6 +170,74 @@ class PaymentsServiceImpl implements PaymentsApi {
             record.markAs(PaymentIntentStatus.FAILED);
             paymentIntentRepository.save(record);
         }
+    }
+
+    @Override
+    @Transactional
+    public void placeHold(WalletHoldCommand command) {
+        if (walletLedgerEntryRepository.existsByRelatedBookingIdAndType(command.bookingId(), LedgerEntryType.HOLD)) {
+            return; // FIN-10: already recorded — idempotent no-op on a sequential retry.
+        }
+
+        Wallet wallet = walletRepository.findById(command.consultantId())
+            .orElseGet(() -> provisionWallet(command.consultantId()));
+        wallet.placeHold(command.amount().amount());
+
+        if (!tryRecordAndApply(command, LedgerEntryType.HOLD, wallet)) {
+            return; // FIN-10: lost a concurrent race — the other writer already recorded this hold.
+        }
+
+        events.publishEvent(new WalletHoldPlacedEvent(command.bookingId(), command.consultantId(), command.amount()));
+    }
+
+    @Override
+    @Transactional
+    public void resolveHoldAsDebit(WalletHoldCommand command) {
+        if (walletLedgerEntryRepository.existsByRelatedBookingIdAndType(command.bookingId(), LedgerEntryType.DEBIT)) {
+            return;
+        }
+
+        Wallet wallet = walletRepository.findById(command.consultantId())
+            .orElseThrow(() -> new IllegalStateException("No wallet for consultant: " + command.consultantId()));
+        wallet.resolveHoldAsDebit(command.amount().amount());
+
+        if (!tryRecordAndApply(command, LedgerEntryType.DEBIT, wallet)) {
+            return;
+        }
+
+        events.publishEvent(new WalletHoldDebitedEvent(command.bookingId(), command.consultantId(), command.amount()));
+    }
+
+    @Override
+    @Transactional
+    public void resolveHoldAsRelease(WalletHoldCommand command) {
+        if (walletLedgerEntryRepository.existsByRelatedBookingIdAndType(command.bookingId(), LedgerEntryType.RELEASE)) {
+            return;
+        }
+
+        Wallet wallet = walletRepository.findById(command.consultantId())
+            .orElseThrow(() -> new IllegalStateException("No wallet for consultant: " + command.consultantId()));
+        wallet.resolveHoldAsRelease(command.amount().amount());
+
+        if (!tryRecordAndApply(command, LedgerEntryType.RELEASE, wallet)) {
+            return;
+        }
+
+        events.publishEvent(new WalletHoldReleasedEvent(command.bookingId(), command.consultantId(), command.amount()));
+    }
+
+    // FIN-10: the ledger insert is attempted (and, on a unique-constraint
+    // conflict, safely rejected) BEFORE the wallet mutation is persisted —
+    // if we lose a concurrent race, the wallet save below never happens,
+    // so a losing writer never double-applies its in-memory mutation.
+    private boolean tryRecordAndApply(WalletHoldCommand command, LedgerEntryType type, Wallet wallet) {
+        WalletLedgerEntry entry = new WalletLedgerEntry(UUID.randomUUID(), command.consultantId(), type,
+            command.amount().amount(), command.amount().currency(), command.bookingId(), wallet.getAvailableBalance());
+        if (!walletLedgerEntryRecorder.tryRecord(entry)) {
+            return false;
+        }
+        walletRepository.save(wallet);
+        return true;
     }
 
     // PRD §12.1 — a percentage-based rule carries only percentageValue; a

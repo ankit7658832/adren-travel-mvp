@@ -378,6 +378,31 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void confirmBookingPlacesThenResolvesAWalletHoldForTheDirectPathFIN07() {
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(consultantId);
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        UUID bookingId = service.confirmBooking(quotationId, price);
+
+        var inOrder = org.mockito.Mockito.inOrder(paymentsApi);
+        inOrder.verify(paymentsApi).placeHold(new com.adren.travel.payments.WalletHoldCommand(bookingId, consultantId, price));
+        inOrder.verify(paymentsApi).resolveHoldAsDebit(new com.adren.travel.payments.WalletHoldCommand(bookingId, consultantId, price));
+    }
+
+    @Test
+    void confirmBookingFromPaymentWebhookNeverTouchesTheWalletFIN07() {
+        UUID consultantId = UUID.randomUUID();
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+
+        service.confirmBookingFromPaymentWebhook(UUID.randomUUID(), consultantId, price);
+
+        verify(paymentsApi, org.mockito.Mockito.never()).placeHold(any());
+        verify(paymentsApi, org.mockito.Mockito.never()).resolveHoldAsDebit(any());
+    }
+
+    @Test
     void confirmBookingFromPaymentWebhookPublishesTheEventWithoutRequiringAPrincipalFIN11() {
         UUID consultantId = UUID.randomUUID();
         Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);

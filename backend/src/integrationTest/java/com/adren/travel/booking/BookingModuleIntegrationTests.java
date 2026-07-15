@@ -141,6 +141,25 @@ class BookingModuleIntegrationTests {
         assertThat(atolCertificateReference).isNull();
     }
 
+    @Test
+    void confirmingABookingPlacesAndResolvesAWalletHoldAsADebitFIN07() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(UUID.randomUUID());
+
+        UUID bookingId = bookingApi.confirmBooking(quotationId, price);
+
+        List<String> ledgerEntryTypes = jdbcTemplate.queryForList(
+            "SELECT type FROM wallet_ledger_entry WHERE related_booking_id = ? ORDER BY created_at", String.class,
+            bookingId);
+        assertThat(ledgerEntryTypes).containsExactly("HOLD", "DEBIT");
+
+        Long pendingHoldsCount = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM wallet_ledger_entry WHERE related_booking_id = ? AND type = 'HOLD'",
+            Long.class, bookingId);
+        assertThat(pendingHoldsCount).isEqualTo(1);
+    }
+
     /**
      * BOK-01's actual acceptance criterion: {@code confirmBooking}'s
      * {@code @Transactional} boundary means the JPA event publication

@@ -16,9 +16,10 @@ import java.util.UUID;
  * package-private, own table. One row per Consultant, keyed directly by
  * {@code consultantId} rather than a synthetic id, since exactly one wallet
  * exists per tenant. {@code availableBalance}, {@code creditLimit} and
- * {@code pendingHolds} are always denominated in {@code currency} — this
- * story only models the balances; holds/debits (FIN-07) and the ledger
- * (FIN-10) are separate, later stories.
+ * {@code pendingHolds} are always denominated in {@code currency}.
+ * {@code placeHold}/{@code resolveHoldAsDebit}/{@code resolveHoldAsRelease}
+ * (FIN-07) are the hold lifecycle; the audit trail those write to lives in
+ * {@link WalletLedgerEntry} (FIN-10).
  */
 @Entity
 @Table(name = "wallet")
@@ -47,6 +48,25 @@ class Wallet {
         this.availableBalance = BigDecimal.ZERO;
         this.creditLimit = BigDecimal.ZERO;
         this.pendingHolds = BigDecimal.ZERO;
+        this.updatedAt = Instant.now();
+    }
+
+    /** A booking reaching the payment step sets aside funds (PRD §12.3, FIN-07) — increases pendingHolds only. */
+    void placeHold(BigDecimal amount) {
+        this.pendingHolds = this.pendingHolds.add(amount);
+        this.updatedAt = Instant.now();
+    }
+
+    /** The booking confirms (PRD §12.3, FIN-07) — the hold becomes an actual charge: pendingHolds and availableBalance both decrease. */
+    void resolveHoldAsDebit(BigDecimal amount) {
+        this.pendingHolds = this.pendingHolds.subtract(amount);
+        this.availableBalance = this.availableBalance.subtract(amount);
+        this.updatedAt = Instant.now();
+    }
+
+    /** The booking is abandoned/cancelled before confirmation (PRD §12.3, FIN-07) — the hold is released, availableBalance untouched. */
+    void resolveHoldAsRelease(BigDecimal amount) {
+        this.pendingHolds = this.pendingHolds.subtract(amount);
         this.updatedAt = Instant.now();
     }
 

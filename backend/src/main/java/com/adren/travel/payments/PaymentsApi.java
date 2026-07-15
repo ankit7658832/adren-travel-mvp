@@ -105,4 +105,33 @@ public interface PaymentsApi {
      * webhook receipt rather than confirming on submission alone.
      */
     void handleStripeWebhook(HandleStripeWebhookCommand command);
+
+    /**
+     * Places a hold on a Consultant's wallet when a booking reaches the
+     * payment step (PRD §12.3, FIN-07) — increases {@code pendingHolds}
+     * only. Same internal-pricing-pipeline-step shape as {@link
+     * #calculateCommission} — no {@code @PreAuthorize}; invoked from
+     * {@code BookingApi.confirmBooking}'s wallet/on-account payment path.
+     * Idempotent (FIN-10): retrying with the same {@code bookingId} is a
+     * no-op if a Hold entry already exists for it.
+     */
+    void placeHold(WalletHoldCommand command);
+
+    /**
+     * Resolves a previously-placed hold into an actual charge on booking
+     * confirmation (PRD §12.3, FIN-07) — decreases both {@code
+     * pendingHolds} and {@code availableBalance}. Idempotent (FIN-10) the
+     * same way as {@link #placeHold}.
+     */
+    void resolveHoldAsDebit(WalletHoldCommand command);
+
+    /**
+     * Releases a previously-placed hold back to available balance when a
+     * booking is abandoned/cancelled before confirmation (PRD §12.3,
+     * FIN-07) — decreases {@code pendingHolds} only. Idempotent (FIN-10)
+     * the same way as {@link #placeHold}. Not yet wired into any
+     * cancellation flow — HRD-05 (full cancellation workflow) is the
+     * caller this is built for.
+     */
+    void resolveHoldAsRelease(WalletHoldCommand command);
 }

@@ -15,6 +15,7 @@ import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.PaymentsApi;
 import com.adren.travel.payments.SellRateCalculation;
+import com.adren.travel.payments.WalletHoldCommand;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.Money;
 import com.adren.travel.shared.ProductCategory;
@@ -119,12 +120,19 @@ class BookingServiceImpl implements BookingApi {
         CurrentPrincipal.resolveTenantScope(consultantId);
         requireActiveUnlessSuperAdmin(consultantId);
 
-        // BOK-13: FIN-07 (wallet hold placement) and FIN-08 (credit-limit
-        // breach block) wire into this exact point as a follow-up
-        // integration against this scaffold, per BOK-13's own dependency
-        // note — not stubbed here to avoid a call to a method that doesn't
-        // exist yet.
-        return doConfirmBooking(totalSellPrice, consultantId);
+        UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
+
+        // FIN-07: this direct (non-Stripe) confirmBooking path is the
+        // wallet/on-account payment method — Stripe payments instead go
+        // through confirmBookingFromPaymentWebhook and never touch the
+        // wallet. Placing then immediately resolving the hold in the same
+        // call is a simplification: this scaffold has no separate "reach
+        // payment step" moment distinct from confirmation itself, unlike
+        // the full booking flow PRD §12.3 describes.
+        paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, totalSellPrice));
+        paymentsApi.resolveHoldAsDebit(new WalletHoldCommand(bookingId, consultantId, totalSellPrice));
+
+        return finalizeConfirmedBooking(bookingId, consultantId, totalSellPrice);
     }
 
     // BOK-13 — quotationOrPackageId is polymorphic: a booking can be
@@ -141,11 +149,13 @@ class BookingServiceImpl implements BookingApi {
     @Override
     @Transactional
     public UUID confirmBookingFromPaymentWebhook(UUID quotationOrPackageId, UUID consultantId, Money totalSellPrice) {
-        return doConfirmBooking(totalSellPrice, consultantId);
+        // FIN-07: this Stripe path never touches the wallet — the customer
+        // already paid by card, not wallet/credit.
+        UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
+        return finalizeConfirmedBooking(bookingId, consultantId, totalSellPrice);
     }
 
-    private UUID doConfirmBooking(Money totalSellPrice, UUID consultantId) {
-        UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
+    private UUID finalizeConfirmedBooking(UUID bookingId, UUID consultantId, Money totalSellPrice) {
         // BOK-15: voucher generation happens synchronously, in the SAME
         // transactional scope as the booking confirmation itself — unlike
         // notification (deliberately async/fire-and-forget), a voucher is
