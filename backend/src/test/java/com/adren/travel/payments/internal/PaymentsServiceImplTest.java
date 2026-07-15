@@ -3,7 +3,9 @@ package com.adren.travel.payments.internal;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
+import com.adren.travel.payments.WalletView;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
+import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
@@ -30,7 +32,9 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /** FIN-01's core acceptance criteria: per-Consultant, per-category markup configuration. */
@@ -41,13 +45,16 @@ class PaymentsServiceImplTest {
     MarkupRuleRepository markupRuleRepository;
 
     @Mock
+    WalletRepository walletRepository;
+
+    @Mock
     ApplicationEventPublisher events;
 
     PaymentsServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new PaymentsServiceImpl(markupRuleRepository, events);
+        service = new PaymentsServiceImpl(markupRuleRepository, walletRepository, events);
     }
 
     @AfterEach
@@ -158,6 +165,50 @@ class PaymentsServiceImplTest {
         assertThat(views).hasSize(1);
         assertThat(views.get(0).category()).isEqualTo(ProductCategory.HOTEL);
         assertThat(views.get(0).percentageValue()).isEqualByComparingTo("15");
+    }
+
+    @Test
+    void aFirstTimeWalletQueryAutoProvisionsAZeroBalanceWalletAndPublishesTheEventFIN06() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.empty());
+
+        WalletView view = service.getWallet(consultantId);
+
+        assertThat(view.consultantId()).isEqualTo(consultantId);
+        assertThat(view.availableBalance()).isEqualByComparingTo("0");
+        assertThat(view.creditLimit()).isEqualByComparingTo("0");
+        assertThat(view.pendingHolds()).isEqualByComparingTo("0");
+        assertThat(view.currency()).isEqualTo(CurrencyCode.INR);
+        verify(walletRepository).save(any(Wallet.class));
+
+        ArgumentCaptor<WalletProvisionedEvent> eventCaptor = ArgumentCaptor.forClass(WalletProvisionedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().consultantId()).isEqualTo(consultantId);
+    }
+
+    @Test
+    void aSubsequentWalletQueryReturnsTheExistingWalletWithoutReProvisioningFIN06() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Wallet existing = new Wallet(consultantId, CurrencyCode.GBP);
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(existing));
+
+        WalletView view = service.getWallet(consultantId);
+
+        assertThat(view.currency()).isEqualTo(CurrencyCode.GBP);
+        verify(walletRepository, org.mockito.Mockito.never()).save(any());
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void aConsultantCannotQueryAnotherConsultantsWalletFIN06() {
+        UUID ownConsultantId = UUID.randomUUID();
+        UUID otherConsultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, ownConsultantId);
+
+        assertThatThrownBy(() -> service.getWallet(otherConsultantId))
+            .isInstanceOf(AccessDeniedException.class);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

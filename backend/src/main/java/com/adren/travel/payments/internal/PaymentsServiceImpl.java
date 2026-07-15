@@ -4,8 +4,11 @@ import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
 import com.adren.travel.payments.PaymentsApi;
+import com.adren.travel.payments.WalletView;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
+import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.CurrentPrincipal;
+import com.adren.travel.shared.CurrencyCode;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,10 +20,13 @@ import java.util.UUID;
 class PaymentsServiceImpl implements PaymentsApi {
 
     private final MarkupRuleRepository markupRuleRepository;
+    private final WalletRepository walletRepository;
     private final ApplicationEventPublisher events;
 
-    PaymentsServiceImpl(MarkupRuleRepository markupRuleRepository, ApplicationEventPublisher events) {
+    PaymentsServiceImpl(MarkupRuleRepository markupRuleRepository, WalletRepository walletRepository,
+                         ApplicationEventPublisher events) {
         this.markupRuleRepository = markupRuleRepository;
+        this.walletRepository = walletRepository;
         this.events = events;
     }
 
@@ -51,6 +57,22 @@ class PaymentsServiceImpl implements PaymentsApi {
             .toList();
     }
 
+    @Override
+    @Transactional
+    public WalletView getWallet(UUID consultantId) {
+        UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(consultantId);
+        Wallet wallet = walletRepository.findById(scopedConsultantId)
+            .orElseGet(() -> provisionWallet(scopedConsultantId));
+        return toView(wallet);
+    }
+
+    private Wallet provisionWallet(UUID consultantId) {
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        walletRepository.save(wallet);
+        events.publishEvent(new WalletProvisionedEvent(consultantId));
+        return wallet;
+    }
+
     // PRD §12.1 — a percentage-based rule carries only percentageValue; a
     // flat-fee rule carries only flatFeeAmount/flatFeeCurrency (RULES.md
     // §4.4: an amount is never auditable without its currency).
@@ -70,5 +92,10 @@ class PaymentsServiceImpl implements PaymentsApi {
     private static MarkupRuleView toView(MarkupRule rule) {
         return new MarkupRuleView(rule.getConsultantId(), rule.getCategory(), rule.getMarkupType(),
             rule.getPercentageValue(), rule.getFlatFeeAmount(), rule.getFlatFeeCurrency(), rule.getUpdatedAt());
+    }
+
+    private static WalletView toView(Wallet wallet) {
+        return new WalletView(wallet.getConsultantId(), wallet.getAvailableBalance(), wallet.getCreditLimit(),
+            wallet.getPendingHolds(), wallet.getCurrency(), wallet.getUpdatedAt());
     }
 }

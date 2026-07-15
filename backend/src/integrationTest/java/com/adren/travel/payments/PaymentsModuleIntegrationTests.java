@@ -1,8 +1,10 @@
 package com.adren.travel.payments;
 
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
+import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
+import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.ProductCategory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -95,6 +97,40 @@ class PaymentsModuleIntegrationTests {
 
         assertThatThrownBy(() -> paymentsApi.configureMarkup(UUID.randomUUID(), command))
             .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void queryingAWalletForTheFirstTimeAutoProvisionsItAndPublishesWalletProvisionedEventFIN06(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        scenario.stimulate(() -> paymentsApi.getWallet(consultantId))
+            .andWaitForEventOfType(WalletProvisionedEvent.class)
+            .matchingMappedValue(WalletProvisionedEvent::consultantId, consultantId);
+    }
+
+    @Test
+    void aWalletExposesBalanceCreditLimitAndPendingHoldsInTheHomeMarketCurrencyFIN06() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        WalletView wallet = paymentsApi.getWallet(consultantId);
+
+        assertThat(wallet.consultantId()).isEqualTo(consultantId);
+        assertThat(wallet.availableBalance()).isEqualByComparingTo("0");
+        assertThat(wallet.creditLimit()).isEqualByComparingTo("0");
+        assertThat(wallet.pendingHolds()).isEqualByComparingTo("0");
+        assertThat(wallet.currency()).isEqualTo(CurrencyCode.INR);
+    }
+
+    @Test
+    void aUserCanQueryTheirOwnWalletUnlikeMarkupConfigurationFIN06() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.USER, consultantId);
+
+        WalletView wallet = paymentsApi.getWallet(consultantId);
+
+        assertThat(wallet.consultantId()).isEqualTo(consultantId);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

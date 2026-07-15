@@ -27,4 +27,18 @@ public interface PaymentsApi {
 
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT')")
     List<MarkupRuleView> findMarkupRules(UUID consultantId);
+
+    /**
+     * Returns a Consultant's wallet — available balance, credit limit, and
+     * pending holds, denominated in the home-market currency (PRD §12.3,
+     * FIN-06). Unlike {@code configureMarkup}, this is a read with no
+     * financial side effect for the caller, so {@code USER} is included
+     * (a Consultant's Users can see wallet status even though they cannot
+     * change markup, per PRD §3.3). {@code consultantId} is checked against
+     * the caller's own tenant via {@code CurrentPrincipal.resolveTenantScope}.
+     * A wallet is auto-provisioned with zero balance/credit-limit on first
+     * access — there is no separate "create wallet" story.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    WalletView getWallet(UUID consultantId);
 }
