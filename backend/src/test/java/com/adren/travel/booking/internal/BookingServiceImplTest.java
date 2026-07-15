@@ -1,8 +1,10 @@
 package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.AlternateOption;
+import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
+import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
@@ -33,6 +35,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -56,6 +59,9 @@ class BookingServiceImplTest {
     ItineraryRepository itineraryRepository;
 
     @Mock
+    TravelerProfileRepository travelerProfileRepository;
+
+    @Mock
     ApplicationEventPublisher events;
 
     @Mock
@@ -68,7 +74,8 @@ class BookingServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new BookingServiceImpl(itineraryRepository, events, whitelabelApi, supplierSearchApi);
+        service = new BookingServiceImpl(
+            itineraryRepository, travelerProfileRepository, events, whitelabelApi, supplierSearchApi);
     }
 
     @AfterEach
@@ -292,6 +299,43 @@ class BookingServiceImplTest {
         authenticateAs(Role.SUPER_ADMIN, null);
 
         assertThat(service.findBookingsByConsultant(consultantId, pageable).getContent()).isEmpty();
+    }
+
+    @Test
+    void createTravelerProfileScopesToTheCallingConsultantsOwnAccountBOK14() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        var command = new CreateTravelerProfileCommand("Jane Traveler", LocalDate.of(1990, 5, 1),
+            "P1234567", LocalDate.of(2030, 1, 1), "IN", List.of("s3://vault/passport.pdf"), Map.of("meal", "vegetarian"));
+
+        UUID travelerId = service.createTravelerProfile(command);
+
+        ArgumentCaptor<TravelerProfile> captor = ArgumentCaptor.forClass(TravelerProfile.class);
+        verify(travelerProfileRepository).save(captor.capture());
+        assertThat(captor.getValue().getTravelerId()).isEqualTo(travelerId);
+        assertThat(captor.getValue().getConsultantId()).isEqualTo(consultantId);
+        assertThat(captor.getValue().getName()).isEqualTo("Jane Traveler");
+        assertThat(captor.getValue().getPassportNumber()).isEqualTo("P1234567");
+
+        ArgumentCaptor<TravelerProfileCreatedEvent> eventCaptor = ArgumentCaptor.forClass(TravelerProfileCreatedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().travelerId()).isEqualTo(travelerId);
+        assertThat(eventCaptor.getValue().consultantId()).isEqualTo(consultantId);
+    }
+
+    @Test
+    void createTravelerProfileAllowsOmittingOptionalPassportFieldsBOK14() {
+        authenticateAs(Role.USER, UUID.randomUUID());
+        var command = new CreateTravelerProfileCommand("Jane Traveler", LocalDate.of(1990, 5, 1),
+            null, null, null, null, null);
+
+        service.createTravelerProfile(command);
+
+        ArgumentCaptor<TravelerProfile> captor = ArgumentCaptor.forClass(TravelerProfile.class);
+        verify(travelerProfileRepository).save(captor.capture());
+        assertThat(captor.getValue().getPassportNumber()).isNull();
+        assertThat(captor.getValue().getDocumentVaultReferences()).isEmpty();
+        assertThat(captor.getValue().getPreferences()).isEmpty();
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

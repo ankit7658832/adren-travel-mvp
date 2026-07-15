@@ -65,4 +65,13 @@ public interface BookingApi {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     List<AlternateOption> findAlternates(
         UUID itineraryId, String locationCode, String category, LocalDate checkIn, LocalDate checkOut);
+
+    /**
+     * Captures a Traveler Profile (PRD §20.10, BOK-14), scoped to the
+     * CALLING principal's own consultantId — never a client-supplied one,
+     * see {@link CreateTravelerProfileCommand}'s Javadoc. Publishes
+     * {@link com.adren.travel.booking.event.TravelerProfileCreatedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    UUID createTravelerProfile(CreateTravelerProfileCommand command);
 }

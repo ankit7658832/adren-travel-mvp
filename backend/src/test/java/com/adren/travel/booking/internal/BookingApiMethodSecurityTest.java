@@ -50,6 +50,11 @@ class BookingApiMethodSecurityTest {
         }
 
         @Bean
+        TravelerProfileRepository travelerProfileRepository() {
+            return Mockito.mock(TravelerProfileRepository.class);
+        }
+
+        @Bean
         ApplicationEventPublisher applicationEventPublisher() {
             return Mockito.mock(ApplicationEventPublisher.class);
         }
@@ -65,9 +70,10 @@ class BookingApiMethodSecurityTest {
         }
 
         @Bean
-        BookingApi bookingApi(ItineraryRepository repository, ApplicationEventPublisher publisher,
-                               WhitelabelApi whitelabelApi, SupplierSearchApi supplierSearchApi) {
-            return new BookingServiceImpl(repository, publisher, whitelabelApi, supplierSearchApi);
+        BookingApi bookingApi(ItineraryRepository repository, TravelerProfileRepository travelerProfileRepository,
+                               ApplicationEventPublisher publisher, WhitelabelApi whitelabelApi,
+                               SupplierSearchApi supplierSearchApi) {
+            return new BookingServiceImpl(repository, travelerProfileRepository, publisher, whitelabelApi, supplierSearchApi);
         }
     }
 

@@ -47,7 +47,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **BOK-11** — build the package builder screen with uk atol disclosure gate
 - [ ] **BOK-12** — publish a package making it visible to users
 - [ ] **BOK-13** — build the direct booking payment flow user facing
-- [ ] **BOK-14** — capture traveler profile details including passport document vault
+- [x] **BOK-14** — capture traveler profile details including passport document vault
 - [ ] **BOK-15** — generate a voucher on booking confirmation including atol certificate for uk dynamic packages
 - [ ] **BOK-16** — prevent double booking of the last available inventory unit under concurrent requests
 - [ ] **BOK-17** — consolidate mixed currency line items to the consultant s sell currency at checkout

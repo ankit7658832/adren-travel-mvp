@@ -1,6 +1,7 @@
 package com.adren.travel.booking;
 
 import com.adren.travel.booking.event.BookingConfirmedEvent;
+import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
@@ -23,7 +24,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -126,6 +129,27 @@ class BookingModuleIntegrationTests {
             "SELECT COUNT(*) FROM event_publication WHERE serialized_event LIKE ?",
             Long.class, "%" + bookingIdRef.get() + "%");
         assertThat(count).isZero();
+    }
+
+    @Test
+    void creatingATravelerProfilePublishesTravelerProfileCreatedEvent(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        var command = new CreateTravelerProfileCommand("Jane Traveler", LocalDate.of(1990, 5, 1),
+            "P1234567", LocalDate.of(2030, 1, 1), "IN", List.of(), Map.of());
+
+        scenario.stimulate(() -> bookingApi.createTravelerProfile(command))
+            .andWaitForEventOfType(TravelerProfileCreatedEvent.class)
+            .matchingMappedValue(TravelerProfileCreatedEvent::consultantId, consultantId);
+    }
+
+    private static void authenticateAs(Role role, UUID consultantId) {
+        AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), role, consultantId);
+        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
+        var authentication = new UsernamePasswordAuthenticationToken(principal, null, authorities);
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(authentication);
+        SecurityContextHolder.setContext(securityContext);
     }
 
     private static void authenticateAsSuperAdmin() {

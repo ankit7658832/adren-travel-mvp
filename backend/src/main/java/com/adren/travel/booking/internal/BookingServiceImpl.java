@@ -2,8 +2,10 @@ package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
+import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
+import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.Money;
@@ -17,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -34,13 +37,16 @@ import java.util.UUID;
 class BookingServiceImpl implements BookingApi {
 
     private final ItineraryRepository itineraryRepository;
+    private final TravelerProfileRepository travelerProfileRepository;
     private final ApplicationEventPublisher events;
     private final WhitelabelApi whitelabelApi;
     private final SupplierSearchApi supplierSearchApi;
 
-    BookingServiceImpl(ItineraryRepository itineraryRepository, ApplicationEventPublisher events,
-                        WhitelabelApi whitelabelApi, SupplierSearchApi supplierSearchApi) {
+    BookingServiceImpl(ItineraryRepository itineraryRepository, TravelerProfileRepository travelerProfileRepository,
+                        ApplicationEventPublisher events, WhitelabelApi whitelabelApi,
+                        SupplierSearchApi supplierSearchApi) {
         this.itineraryRepository = itineraryRepository;
+        this.travelerProfileRepository = travelerProfileRepository;
         this.events = events;
         this.whitelabelApi = whitelabelApi;
         this.supplierSearchApi = supplierSearchApi;
@@ -102,6 +108,23 @@ class BookingServiceImpl implements BookingApi {
                 result.propertyName(), result.roomType(), result.netRate().amount(), result.netRate().currency(),
                 result.rating()))
             .toList();
+    }
+
+    @Override
+    @Transactional
+    public UUID createTravelerProfile(CreateTravelerProfileCommand command) {
+        UUID consultantId = CurrentPrincipal.get().consultantId();
+        UUID travelerId = UUID.randomUUID();
+        List<String> documentVaultReferences =
+            command.documentVaultReferences() != null ? command.documentVaultReferences() : List.of();
+        Map<String, String> preferences = command.preferences() != null ? command.preferences() : Map.of();
+
+        TravelerProfile profile = new TravelerProfile(travelerId, consultantId, command.name(), command.dateOfBirth(),
+            command.passportNumber(), command.passportExpiry(), command.nationality(), documentVaultReferences, preferences);
+        travelerProfileRepository.save(profile);
+
+        events.publishEvent(new TravelerProfileCreatedEvent(travelerId, consultantId));
+        return travelerId;
     }
 
     @Override
