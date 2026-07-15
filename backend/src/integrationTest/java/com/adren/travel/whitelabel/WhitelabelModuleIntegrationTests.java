@@ -18,6 +18,9 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
 
 import java.util.List;
 import java.util.Map;
@@ -47,6 +50,9 @@ class WhitelabelModuleIntegrationTests {
 
     @Autowired
     WhitelabelApi whitelabelApi;
+
+    @Autowired
+    CorsConfigurationSource corsConfigurationSource;
 
     @AfterEach
     void clearSecurityContext() {
@@ -144,6 +150,28 @@ class WhitelabelModuleIntegrationTests {
         authenticateAs(Role.CONSULTANT, consultantId);
         assertThat(whitelabelApi.availableLocalesFor(Market.DENMARK)).contains(com.adren.travel.shared.LocaleCode.DA);
         whitelabelApi.changePreferredLocale(com.adren.travel.shared.LocaleCode.DA);
+    }
+
+    @Test
+    void theRealCorsConfigurationSourceAllowsAMappedDomainAndRejectsAnUnmappedOneFND08() {
+        authenticateAs(Role.SUPER_ADMIN, null);
+        UUID consultantId = whitelabelApi.onboardConsultant(
+            new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x")));
+        whitelabelApi.updateBranding(new UpdateBrandingCommand(consultantId, "https://cdn/logo.png", null,
+            "#FFFFFF", "#000000", "#111111", "mapped-consultant.example.com"));
+
+        MockHttpServletRequest mappedRequest = new MockHttpServletRequest();
+        mappedRequest.addHeader("Origin", "https://mapped-consultant.example.com");
+        CorsConfiguration mapped = corsConfigurationSource.getCorsConfiguration(mappedRequest);
+        assertThat(mapped).isNotNull();
+        assertThat(mapped.getAllowedOrigins()).containsExactly("https://mapped-consultant.example.com");
+
+        MockHttpServletRequest unmappedRequest = new MockHttpServletRequest();
+        unmappedRequest.addHeader("Origin", "https://not-a-real-consultant-domain.example.com");
+        // RULES.md §5.4 — no wildcard fallback exists anywhere in the real,
+        // fully-wired active configuration: an unmapped origin gets null,
+        // not an allow-all CorsConfiguration.
+        assertThat(corsConfigurationSource.getCorsConfiguration(unmappedRequest)).isNull();
     }
 
     private static void authenticateAs(Role role) {

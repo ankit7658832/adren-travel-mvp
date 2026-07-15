@@ -7,13 +7,17 @@ import jakarta.servlet.Filter;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.UUID;
 
@@ -47,9 +51,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * construction path that doesn't hit that harness-specific issue.
  */
 @WebMvcTest(controllers = SecurityFilterChainTest.SampleSecuredController.class)
-@Import({SecurityConfig.class, JwtTokenService.class})
+@Import({SecurityConfig.class, JwtTokenService.class, SecurityFilterChainTest.TestCorsConfig.class})
 @EnableConfigurationProperties(JwtProperties.class)
 class SecurityFilterChainTest {
+
+    /**
+     * This slice doesn't scan {@code whitelabel} (the real
+     * {@code DynamicCorsConfigurationSource}, FND-08) — this story is
+     * about the JWT filter chain/principal, not CORS resolution, so a
+     * stub satisfying {@code SecurityConfig}'s {@code CorsConfigurationSource}
+     * dependency is enough here.
+     */
+    @TestConfiguration
+    static class TestCorsConfig {
+        @Bean
+        CorsConfigurationSource corsConfigurationSource() {
+            return new UrlBasedCorsConfigurationSource();
+        }
+    }
 
     @Autowired
     private JwtTokenService jwtTokenService;

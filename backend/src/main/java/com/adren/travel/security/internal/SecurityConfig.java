@@ -9,6 +9,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.session.DisableEncodeUrlFilter;
+import org.springframework.web.cors.CorsConfigurationSource;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -34,9 +35,14 @@ class SecurityConfig {
     SecurityFilterChain filterChain(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter,
                                      TraceIdFilter traceIdFilter,
                                      RestAuthenticationEntryPoint authenticationEntryPoint,
-                                     RestAccessDeniedHandler accessDeniedHandler) throws Exception {
+                                     RestAccessDeniedHandler accessDeniedHandler,
+                                     CorsConfigurationSource corsConfigurationSource) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
+            // RULES.md §5.4 / FND-08 — resolved per-request from the
+            // whitelabel domain registry (DynamicCorsConfigurationSource);
+            // never a static wildcard/allow-all here.
+            .cors(cors -> cors.configurationSource(corsConfigurationSource))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(authorize -> authorize
                 .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
