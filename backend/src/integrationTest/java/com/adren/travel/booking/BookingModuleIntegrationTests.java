@@ -3,6 +3,7 @@ package com.adren.travel.booking;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
+import com.adren.travel.booking.event.PackageCreatedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.MarkupType;
@@ -277,6 +278,48 @@ class BookingModuleIntegrationTests {
 
         assertThatThrownBy(() -> bookingApi.addHotelLineItem(itineraryId, secondLineItem))
             .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void convertingAQuotationToAPackagePublishesPackageCreatedEventBOK10(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(consultantId);
+        var command = new ConvertQuotationToPackageCommand("Goa Getaway", "A relaxing beach trip",
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 4);
+
+        scenario.stimulate(() -> bookingApi.convertQuotationToPackage(quotationId, command))
+            .andWaitForEventOfType(PackageCreatedEvent.class)
+            .matchingMappedValue(PackageCreatedEvent::consultantId, consultantId);
+    }
+
+    @Test
+    void convertingAQuotationToAPackageAutoFillsBasePriceFromThePersistedSellRateBOK10() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(consultantId);
+        var command = new ConvertQuotationToPackageCommand("Goa Getaway", "A relaxing beach trip",
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 4);
+
+        UUID packageId = bookingApi.convertQuotationToPackage(quotationId, command);
+
+        BigDecimal basePrice = jdbcTemplate.queryForObject(
+            "SELECT base_price FROM travel_package WHERE package_id = ?", BigDecimal.class, packageId);
+        assertThat(basePrice).isEqualByComparingTo("11371.2000");
+        String status = jdbcTemplate.queryForObject(
+            "SELECT status FROM travel_package WHERE package_id = ?", String.class, packageId);
+        assertThat(status).isEqualTo("DRAFT");
+    }
+
+    private UUID savedQuotationWithOneLineItem(UUID consultantId) {
+        UUID itineraryId = insertDraftItinerary(consultantId);
+        paymentsApi.configureMarkup(consultantId, new ConfigureMarkupCommand(
+            ProductCategory.HOTEL, MarkupType.PERCENTAGE, BigDecimal.valueOf(15), null, null));
+        bookingApi.addHotelLineItem(itineraryId, new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-1",
+            "Taj Palace", "Deluxe Room", MealPlan.BB, Instant.now().plusSeconds(3600),
+            new Money(BigDecimal.valueOf(100), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.valueOf(96), BigDecimal.valueOf(3), BigDecimal.ZERO));
+        return bookingApi.saveAsQuotation(itineraryId);
     }
 
     private UUID insertDraftItinerary(UUID consultantId) {

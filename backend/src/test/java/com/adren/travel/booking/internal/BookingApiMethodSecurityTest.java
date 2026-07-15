@@ -1,8 +1,11 @@
 package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.BookingApi;
+import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.payments.PaymentsApi;
 import com.adren.travel.security.AdrenPrincipal;
+import com.adren.travel.security.CapabilityGrantService;
+import com.adren.travel.security.CapabilityGrantService.Capability;
 import com.adren.travel.security.Role;
 import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.whitelabel.WhitelabelApi;
@@ -81,17 +84,27 @@ class BookingApiMethodSecurityTest {
         }
 
         @Bean
+        TravelPackageRepository travelPackageRepository() {
+            return Mockito.mock(TravelPackageRepository.class);
+        }
+
+        @Bean
         PaymentsApi paymentsApi() {
             return Mockito.mock(PaymentsApi.class);
         }
 
         @Bean
+        CapabilityGrantService capabilityGrantService() {
+            return Mockito.mock(CapabilityGrantService.class);
+        }
+
+        @Bean
         BookingApi bookingApi(ItineraryRepository repository, TravelerProfileRepository travelerProfileRepository,
                                HotelLineItemRepository hotelLineItemRepository, QuotationRepository quotationRepository,
-                               ApplicationEventPublisher publisher, WhitelabelApi whitelabelApi,
-                               SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
+                               TravelPackageRepository travelPackageRepository, ApplicationEventPublisher publisher,
+                               WhitelabelApi whitelabelApi, SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
             return new BookingServiceImpl(repository, travelerProfileRepository, hotelLineItemRepository,
-                quotationRepository, publisher, whitelabelApi, supplierSearchApi, paymentsApi);
+                quotationRepository, travelPackageRepository, publisher, whitelabelApi, supplierSearchApi, paymentsApi);
         }
     }
 
@@ -177,6 +190,74 @@ class BookingApiMethodSecurityTest {
 
         authenticateAs(Role.SUPER_ADMIN, null);
         assertThat(bookingApi.findBookingsByConsultant(consultantId, PageRequest.of(0, 20)).getContent()).isEmpty();
+    }
+
+    @Test
+    void allowsAConsultantPrincipalToConvertAQuotationToAPackageBOK10() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationAndItinerary(itineraryId, consultantId);
+
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        assertThat(bookingApi.convertQuotationToPackage(quotationId, sampleConvertCommand())).isNotNull();
+    }
+
+    @Test
+    void rejectsAUserWithoutTheCreatePackageGrantBOK10() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationAndItinerary(itineraryId, consultantId);
+        CapabilityGrantService capabilityGrantService = context.getBean(CapabilityGrantService.class);
+        UUID userId = UUID.randomUUID();
+        when(capabilityGrantService.isGranted(userId, Capability.CREATE_PACKAGE)).thenReturn(false);
+
+        authenticateAsUser(userId, consultantId);
+
+        assertThatThrownBy(() -> bookingApi.convertQuotationToPackage(quotationId, sampleConvertCommand()))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+    }
+
+    @Test
+    void allowsAUserWithTheCreatePackageGrantBOK10() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationAndItinerary(itineraryId, consultantId);
+        CapabilityGrantService capabilityGrantService = context.getBean(CapabilityGrantService.class);
+        UUID userId = UUID.randomUUID();
+        when(capabilityGrantService.isGranted(userId, Capability.CREATE_PACKAGE)).thenReturn(true);
+
+        authenticateAsUser(userId, consultantId);
+
+        assertThat(bookingApi.convertQuotationToPackage(quotationId, sampleConvertCommand())).isNotNull();
+    }
+
+    private static UUID stubQuotationAndItinerary(UUID itineraryId, UUID consultantId) {
+        ItineraryRepository itineraryRepository = context.getBean(ItineraryRepository.class);
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        stubExistingHotelLineItem(itineraryId);
+
+        QuotationRepository quotationRepository = context.getBean(QuotationRepository.class);
+        UUID quotationId = UUID.randomUUID();
+        Quotation quotation = new Quotation(quotationId, itineraryId, java.time.Instant.now().plusSeconds(3600));
+        when(quotationRepository.findById(quotationId)).thenReturn(Optional.of(quotation));
+        return quotationId;
+    }
+
+    private static ConvertQuotationToPackageCommand sampleConvertCommand() {
+        return new ConvertQuotationToPackageCommand("Goa Getaway", "A relaxing beach trip",
+            java.time.LocalDate.now().plusDays(30), java.time.LocalDate.now().plusDays(90),
+            java.math.BigDecimal.valueOf(500), 4);
+    }
+
+    private static void authenticateAsUser(UUID userId, UUID consultantId) {
+        AdrenPrincipal principal = new AdrenPrincipal(userId, Role.USER, consultantId);
+        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_USER"));
+        var authentication = new UsernamePasswordAuthenticationToken(principal, null, authorities);
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(authentication);
+        SecurityContextHolder.setContext(securityContext);
     }
 
     private static void stubExistingHotelLineItem(UUID itineraryId) {

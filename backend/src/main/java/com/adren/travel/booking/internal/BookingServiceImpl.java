@@ -3,10 +3,12 @@ package com.adren.travel.booking.internal;
 import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
+import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
+import com.adren.travel.booking.event.PackageCreatedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.PaymentsApi;
@@ -53,6 +55,7 @@ class BookingServiceImpl implements BookingApi {
     private final TravelerProfileRepository travelerProfileRepository;
     private final HotelLineItemRepository hotelLineItemRepository;
     private final QuotationRepository quotationRepository;
+    private final TravelPackageRepository travelPackageRepository;
     private final ApplicationEventPublisher events;
     private final WhitelabelApi whitelabelApi;
     private final SupplierSearchApi supplierSearchApi;
@@ -60,12 +63,13 @@ class BookingServiceImpl implements BookingApi {
 
     BookingServiceImpl(ItineraryRepository itineraryRepository, TravelerProfileRepository travelerProfileRepository,
                         HotelLineItemRepository hotelLineItemRepository, QuotationRepository quotationRepository,
-                        ApplicationEventPublisher events, WhitelabelApi whitelabelApi,
-                        SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
+                        TravelPackageRepository travelPackageRepository, ApplicationEventPublisher events,
+                        WhitelabelApi whitelabelApi, SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
         this.itineraryRepository = itineraryRepository;
         this.travelerProfileRepository = travelerProfileRepository;
         this.hotelLineItemRepository = hotelLineItemRepository;
         this.quotationRepository = quotationRepository;
+        this.travelPackageRepository = travelPackageRepository;
         this.events = events;
         this.whitelabelApi = whitelabelApi;
         this.supplierSearchApi = supplierSearchApi;
@@ -210,5 +214,47 @@ class BookingServiceImpl implements BookingApi {
         UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(consultantId);
         return itineraryRepository.findByConsultantId(scopedConsultantId, pageable)
             .map(Itinerary::getItineraryId);
+    }
+
+    @Override
+    @Transactional
+    public UUID convertQuotationToPackage(UUID quotationId, ConvertQuotationToPackageCommand command) {
+        Quotation quotation = quotationRepository.findById(quotationId)
+            .orElseThrow(() -> new IllegalArgumentException("No quotation: " + quotationId));
+        Itinerary itinerary = itineraryRepository.findById(quotation.getItineraryId())
+            .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + quotation.getItineraryId()));
+        CurrentPrincipal.resolveTenantScope(itinerary.getConsultantId());
+        requireActiveUnlessSuperAdmin(itinerary.getConsultantId());
+
+        if (command.validityEnd().isBefore(command.validityStart())) {
+            throw new IllegalArgumentException("validityEnd must not be before validityStart");
+        }
+        if (command.maxPax() <= 0) {
+            throw new IllegalArgumentException("maxPax must be a positive value");
+        }
+
+        // FIN-05: basePrice is auto-filled from the source itinerary's
+        // already-priced line items — BOK-17's mixed-currency consolidation
+        // is a later, separate story, so this assumes every line item
+        // shares one sell currency (true for this vertical slice's
+        // Hotel-only itineraries).
+        List<HotelLineItem> lineItems = hotelLineItemRepository.findByItineraryId(quotation.getItineraryId());
+        if (lineItems.isEmpty()) {
+            throw new IllegalStateException(
+                "Cannot convert to package: itinerary " + quotation.getItineraryId() + " has no line items");
+        }
+        Money basePrice = lineItems.stream()
+            .map(lineItem -> new Money(lineItem.getSellRate(), lineItem.getSellCurrency()))
+            .reduce(Money::plus)
+            .orElseThrow();
+
+        UUID packageId = UUID.randomUUID();
+        TravelPackage travelPackage = new TravelPackage(packageId, quotation.getItineraryId(),
+            itinerary.getConsultantId(), command.name(), command.description(), command.validityStart(),
+            command.validityEnd(), basePrice.amount(), command.markupPrice(), basePrice.currency(), command.maxPax());
+        travelPackageRepository.save(travelPackage);
+
+        events.publishEvent(new PackageCreatedEvent(packageId, quotation.getItineraryId(), itinerary.getConsultantId()));
+        return packageId;
     }
 }

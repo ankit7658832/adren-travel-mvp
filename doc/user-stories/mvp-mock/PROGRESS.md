@@ -43,7 +43,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **BOK-07** — add activity line items to an itinerary hbactivities
 - [x] **BOK-08** — save an itinerary as a quotation
 - [x] **BOK-09** — create quotation entity with fx rate validity window
-- [ ] **BOK-10** — convert a quotation to a package
+- [x] **BOK-10** — convert a quotation to a package
 - [ ] **BOK-11** — build the package builder screen with uk atol disclosure gate
 - [ ] **BOK-12** — publish a package making it visible to users
 - [ ] **BOK-13** — build the direct booking payment flow user facing

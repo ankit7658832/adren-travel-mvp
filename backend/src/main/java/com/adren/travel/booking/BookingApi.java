@@ -95,4 +95,18 @@ public interface BookingApi {
      * com.adren.travel.booking.event.BookingConfirmedEvent}.
      */
     UUID confirmBookingFromPaymentWebhook(UUID quotationOrPackageId, UUID consultantId, Money totalSellPrice);
+
+    /**
+     * Converts a saved Quotation into a reusable Package (PRD §9.1 Flow B,
+     * §20.7, BOK-10), not yet published. PRD §6's role matrix: "Create
+     * package" is {@code Yes/Yes/No (unless granted)} — a {@code USER} is
+     * allowed only if the calling Consultant has granted them {@link
+     * com.adren.travel.security.CapabilityGrantService.Capability#CREATE_PACKAGE}
+     * (RULES.md §5.1 — data-driven, not a hardcoded role {@code switch}).
+     * Publishes {@link com.adren.travel.booking.event.PackageCreatedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT') or "
+        + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
+        + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
+    UUID convertQuotationToPackage(UUID quotationId, ConvertQuotationToPackageCommand command);
 }

@@ -1,0 +1,128 @@
+package com.adren.travel.booking.internal;
+
+import com.adren.travel.shared.CurrencyCode;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.UUID;
+
+/**
+ * A reusable, sellable Package converted from a Quotation (PRD §20.7,
+ * §9.1 Flow B, BOK-10) — package-private, own table. Named
+ * {@code TravelPackage} rather than PRD's own "Package" to avoid shadowing
+ * {@code java.lang.Package} within this file. {@code sourceItineraryId} is
+ * a real FK constraint (see the migration) since {@code Itinerary} is
+ * owned by this SAME module. {@code basePrice} is auto-filled server-side
+ * from the source itinerary's priced line items; {@code markupPrice} is
+ * the Consultant-editable amount added on top, sharing {@code currency}
+ * with {@code basePrice} (RULES.md §4.4: an amount is never auditable
+ * without its currency).
+ */
+@Entity
+@Table(name = "travel_package")
+class TravelPackage {
+
+    @Id
+    private UUID packageId;
+
+    private UUID sourceItineraryId;
+    private UUID consultantId;
+    private String name;
+    private String description;
+    private LocalDate validityStart;
+    private LocalDate validityEnd;
+    private BigDecimal basePrice;
+    private BigDecimal markupPrice;
+
+    @Enumerated(EnumType.STRING)
+    private CurrencyCode currency;
+
+    private int maxPax;
+    private boolean promotedViaAds;
+    private UUID adCampaignId;
+    private boolean dynamicFlightHotelCombo;
+
+    @Enumerated(EnumType.STRING)
+    private PackageStatus status;
+
+    private Instant createdAt;
+
+    protected TravelPackage() {
+        // JPA
+    }
+
+    TravelPackage(UUID packageId, UUID sourceItineraryId, UUID consultantId, String name, String description,
+                  LocalDate validityStart, LocalDate validityEnd, BigDecimal basePrice, BigDecimal markupPrice,
+                  CurrencyCode currency, int maxPax) {
+        this.packageId = packageId;
+        this.sourceItineraryId = sourceItineraryId;
+        this.consultantId = consultantId;
+        this.name = name;
+        this.description = description;
+        this.validityStart = validityStart;
+        this.validityEnd = validityEnd;
+        this.basePrice = basePrice;
+        this.markupPrice = markupPrice;
+        this.currency = currency;
+        this.maxPax = maxPax;
+        this.promotedViaAds = false;
+        this.adCampaignId = null;
+        this.dynamicFlightHotelCombo = false;
+        this.status = PackageStatus.DRAFT;
+        this.createdAt = Instant.now();
+    }
+
+    UUID getPackageId() {
+        return packageId;
+    }
+
+    UUID getSourceItineraryId() {
+        return sourceItineraryId;
+    }
+
+    UUID getConsultantId() {
+        return consultantId;
+    }
+
+    String getName() {
+        return name;
+    }
+
+    LocalDate getValidityStart() {
+        return validityStart;
+    }
+
+    LocalDate getValidityEnd() {
+        return validityEnd;
+    }
+
+    BigDecimal getBasePrice() {
+        return basePrice;
+    }
+
+    BigDecimal getMarkupPrice() {
+        return markupPrice;
+    }
+
+    CurrencyCode getCurrency() {
+        return currency;
+    }
+
+    int getMaxPax() {
+        return maxPax;
+    }
+
+    boolean isDynamicFlightHotelCombo() {
+        return dynamicFlightHotelCombo;
+    }
+
+    PackageStatus getStatus() {
+        return status;
+    }
+}
