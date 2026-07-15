@@ -148,6 +148,11 @@ class WhitelabelServiceImpl implements WhitelabelApi {
     }
 
     @Override
+    public Market findConsultantMarket(UUID consultantId) {
+        return findConsultantOrThrow(consultantId).getHomeMarket();
+    }
+
+    @Override
     @Transactional
     public void updateBranding(UpdateBrandingCommand command) {
         findConsultantOrThrow(command.consultantId());

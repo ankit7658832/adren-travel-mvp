@@ -95,4 +95,45 @@ public interface BookingApi {
      * com.adren.travel.booking.event.BookingConfirmedEvent}.
      */
     UUID confirmBookingFromPaymentWebhook(UUID quotationOrPackageId, UUID consultantId, Money totalSellPrice);
+
+    /**
+     * Converts a saved Quotation into a reusable Package (PRD §9.1 Flow B,
+     * §20.7, BOK-10), not yet published. PRD §6's role matrix: "Create
+     * package" is {@code Yes/Yes/No (unless granted)} — a {@code USER} is
+     * allowed only if the calling Consultant has granted them {@link
+     * com.adren.travel.security.CapabilityGrantService.Capability#CREATE_PACKAGE}
+     * (RULES.md §5.1 — data-driven, not a hardcoded role {@code switch}).
+     * Publishes {@link com.adren.travel.booking.event.PackageCreatedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT') or "
+        + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
+        + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
+    UUID convertQuotationToPackage(UUID quotationId, ConvertQuotationToPackageCommand command);
+
+    /**
+     * Publishes a Package, making it visible to the Consultant's Users
+     * (PRD §9.1 Flow B step 3, §22.3, BOK-12) — same "Create package"
+     * role/capability-grant shape as {@link #convertQuotationToPackage},
+     * since publishing is part of the same authority. {@code promoteViaAds}
+     * records whether the Consultant opted into Meta campaign promotion
+     * (PRD §20.7); the actual hand-off into the Ads Campaign Builder
+     * (ADS-03) is a frontend navigation concern. The UK ATOL disclosure
+     * gate (BOK-11) is deferred — this vertical slice has no Flight line
+     * item type yet, so a dynamic flight+hotel combo can never occur.
+     * Publishes {@link com.adren.travel.booking.event.PackagePublishedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT') or "
+        + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
+        + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
+    UUID publishPackage(UUID packageId, boolean promoteViaAds);
+
+    /**
+     * The Consultant's PUBLISHED packages, visible to Users for booking
+     * (PRD §9.1 Flow B step 3, §22.3, BOK-12) — {@code Yes/Yes/Yes} across
+     * Super Admin/Consultant/User, unlike creating/publishing a package,
+     * since viewing what's already for sale is the same "make a booking"
+     * access every role has. Paginated per RULES.md §3.4.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    Page<PackageView> findPublishedPackagesByConsultant(UUID consultantId, Pageable pageable);
 }

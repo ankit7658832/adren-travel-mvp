@@ -2,6 +2,9 @@ package com.adren.travel.booking;
 
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
+import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
+import com.adren.travel.booking.event.PackageCreatedEvent;
+import com.adren.travel.booking.event.PackagePublishedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.MarkupType;
@@ -17,6 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.modulith.test.Scenario;
@@ -108,16 +113,51 @@ class BookingModuleIntegrationTests {
 
     @Test
     void confirmingABookingPublishesBookingConfirmedEvent(Scenario scenario) {
-        UUID packageId = UUID.randomUUID();
         Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
         // FND-05's tenant-active gate is exercised in BookingServiceImplTest;
         // authenticate as SUPER_ADMIN here (no consultantId, gate skipped)
         // so this test stays focused on the event-publication contract.
         authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(UUID.randomUUID());
 
-        scenario.stimulate(() -> bookingApi.confirmBooking(packageId, price))
+        scenario.stimulate(() -> bookingApi.confirmBooking(quotationId, price))
             .andWaitForEventOfType(BookingConfirmedEvent.class)
             .matchingMappedValue(BookingConfirmedEvent::totalSellPrice, price);
+    }
+
+    @Test
+    void confirmingABookingGeneratesAndPersistsAVoucherReferencingItBOK15() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(UUID.randomUUID());
+
+        UUID bookingId = bookingApi.confirmBooking(quotationId, price);
+
+        String pdfReference = jdbcTemplate.queryForObject(
+            "SELECT pdf_reference FROM voucher WHERE booking_id = ?", String.class, bookingId);
+        assertThat(pdfReference).isNotBlank();
+        String atolCertificateReference = jdbcTemplate.queryForObject(
+            "SELECT atol_certificate_reference FROM voucher WHERE booking_id = ?", String.class, bookingId);
+        assertThat(atolCertificateReference).isNull();
+    }
+
+    @Test
+    void confirmingABookingPlacesAndResolvesAWalletHoldAsADebitFIN07() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(UUID.randomUUID());
+
+        UUID bookingId = bookingApi.confirmBooking(quotationId, price);
+
+        List<String> ledgerEntryTypes = jdbcTemplate.queryForList(
+            "SELECT type FROM wallet_ledger_entry WHERE related_booking_id = ? ORDER BY created_at", String.class,
+            bookingId);
+        assertThat(ledgerEntryTypes).containsExactly("HOLD", "DEBIT");
+
+        Long pendingHoldsCount = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM wallet_ledger_entry WHERE related_booking_id = ? AND type = 'HOLD'",
+            Long.class, bookingId);
+        assertThat(pendingHoldsCount).isEqualTo(1);
     }
 
     /**
@@ -135,12 +175,13 @@ class BookingModuleIntegrationTests {
     @Test
     void confirmBookingsEventPublicationRegistryEntryRollsBackWithItsSurroundingTransactionBOK01() {
         authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(UUID.randomUUID());
         Money price = new Money(BigDecimal.valueOf(87_654.32), CurrencyCode.AED);
         AtomicReference<UUID> bookingIdRef = new AtomicReference<>();
         TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
 
         assertThatThrownBy(() -> transactionTemplate.executeWithoutResult(status -> {
-            bookingIdRef.set(bookingApi.confirmBooking(UUID.randomUUID(), price));
+            bookingIdRef.set(bookingApi.confirmBooking(quotationId, price));
             throw new IllegalStateException("BOK-01: forcing a rollback after confirmBooking to prove outbox atomicity");
         })).isInstanceOf(IllegalStateException.class);
 
@@ -201,6 +242,155 @@ class BookingModuleIntegrationTests {
         BigDecimal sellRate = jdbcTemplate.queryForObject(
             "SELECT sell_rate FROM hotel_line_item WHERE line_item_id = ?", BigDecimal.class, lineItemId);
         assertThat(sellRate).isEqualByComparingTo("11371.2000");
+    }
+
+    @Test
+    void savingAnItineraryWithALineItemAsQuotationPublishesTheEventAndPersistsTheQuotationBOK08BOK09(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID itineraryId = insertDraftItinerary(consultantId);
+        paymentsApi.configureMarkup(consultantId, new ConfigureMarkupCommand(
+            ProductCategory.HOTEL, MarkupType.PERCENTAGE, BigDecimal.valueOf(15), null, null));
+        bookingApi.addHotelLineItem(itineraryId, new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-1",
+            "Taj Palace", "Deluxe Room", MealPlan.BB, Instant.now().plusSeconds(3600),
+            new Money(BigDecimal.valueOf(100), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.valueOf(96), BigDecimal.valueOf(3), BigDecimal.ZERO));
+
+        scenario.stimulate(() -> bookingApi.saveAsQuotation(itineraryId))
+            .andWaitForEventOfType(ItineraryQuotationSavedEvent.class)
+            .matchingMappedValue(ItineraryQuotationSavedEvent::itineraryId, itineraryId);
+    }
+
+    @Test
+    void savingAnItineraryWithNoLineItemsAsQuotationIsRejectedBOK08() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID itineraryId = insertDraftItinerary(consultantId);
+
+        assertThatThrownBy(() -> bookingApi.saveAsQuotation(itineraryId))
+            .isInstanceOf(IllegalStateException.class);
+
+        String status = jdbcTemplate.queryForObject(
+            "SELECT status FROM itinerary WHERE itinerary_id = ?", String.class, itineraryId);
+        assertThat(status).isEqualTo("DRAFT");
+    }
+
+    @Test
+    void savingAsQuotationPersistsAQuotationRowWithAFutureValidUntilBOK09() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID itineraryId = insertDraftItinerary(consultantId);
+        paymentsApi.configureMarkup(consultantId, new ConfigureMarkupCommand(
+            ProductCategory.HOTEL, MarkupType.PERCENTAGE, BigDecimal.valueOf(15), null, null));
+        bookingApi.addHotelLineItem(itineraryId, new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-1",
+            "Taj Palace", "Deluxe Room", MealPlan.BB, Instant.now().plusSeconds(3600),
+            new Money(BigDecimal.valueOf(100), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.valueOf(96), BigDecimal.valueOf(3), BigDecimal.ZERO));
+
+        UUID quotationId = bookingApi.saveAsQuotation(itineraryId);
+
+        Instant validUntil = jdbcTemplate.queryForObject(
+            "SELECT valid_until FROM quotation WHERE quotation_id = ?", Instant.class, quotationId);
+        assertThat(validUntil).isAfter(Instant.now());
+        Boolean sharedWithTraveler = jdbcTemplate.queryForObject(
+            "SELECT shared_with_traveler FROM quotation WHERE quotation_id = ?", Boolean.class, quotationId);
+        assertThat(sharedWithTraveler).isFalse();
+    }
+
+    @Test
+    void addingALineItemAfterSaveAsQuotationIsRejectedBOK08() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID itineraryId = insertDraftItinerary(consultantId);
+        paymentsApi.configureMarkup(consultantId, new ConfigureMarkupCommand(
+            ProductCategory.HOTEL, MarkupType.PERCENTAGE, BigDecimal.valueOf(15), null, null));
+        bookingApi.addHotelLineItem(itineraryId, new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-1",
+            "Taj Palace", "Deluxe Room", MealPlan.BB, Instant.now().plusSeconds(3600),
+            new Money(BigDecimal.valueOf(100), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.valueOf(96), BigDecimal.valueOf(3), BigDecimal.ZERO));
+        bookingApi.saveAsQuotation(itineraryId);
+
+        var secondLineItem = new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-2", "Another Hotel",
+            "Standard Room", MealPlan.RO, Instant.now().plusSeconds(3600),
+            new Money(BigDecimal.valueOf(50), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> bookingApi.addHotelLineItem(itineraryId, secondLineItem))
+            .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void convertingAQuotationToAPackagePublishesPackageCreatedEventBOK10(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(consultantId);
+        var command = new ConvertQuotationToPackageCommand("Goa Getaway", "A relaxing beach trip",
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 4);
+
+        scenario.stimulate(() -> bookingApi.convertQuotationToPackage(quotationId, command))
+            .andWaitForEventOfType(PackageCreatedEvent.class)
+            .matchingMappedValue(PackageCreatedEvent::consultantId, consultantId);
+    }
+
+    @Test
+    void convertingAQuotationToAPackageAutoFillsBasePriceFromThePersistedSellRateBOK10() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(consultantId);
+        var command = new ConvertQuotationToPackageCommand("Goa Getaway", "A relaxing beach trip",
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 4);
+
+        UUID packageId = bookingApi.convertQuotationToPackage(quotationId, command);
+
+        BigDecimal basePrice = jdbcTemplate.queryForObject(
+            "SELECT base_price FROM travel_package WHERE package_id = ?", BigDecimal.class, packageId);
+        assertThat(basePrice).isEqualByComparingTo("11371.2000");
+        String status = jdbcTemplate.queryForObject(
+            "SELECT status FROM travel_package WHERE package_id = ?", String.class, packageId);
+        assertThat(status).isEqualTo("DRAFT");
+    }
+
+    @Test
+    void publishingAPackagePublishesPackagePublishedEventBOK12(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(consultantId);
+        var createCommand = new ConvertQuotationToPackageCommand("Goa Getaway", "A relaxing beach trip",
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 4);
+        UUID packageId = bookingApi.convertQuotationToPackage(quotationId, createCommand);
+
+        scenario.stimulate(() -> bookingApi.publishPackage(packageId, true))
+            .andWaitForEventOfType(PackagePublishedEvent.class)
+            .matchingMappedValue(PackagePublishedEvent::promotedViaAds, true);
+    }
+
+    @Test
+    void aPublishedPackageBecomesVisibleToTheConsultantsUsersBOK12() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(consultantId);
+        var createCommand = new ConvertQuotationToPackageCommand("Goa Getaway", "A relaxing beach trip",
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 4);
+        UUID packageId = bookingApi.convertQuotationToPackage(quotationId, createCommand);
+
+        Page<PackageView> beforePublish = bookingApi.findPublishedPackagesByConsultant(consultantId, PageRequest.of(0, 20));
+        assertThat(beforePublish.getContent()).isEmpty();
+
+        bookingApi.publishPackage(packageId, false);
+
+        Page<PackageView> afterPublish = bookingApi.findPublishedPackagesByConsultant(consultantId, PageRequest.of(0, 20));
+        assertThat(afterPublish.getContent()).extracting(PackageView::packageId).containsExactly(packageId);
+    }
+
+    private UUID savedQuotationWithOneLineItem(UUID consultantId) {
+        UUID itineraryId = insertDraftItinerary(consultantId);
+        paymentsApi.configureMarkup(consultantId, new ConfigureMarkupCommand(
+            ProductCategory.HOTEL, MarkupType.PERCENTAGE, BigDecimal.valueOf(15), null, null));
+        bookingApi.addHotelLineItem(itineraryId, new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-1",
+            "Taj Palace", "Deluxe Room", MealPlan.BB, Instant.now().plusSeconds(3600),
+            new Money(BigDecimal.valueOf(100), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.valueOf(96), BigDecimal.valueOf(3), BigDecimal.ZERO));
+        return bookingApi.saveAsQuotation(itineraryId);
     }
 
     private UUID insertDraftItinerary(UUID consultantId) {

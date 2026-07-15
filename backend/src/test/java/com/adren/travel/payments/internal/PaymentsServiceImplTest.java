@@ -13,12 +13,16 @@ import com.adren.travel.payments.PaymentIntentStatus;
 import com.adren.travel.payments.PaymentIntentView;
 import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.SnapshotFxRateCommand;
+import com.adren.travel.payments.WalletHoldCommand;
 import com.adren.travel.payments.WalletView;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.StripePaymentSucceededEvent;
+import com.adren.travel.payments.event.WalletHoldDebitedEvent;
+import com.adren.travel.payments.event.WalletHoldPlacedEvent;
+import com.adren.travel.payments.event.WalletHoldReleasedEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
@@ -35,6 +39,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
@@ -68,6 +73,9 @@ class PaymentsServiceImplTest {
     PaymentIntentRepository paymentIntentRepository;
 
     @Mock
+    WalletLedgerEntryRepository walletLedgerEntryRepository;
+
+    @Mock
     ApplicationEventPublisher events;
 
     @Mock
@@ -77,7 +85,8 @@ class PaymentsServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new PaymentsServiceImpl(markupRuleRepository, walletRepository, paymentIntentRepository, events,
+        service = new PaymentsServiceImpl(markupRuleRepository, walletRepository, paymentIntentRepository,
+            walletLedgerEntryRepository, new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
             new PricingPipeline(markupRuleRepository, events), stripeClient);
     }
 
@@ -501,6 +510,126 @@ class PaymentsServiceImplTest {
         service.handleStripeWebhook(new HandleStripeWebhookCommand("charge.refunded", "pi_123"));
 
         verifyNoInteractions(paymentIntentRepository, events);
+    }
+
+    @Test
+    void placeHoldIncreasesPendingHoldsAndPublishesTheEventFIN07() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+
+        service.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        assertThat(wallet.getPendingHolds()).isEqualByComparingTo("11500");
+        verify(walletRepository).save(wallet);
+
+        ArgumentCaptor<WalletLedgerEntry> entryCaptor = ArgumentCaptor.forClass(WalletLedgerEntry.class);
+        verify(walletLedgerEntryRepository).saveAndFlush(entryCaptor.capture());
+        assertThat(entryCaptor.getValue().getType()).isEqualTo(LedgerEntryType.HOLD);
+        assertThat(entryCaptor.getValue().getRelatedBookingId()).isEqualTo(bookingId);
+
+        ArgumentCaptor<WalletHoldPlacedEvent> eventCaptor = ArgumentCaptor.forClass(WalletHoldPlacedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().bookingId()).isEqualTo(bookingId);
+        assertThat(eventCaptor.getValue().amount()).isEqualTo(amount);
+    }
+
+    @Test
+    void placeHoldAutoProvisionsAWalletWhenNoneExistsFIN07() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.empty());
+        Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
+
+        service.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        ArgumentCaptor<Wallet> walletCaptor = ArgumentCaptor.forClass(Wallet.class);
+        verify(walletRepository, org.mockito.Mockito.atLeastOnce()).save(walletCaptor.capture());
+        assertThat(walletCaptor.getValue().getPendingHolds()).isEqualByComparingTo("1000");
+    }
+
+    @Test
+    void placeHoldIsANoOpWhenAHoldAlreadyExistsForTheBookingFIN10() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        when(walletLedgerEntryRepository.existsByRelatedBookingIdAndType(bookingId, LedgerEntryType.HOLD))
+            .thenReturn(true);
+        Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
+
+        service.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        verifyNoInteractions(walletRepository);
+        verify(walletLedgerEntryRepository, org.mockito.Mockito.never()).saveAndFlush(any());
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void placeHoldLosingAConcurrentRaceDoesNotSaveTheWalletOrPublishFIN10() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        when(walletLedgerEntryRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("dup"));
+        Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
+
+        service.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        // The in-memory wallet mutation happened (placeHold ran before the
+        // ledger-insert attempt), but since we lost the race, it must
+        // never be persisted — the concurrent winner already applied it.
+        verify(walletRepository, org.mockito.Mockito.never()).save(any());
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void resolveHoldAsDebitDecreasesPendingHoldsAndAvailableBalanceFIN07() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        wallet.placeHold(BigDecimal.valueOf(11_500));
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+
+        service.resolveHoldAsDebit(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        assertThat(wallet.getPendingHolds()).isEqualByComparingTo("0");
+        assertThat(wallet.getAvailableBalance()).isEqualByComparingTo("-11500");
+
+        ArgumentCaptor<WalletHoldDebitedEvent> eventCaptor = ArgumentCaptor.forClass(WalletHoldDebitedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().bookingId()).isEqualTo(bookingId);
+    }
+
+    @Test
+    void resolveHoldAsDebitFailsWhenNoWalletExistsFIN07() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.empty());
+        Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
+
+        assertThatThrownBy(() -> service.resolveHoldAsDebit(new WalletHoldCommand(bookingId, consultantId, amount)))
+            .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void resolveHoldAsReleaseDecreasesOnlyPendingHoldsFIN07() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        wallet.placeHold(BigDecimal.valueOf(500));
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
+
+        service.resolveHoldAsRelease(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        assertThat(wallet.getPendingHolds()).isEqualByComparingTo("0");
+        assertThat(wallet.getAvailableBalance()).isEqualByComparingTo("0");
+
+        ArgumentCaptor<WalletHoldReleasedEvent> eventCaptor = ArgumentCaptor.forClass(WalletHoldReleasedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().bookingId()).isEqualTo(bookingId);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

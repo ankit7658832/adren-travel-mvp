@@ -7,6 +7,8 @@ import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.LogFields;
 import com.adren.travel.shared.Money;
+import com.adren.travel.whitelabel.Market;
+import com.adren.travel.whitelabel.WhitelabelApi;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,17 +18,26 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * FND-24 — proves the notification listener's monetary log line carries
  * {@code consultantId} and {@code currency} as structured MDC fields (not
  * just embedded in the message text), and that both are cleared once the
  * log statement's try-with-resources scope ends so they don't leak onto
- * whatever this pooled thread logs next.
+ * whatever this pooled thread logs next. Email/WhatsApp/SMS clients are
+ * mocked here since this test is about the log line's structured fields
+ * (HRD-01's region-routing logic has its own dedicated test).
  */
 class BookingNotificationListenerLoggingTest {
 
-    private final BookingNotificationListener listener = new BookingNotificationListener();
+    private final WhitelabelApi whitelabelApi = mock(WhitelabelApi.class);
+    private final EmailClient emailClient = mock(EmailClient.class);
+    private final WhatsAppClient whatsAppClient = mock(WhatsAppClient.class);
+    private final SmsClient smsClient = mock(SmsClient.class);
+    private final BookingNotificationListener listener = new BookingNotificationListener(
+        whitelabelApi, new SecondaryChannelProvider(), emailClient, whatsAppClient, smsClient);
     private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
     private Logger logger;
 
@@ -35,6 +46,7 @@ class BookingNotificationListenerLoggingTest {
         logger = (Logger) LoggerFactory.getLogger(BookingNotificationListener.class);
         appender.start();
         logger.addAppender(appender);
+        when(whitelabelApi.findConsultantMarket(org.mockito.ArgumentMatchers.any())).thenReturn(Market.INDIA);
     }
 
     @AfterEach

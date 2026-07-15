@@ -3,15 +3,19 @@ package com.adren.travel.booking.internal;
 import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
+import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
+import com.adren.travel.booking.PackageView;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
+import com.adren.travel.booking.event.PackageCreatedEvent;
+import com.adren.travel.booking.event.PackagePublishedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.PaymentsApi;
 import com.adren.travel.payments.SellRateCalculation;
-import com.adren.travel.security.AdrenPrincipal;
+import com.adren.travel.payments.WalletHoldCommand;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.Money;
 import com.adren.travel.shared.ProductCategory;
@@ -23,6 +27,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -42,20 +48,33 @@ import java.util.UUID;
 @Service
 class BookingServiceImpl implements BookingApi {
 
+    // BOK-09 — PRD §20.9 gives no explicit default validity duration for
+    // valid_until; 7 days is a documented assumption pending business
+    // input, not a value derived from any PRD section.
+    private static final Duration QUOTATION_VALIDITY_WINDOW = Duration.ofDays(7);
+
     private final ItineraryRepository itineraryRepository;
     private final TravelerProfileRepository travelerProfileRepository;
     private final HotelLineItemRepository hotelLineItemRepository;
+    private final QuotationRepository quotationRepository;
+    private final TravelPackageRepository travelPackageRepository;
+    private final VoucherService voucherService;
     private final ApplicationEventPublisher events;
     private final WhitelabelApi whitelabelApi;
     private final SupplierSearchApi supplierSearchApi;
     private final PaymentsApi paymentsApi;
 
     BookingServiceImpl(ItineraryRepository itineraryRepository, TravelerProfileRepository travelerProfileRepository,
-                        HotelLineItemRepository hotelLineItemRepository, ApplicationEventPublisher events,
-                        WhitelabelApi whitelabelApi, SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
+                        HotelLineItemRepository hotelLineItemRepository, QuotationRepository quotationRepository,
+                        TravelPackageRepository travelPackageRepository, VoucherService voucherService,
+                        ApplicationEventPublisher events, WhitelabelApi whitelabelApi,
+                        SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
         this.itineraryRepository = itineraryRepository;
         this.travelerProfileRepository = travelerProfileRepository;
         this.hotelLineItemRepository = hotelLineItemRepository;
+        this.quotationRepository = quotationRepository;
+        this.travelPackageRepository = travelPackageRepository;
+        this.voucherService = voucherService;
         this.events = events;
         this.whitelabelApi = whitelabelApi;
         this.supplierSearchApi = supplierSearchApi;
@@ -75,10 +94,21 @@ class BookingServiceImpl implements BookingApi {
         CurrentPrincipal.resolveTenantScope(itinerary.getConsultantId());
         requireActiveUnlessSuperAdmin(itinerary.getConsultantId());
 
+        // BOK-08 AC: "at least one line item per required category" — this
+        // vertical slice only implements Hotel line items (BOK-04..07's
+        // other categories aren't built yet), so that narrows to "at least
+        // one line item" given the categories this slice actually supports.
+        if (hotelLineItemRepository.findByItineraryId(itineraryId).isEmpty()) {
+            throw new IllegalStateException("Cannot save as quotation: itinerary " + itineraryId + " has no line items");
+        }
+
         itinerary.markAsQuotation();
         itineraryRepository.save(itinerary);
 
-        UUID quotationId = UUID.randomUUID(); // simplified — a real Quotation entity would be created here
+        UUID quotationId = UUID.randomUUID();
+        Instant validUntil = Instant.now().plus(QUOTATION_VALIDITY_WINDOW);
+        quotationRepository.save(new Quotation(quotationId, itineraryId, validUntil));
+
         events.publishEvent(new ItineraryQuotationSavedEvent(itineraryId, quotationId, itinerary.getConsultantId()));
         return quotationId;
     }
@@ -86,21 +116,51 @@ class BookingServiceImpl implements BookingApi {
     @Override
     @Transactional
     public UUID confirmBooking(UUID quotationOrPackageId, Money totalSellPrice) {
-        AdrenPrincipal principal = CurrentPrincipal.get();
-        requireActiveUnlessSuperAdmin(principal.consultantId());
+        UUID consultantId = resolveConsultantIdFor(quotationOrPackageId);
+        CurrentPrincipal.resolveTenantScope(consultantId);
+        requireActiveUnlessSuperAdmin(consultantId);
 
-        UUID consultantId = UUID.randomUUID(); // resolved from the quotation/package in a full implementation
-        return doConfirmBooking(totalSellPrice, consultantId);
+        UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
+
+        // FIN-07: this direct (non-Stripe) confirmBooking path is the
+        // wallet/on-account payment method — Stripe payments instead go
+        // through confirmBookingFromPaymentWebhook and never touch the
+        // wallet. Placing then immediately resolving the hold in the same
+        // call is a simplification: this scaffold has no separate "reach
+        // payment step" moment distinct from confirmation itself, unlike
+        // the full booking flow PRD §12.3 describes.
+        paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, totalSellPrice));
+        paymentsApi.resolveHoldAsDebit(new WalletHoldCommand(bookingId, consultantId, totalSellPrice));
+
+        return finalizeConfirmedBooking(bookingId, consultantId, totalSellPrice);
+    }
+
+    // BOK-13 — quotationOrPackageId is polymorphic: a booking can be
+    // confirmed directly from a Quotation or from a published Package.
+    private UUID resolveConsultantIdFor(UUID quotationOrPackageId) {
+        return quotationRepository.findById(quotationOrPackageId)
+            .map(quotation -> itineraryRepository.findById(quotation.getItineraryId())
+                .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + quotation.getItineraryId()))
+                .getConsultantId())
+            .or(() -> travelPackageRepository.findById(quotationOrPackageId).map(TravelPackage::getConsultantId))
+            .orElseThrow(() -> new IllegalArgumentException("No quotation or package: " + quotationOrPackageId));
     }
 
     @Override
     @Transactional
     public UUID confirmBookingFromPaymentWebhook(UUID quotationOrPackageId, UUID consultantId, Money totalSellPrice) {
-        return doConfirmBooking(totalSellPrice, consultantId);
+        // FIN-07: this Stripe path never touches the wallet — the customer
+        // already paid by card, not wallet/credit.
+        UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
+        return finalizeConfirmedBooking(bookingId, consultantId, totalSellPrice);
     }
 
-    private UUID doConfirmBooking(Money totalSellPrice, UUID consultantId) {
-        UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
+    private UUID finalizeConfirmedBooking(UUID bookingId, UUID consultantId, Money totalSellPrice) {
+        // BOK-15: voucher generation happens synchronously, in the SAME
+        // transactional scope as the booking confirmation itself — unlike
+        // notification (deliberately async/fire-and-forget), a voucher is
+        // part of what "confirmed" means, not a side effect of it.
+        voucherService.generateFor(bookingId);
         events.publishEvent(new BookingConfirmedEvent(bookingId, consultantId, totalSellPrice));
         return bookingId;
     }
@@ -153,6 +213,16 @@ class BookingServiceImpl implements BookingApi {
         CurrentPrincipal.resolveTenantScope(itinerary.getConsultantId());
         requireActiveUnlessSuperAdmin(itinerary.getConsultantId());
 
+        // PRD §22.3 T4 / BOK-08: once saved as a Quotation, an itinerary is
+        // read-only "except via explicit edit" — adding a line item here is
+        // an implicit edit, not that explicit path (BOK-18's traveler-count
+        // recalculation is the first such explicit-edit mechanism), so it's
+        // blocked once the itinerary has left DRAFT.
+        if (itinerary.getStatus() != ItineraryStatus.DRAFT) {
+            throw new IllegalStateException(
+                "Cannot add a line item: itinerary " + itineraryId + " is " + itinerary.getStatus() + ", not DRAFT");
+        }
+
         UUID lineItemId = UUID.randomUUID();
         SellRateCalculation priced = paymentsApi.calculateSellRate(new CalculateSellRateCommand(
             lineItemId, itinerary.getConsultantId(), ProductCategory.HOTEL, command.netRate(),
@@ -179,5 +249,77 @@ class BookingServiceImpl implements BookingApi {
         UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(consultantId);
         return itineraryRepository.findByConsultantId(scopedConsultantId, pageable)
             .map(Itinerary::getItineraryId);
+    }
+
+    @Override
+    @Transactional
+    public UUID convertQuotationToPackage(UUID quotationId, ConvertQuotationToPackageCommand command) {
+        Quotation quotation = quotationRepository.findById(quotationId)
+            .orElseThrow(() -> new IllegalArgumentException("No quotation: " + quotationId));
+        Itinerary itinerary = itineraryRepository.findById(quotation.getItineraryId())
+            .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + quotation.getItineraryId()));
+        CurrentPrincipal.resolveTenantScope(itinerary.getConsultantId());
+        requireActiveUnlessSuperAdmin(itinerary.getConsultantId());
+
+        if (command.validityEnd().isBefore(command.validityStart())) {
+            throw new IllegalArgumentException("validityEnd must not be before validityStart");
+        }
+        if (command.maxPax() <= 0) {
+            throw new IllegalArgumentException("maxPax must be a positive value");
+        }
+
+        // FIN-05: basePrice is auto-filled from the source itinerary's
+        // already-priced line items — BOK-17's mixed-currency consolidation
+        // is a later, separate story, so this assumes every line item
+        // shares one sell currency (true for this vertical slice's
+        // Hotel-only itineraries).
+        List<HotelLineItem> lineItems = hotelLineItemRepository.findByItineraryId(quotation.getItineraryId());
+        if (lineItems.isEmpty()) {
+            throw new IllegalStateException(
+                "Cannot convert to package: itinerary " + quotation.getItineraryId() + " has no line items");
+        }
+        Money basePrice = lineItems.stream()
+            .map(lineItem -> new Money(lineItem.getSellRate(), lineItem.getSellCurrency()))
+            .reduce(Money::plus)
+            .orElseThrow();
+
+        UUID packageId = UUID.randomUUID();
+        TravelPackage travelPackage = new TravelPackage(packageId, quotation.getItineraryId(),
+            itinerary.getConsultantId(), command.name(), command.description(), command.validityStart(),
+            command.validityEnd(), basePrice.amount(), command.markupPrice(), basePrice.currency(), command.maxPax());
+        travelPackageRepository.save(travelPackage);
+
+        events.publishEvent(new PackageCreatedEvent(packageId, quotation.getItineraryId(), itinerary.getConsultantId()));
+        return packageId;
+    }
+
+    @Override
+    @Transactional
+    public UUID publishPackage(UUID packageId, boolean promoteViaAds) {
+        TravelPackage travelPackage = travelPackageRepository.findById(packageId)
+            .orElseThrow(() -> new IllegalArgumentException("No package: " + packageId));
+        CurrentPrincipal.resolveTenantScope(travelPackage.getConsultantId());
+        requireActiveUnlessSuperAdmin(travelPackage.getConsultantId());
+
+        travelPackage.publish(promoteViaAds);
+        travelPackageRepository.save(travelPackage);
+
+        events.publishEvent(new PackagePublishedEvent(packageId, travelPackage.getSourceItineraryId(),
+            travelPackage.getConsultantId(), promoteViaAds));
+        return packageId;
+    }
+
+    @Override
+    public Page<PackageView> findPublishedPackagesByConsultant(UUID consultantId, Pageable pageable) {
+        UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(consultantId);
+        return travelPackageRepository.findByConsultantIdAndStatus(scopedConsultantId, PackageStatus.PUBLISHED, pageable)
+            .map(BookingServiceImpl::toPackageView);
+    }
+
+    private static PackageView toPackageView(TravelPackage travelPackage) {
+        return new PackageView(travelPackage.getPackageId(), travelPackage.getSourceItineraryId(),
+            travelPackage.getName(), travelPackage.getDescription(), travelPackage.getValidityStart(),
+            travelPackage.getValidityEnd(), travelPackage.getBasePrice(), travelPackage.getMarkupPrice(),
+            travelPackage.getCurrency(), travelPackage.getMaxPax(), travelPackage.isPromotedViaAds());
     }
 }

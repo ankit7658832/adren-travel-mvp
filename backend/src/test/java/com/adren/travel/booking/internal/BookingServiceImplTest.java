@@ -2,11 +2,14 @@ package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
+import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.MealPlan;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
+import com.adren.travel.booking.event.PackageCreatedEvent;
+import com.adren.travel.booking.event.PackagePublishedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.FxRateSnapshot;
@@ -83,6 +86,15 @@ class BookingServiceImplTest {
     HotelLineItemRepository hotelLineItemRepository;
 
     @Mock
+    QuotationRepository quotationRepository;
+
+    @Mock
+    TravelPackageRepository travelPackageRepository;
+
+    @Mock
+    VoucherService voucherService;
+
+    @Mock
     PaymentsApi paymentsApi;
 
     BookingServiceImpl service;
@@ -90,7 +102,18 @@ class BookingServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new BookingServiceImpl(itineraryRepository, travelerProfileRepository, hotelLineItemRepository,
-            events, whitelabelApi, supplierSearchApi, paymentsApi);
+            quotationRepository, travelPackageRepository, voucherService, events, whitelabelApi, supplierSearchApi,
+            paymentsApi);
+    }
+
+    // BOK-08: saveAsQuotation now requires at least one line item — stub a
+    // non-empty result for any test that expects the transition to succeed.
+    private void stubExistingHotelLineItem(UUID itineraryId) {
+        HotelLineItem existing = new HotelLineItem(UUID.randomUUID(), itineraryId, SupplierId.HOTELBEDS,
+            "rate-key-1", "Taj Palace", "Deluxe Room", MealPlan.BB, Instant.now().plusSeconds(3600),
+            BigDecimal.valueOf(100), CurrencyCode.INR, BigDecimal.ZERO, BigDecimal.ZERO,
+            BigDecimal.valueOf(100), CurrencyCode.INR, BigDecimal.ONE);
+        when(hotelLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of(existing));
     }
 
     @AfterEach
@@ -104,6 +127,7 @@ class BookingServiceImplTest {
         UUID consultantId = UUID.randomUUID();
         Itinerary draft = new Itinerary(itineraryId, consultantId, null);
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
         authenticateAs(Role.CONSULTANT, consultantId);
 
         service.saveAsQuotation(itineraryId);
@@ -124,6 +148,7 @@ class BookingServiceImplTest {
         UUID consultantId = UUID.randomUUID();
         Itinerary draft = new Itinerary(itineraryId, consultantId, null);
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
         authenticateAs(Role.CONSULTANT, consultantId);
         org.mockito.Mockito.doThrow(new RuntimeException("DB write failed"))
             .when(itineraryRepository).save(draft);
@@ -146,6 +171,40 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void savingAsQuotationRejectsAnItineraryWithNoLineItemsBOK08() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        when(hotelLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of());
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        assertThatThrownBy(() -> service.saveAsQuotation(itineraryId))
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(draft.getStatus()).isEqualTo(ItineraryStatus.DRAFT);
+        verify(events, org.mockito.Mockito.never()).publishEvent(any(ItineraryQuotationSavedEvent.class));
+    }
+
+    @Test
+    void savingAsQuotationCreatesAQuotationWithAFutureValidUntilBOK09() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        service.saveAsQuotation(itineraryId);
+
+        ArgumentCaptor<Quotation> captor = ArgumentCaptor.forClass(Quotation.class);
+        verify(quotationRepository).save(captor.capture());
+        assertThat(captor.getValue().getItineraryId()).isEqualTo(itineraryId);
+        assertThat(captor.getValue().getValidUntil()).isAfter(Instant.now());
+        assertThat(captor.getValue().isSharedWithTraveler()).isFalse();
+        assertThat(captor.getValue().getConvertedToBookingId()).isNull();
+    }
+
+    @Test
     void aConsultantCannotSaveAnotherConsultantsItineraryAsQuotationFND03() {
         UUID itineraryId = UUID.randomUUID();
         UUID ownerConsultantId = UUID.randomUUID();
@@ -165,6 +224,7 @@ class BookingServiceImplTest {
         UUID consultantId = UUID.randomUUID();
         Itinerary draft = new Itinerary(itineraryId, consultantId, null);
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
         authenticateAs(Role.USER, consultantId);
 
         service.saveAsQuotation(itineraryId);
@@ -192,6 +252,7 @@ class BookingServiceImplTest {
         UUID itineraryId = UUID.randomUUID();
         Itinerary draft = new Itinerary(itineraryId, UUID.randomUUID(), null);
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
         authenticateAs(Role.SUPER_ADMIN, null);
 
         service.saveAsQuotation(itineraryId);
@@ -202,9 +263,11 @@ class BookingServiceImplTest {
     @Test
     void confirmBookingPublishesBookingConfirmedEventWithCorrectAmount() {
         Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
-        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(consultantId);
+        authenticateAs(Role.CONSULTANT, consultantId);
 
-        service.confirmBooking(UUID.randomUUID(), price);
+        service.confirmBooking(quotationId, price);
 
         // Explicit class matters: ApplicationEventPublisher overloads
         // publishEvent(ApplicationEvent) and publishEvent(Object), and a bare
@@ -214,26 +277,129 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void confirmBookingResolvesTheConsultantIdFromAPackageWhenNoQuotationMatchesBOK13() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = UUID.randomUUID();
+        when(quotationRepository.findById(packageId)).thenReturn(Optional.empty());
+        TravelPackage travelPackage = new TravelPackage(packageId, UUID.randomUUID(), consultantId, "Goa Getaway",
+            null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(11_371.20), BigDecimal.valueOf(500), CurrencyCode.INR, 4);
+        when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        UUID bookingId = service.confirmBooking(packageId, price);
+
+        assertThat(bookingId).isNotNull();
+        ArgumentCaptor<BookingConfirmedEvent> captor = ArgumentCaptor.forClass(BookingConfirmedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().consultantId()).isEqualTo(consultantId);
+    }
+
+    @Test
+    void confirmBookingFailsForAnUnknownQuotationOrPackageBOK13() {
+        UUID unknownId = UUID.randomUUID();
+        Money price = new Money(BigDecimal.valueOf(1000), CurrencyCode.INR);
+        when(quotationRepository.findById(unknownId)).thenReturn(Optional.empty());
+        when(travelPackageRepository.findById(unknownId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.confirmBooking(unknownId, price))
+            .isInstanceOf(IllegalArgumentException.class);
+        verify(events, org.mockito.Mockito.never()).publishEvent(any(BookingConfirmedEvent.class));
+    }
+
+    @Test
+    void aUserCannotConfirmABookingForAnotherConsultantsQuotationBOK13() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(ownerConsultantId);
+        Money price = new Money(BigDecimal.valueOf(1000), CurrencyCode.INR);
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> service.confirmBooking(quotationId, price))
+            .isInstanceOf(AccessDeniedException.class);
+        verify(events, org.mockito.Mockito.never()).publishEvent(any(BookingConfirmedEvent.class));
+    }
+
+    @Test
     void confirmBookingRejectsASuspendedConsultantsUserFND05() {
         UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(consultantId);
         Money price = new Money(BigDecimal.valueOf(1000), CurrencyCode.INR);
         authenticateAs(Role.USER, consultantId);
         org.mockito.Mockito.doThrow(new AccessDeniedException("suspended"))
             .when(whitelabelApi).requireConsultantActive(consultantId);
 
-        assertThatThrownBy(() -> service.confirmBooking(UUID.randomUUID(), price))
+        assertThatThrownBy(() -> service.confirmBooking(quotationId, price))
             .isInstanceOf(AccessDeniedException.class);
         verify(events, org.mockito.Mockito.never()).publishEvent(any(BookingConfirmedEvent.class));
     }
 
     @Test
     void confirmBookingSkipsTheActiveGateForASuperAdmin() {
+        UUID quotationId = stubQuotationResolvingTo(UUID.randomUUID());
         Money price = new Money(BigDecimal.valueOf(1000), CurrencyCode.INR);
         authenticateAs(Role.SUPER_ADMIN, null);
 
-        service.confirmBooking(UUID.randomUUID(), price);
+        service.confirmBooking(quotationId, price);
 
         verify(whitelabelApi, org.mockito.Mockito.never()).requireConsultantActive(any());
+    }
+
+    private UUID stubQuotationResolvingTo(UUID consultantId) {
+        UUID itineraryId = UUID.randomUUID();
+        UUID quotationId = UUID.randomUUID();
+        when(quotationRepository.findById(quotationId)).thenReturn(
+            Optional.of(new Quotation(quotationId, itineraryId, Instant.now().plusSeconds(3600))));
+        when(itineraryRepository.findById(itineraryId)).thenReturn(
+            Optional.of(new Itinerary(itineraryId, consultantId, null)));
+        return quotationId;
+    }
+
+    @Test
+    void confirmBookingGeneratesAVoucherInTheSameCallAsTheBookingConfirmedEventBOK15() {
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(consultantId);
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        UUID bookingId = service.confirmBooking(quotationId, price);
+
+        verify(voucherService).generateFor(bookingId);
+    }
+
+    @Test
+    void confirmBookingFromPaymentWebhookAlsoGeneratesAVoucherBOK15() {
+        UUID consultantId = UUID.randomUUID();
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+
+        UUID bookingId = service.confirmBookingFromPaymentWebhook(UUID.randomUUID(), consultantId, price);
+
+        verify(voucherService).generateFor(bookingId);
+    }
+
+    @Test
+    void confirmBookingPlacesThenResolvesAWalletHoldForTheDirectPathFIN07() {
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(consultantId);
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        UUID bookingId = service.confirmBooking(quotationId, price);
+
+        var inOrder = org.mockito.Mockito.inOrder(paymentsApi);
+        inOrder.verify(paymentsApi).placeHold(new com.adren.travel.payments.WalletHoldCommand(bookingId, consultantId, price));
+        inOrder.verify(paymentsApi).resolveHoldAsDebit(new com.adren.travel.payments.WalletHoldCommand(bookingId, consultantId, price));
+    }
+
+    @Test
+    void confirmBookingFromPaymentWebhookNeverTouchesTheWalletFIN07() {
+        UUID consultantId = UUID.randomUUID();
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+
+        service.confirmBookingFromPaymentWebhook(UUID.randomUUID(), consultantId, price);
+
+        verify(paymentsApi, org.mockito.Mockito.never()).placeHold(any());
+        verify(paymentsApi, org.mockito.Mockito.never()).resolveHoldAsDebit(any());
     }
 
     @Test
@@ -428,6 +594,230 @@ class BookingServiceImplTest {
         assertThatThrownBy(() -> service.addHotelLineItem(itineraryId, command))
             .isInstanceOf(AccessDeniedException.class);
         verify(hotelLineItemRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void addingAHotelLineItemRejectsAnItineraryThatIsAlreadyAQuotationBOK08() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        itinerary.markAsQuotation();
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        var command = new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-1", "Taj Palace", "Deluxe Room",
+            MealPlan.BB, Instant.now().plusSeconds(3600), new Money(BigDecimal.valueOf(100), CurrencyCode.INR),
+            CurrencyCode.INR, BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> service.addHotelLineItem(itineraryId, command))
+            .isInstanceOf(IllegalStateException.class);
+        verify(hotelLineItemRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void convertingAQuotationToAPackageAutoFillsBasePriceFromLineItemsAndPublishesTheEventBOK10() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(quotationRepository.findById(quotationId)).thenReturn(
+            Optional.of(new Quotation(quotationId, itineraryId, Instant.now().plusSeconds(3600))));
+        when(itineraryRepository.findById(itineraryId)).thenReturn(
+            Optional.of(new Itinerary(itineraryId, consultantId, null)));
+        HotelLineItem lineItemOne = new HotelLineItem(UUID.randomUUID(), itineraryId, SupplierId.HOTELBEDS,
+            "rate-key-1", "Taj Palace", "Deluxe Room", MealPlan.BB, Instant.now().plusSeconds(3600),
+            BigDecimal.valueOf(100), CurrencyCode.INR, BigDecimal.ZERO, BigDecimal.ZERO,
+            BigDecimal.valueOf(5000), CurrencyCode.INR, BigDecimal.ONE);
+        HotelLineItem lineItemTwo = new HotelLineItem(UUID.randomUUID(), itineraryId, SupplierId.HOTELBEDS,
+            "rate-key-2", "Beach Resort", "Sea View", MealPlan.HB, Instant.now().plusSeconds(3600),
+            BigDecimal.valueOf(80), CurrencyCode.INR, BigDecimal.ZERO, BigDecimal.ZERO,
+            BigDecimal.valueOf(3000), CurrencyCode.INR, BigDecimal.ONE);
+        when(hotelLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of(lineItemOne, lineItemTwo));
+        var command = new ConvertQuotationToPackageCommand("Goa Getaway", "A relaxing beach trip",
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 4);
+
+        UUID packageId = service.convertQuotationToPackage(quotationId, command);
+
+        assertThat(packageId).isNotNull();
+        ArgumentCaptor<TravelPackage> captor = ArgumentCaptor.forClass(TravelPackage.class);
+        verify(travelPackageRepository).save(captor.capture());
+        assertThat(captor.getValue().getSourceItineraryId()).isEqualTo(itineraryId);
+        assertThat(captor.getValue().getConsultantId()).isEqualTo(consultantId);
+        assertThat(captor.getValue().getName()).isEqualTo("Goa Getaway");
+        assertThat(captor.getValue().getBasePrice()).isEqualByComparingTo("8000");
+        assertThat(captor.getValue().getMarkupPrice()).isEqualByComparingTo("500");
+        assertThat(captor.getValue().getCurrency()).isEqualTo(CurrencyCode.INR);
+        assertThat(captor.getValue().getMaxPax()).isEqualTo(4);
+        assertThat(captor.getValue().getStatus()).isEqualTo(PackageStatus.DRAFT);
+
+        ArgumentCaptor<PackageCreatedEvent> eventCaptor = ArgumentCaptor.forClass(PackageCreatedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().packageId()).isEqualTo(packageId);
+        assertThat(eventCaptor.getValue().sourceItineraryId()).isEqualTo(itineraryId);
+        assertThat(eventCaptor.getValue().consultantId()).isEqualTo(consultantId);
+    }
+
+    @Test
+    void convertingAnUnknownQuotationFailsBOK10() {
+        UUID quotationId = UUID.randomUUID();
+        when(quotationRepository.findById(quotationId)).thenReturn(Optional.empty());
+
+        var command = new ConvertQuotationToPackageCommand("Goa Getaway", null,
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 4);
+
+        assertThatThrownBy(() -> service.convertQuotationToPackage(quotationId, command))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void convertingAQuotationToAPackageRejectsAValidityEndBeforeStartBOK10() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(quotationRepository.findById(quotationId)).thenReturn(
+            Optional.of(new Quotation(quotationId, itineraryId, Instant.now().plusSeconds(3600))));
+        when(itineraryRepository.findById(itineraryId)).thenReturn(
+            Optional.of(new Itinerary(itineraryId, consultantId, null)));
+
+        var command = new ConvertQuotationToPackageCommand("Goa Getaway", null,
+            LocalDate.now().plusDays(90), LocalDate.now().plusDays(30), BigDecimal.valueOf(500), 4);
+
+        assertThatThrownBy(() -> service.convertQuotationToPackage(quotationId, command))
+            .isInstanceOf(IllegalArgumentException.class);
+        verify(travelPackageRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void convertingAQuotationToAPackageRejectsANonPositiveMaxPaxBOK10() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(quotationRepository.findById(quotationId)).thenReturn(
+            Optional.of(new Quotation(quotationId, itineraryId, Instant.now().plusSeconds(3600))));
+        when(itineraryRepository.findById(itineraryId)).thenReturn(
+            Optional.of(new Itinerary(itineraryId, consultantId, null)));
+
+        var command = new ConvertQuotationToPackageCommand("Goa Getaway", null,
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 0);
+
+        assertThatThrownBy(() -> service.convertQuotationToPackage(quotationId, command))
+            .isInstanceOf(IllegalArgumentException.class);
+        verify(travelPackageRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void convertingAQuotationToAPackageRejectsAnItineraryWithNoLineItemsBOK10() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(quotationRepository.findById(quotationId)).thenReturn(
+            Optional.of(new Quotation(quotationId, itineraryId, Instant.now().plusSeconds(3600))));
+        when(itineraryRepository.findById(itineraryId)).thenReturn(
+            Optional.of(new Itinerary(itineraryId, consultantId, null)));
+        when(hotelLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of());
+
+        var command = new ConvertQuotationToPackageCommand("Goa Getaway", null,
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 4);
+
+        assertThatThrownBy(() -> service.convertQuotationToPackage(quotationId, command))
+            .isInstanceOf(IllegalStateException.class);
+        verify(travelPackageRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void aConsultantCannotConvertAnotherConsultantsQuotationBOK10() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID quotationId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        when(quotationRepository.findById(quotationId)).thenReturn(
+            Optional.of(new Quotation(quotationId, itineraryId, Instant.now().plusSeconds(3600))));
+        when(itineraryRepository.findById(itineraryId)).thenReturn(
+            Optional.of(new Itinerary(itineraryId, ownerConsultantId, null)));
+
+        var command = new ConvertQuotationToPackageCommand("Goa Getaway", null,
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 4);
+
+        assertThatThrownBy(() -> service.convertQuotationToPackage(quotationId, command))
+            .isInstanceOf(AccessDeniedException.class);
+        verify(travelPackageRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void publishingAPackageTransitionsToPublishedAndPublishesTheEventBOK12() {
+        UUID packageId = UUID.randomUUID();
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        TravelPackage travelPackage = new TravelPackage(packageId, itineraryId, consultantId, "Goa Getaway",
+            "A relaxing beach trip", LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(11_371.20), BigDecimal.valueOf(500), CurrencyCode.INR, 4);
+        when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+
+        service.publishPackage(packageId, true);
+
+        assertThat(travelPackage.getStatus()).isEqualTo(PackageStatus.PUBLISHED);
+        assertThat(travelPackage.isPromotedViaAds()).isTrue();
+        verify(travelPackageRepository).save(travelPackage);
+
+        ArgumentCaptor<PackagePublishedEvent> captor = ArgumentCaptor.forClass(PackagePublishedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().packageId()).isEqualTo(packageId);
+        assertThat(captor.getValue().sourceItineraryId()).isEqualTo(itineraryId);
+        assertThat(captor.getValue().consultantId()).isEqualTo(consultantId);
+        assertThat(captor.getValue().promotedViaAds()).isTrue();
+    }
+
+    @Test
+    void publishingAnAlreadyPublishedPackageFailsBOK12() {
+        UUID packageId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        TravelPackage travelPackage = new TravelPackage(packageId, UUID.randomUUID(), consultantId, "Goa Getaway",
+            null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(11_371.20), BigDecimal.valueOf(500), CurrencyCode.INR, 4);
+        travelPackage.publish(false);
+        when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+
+        assertThatThrownBy(() -> service.publishPackage(packageId, true))
+            .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void aConsultantCannotPublishAnotherConsultantsPackageBOK12() {
+        UUID packageId = UUID.randomUUID();
+        UUID ownerConsultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        TravelPackage travelPackage = new TravelPackage(packageId, UUID.randomUUID(), ownerConsultantId, "Goa Getaway",
+            null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(11_371.20), BigDecimal.valueOf(500), CurrencyCode.INR, 4);
+        when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+
+        assertThatThrownBy(() -> service.publishPackage(packageId, false))
+            .isInstanceOf(AccessDeniedException.class);
+        verify(travelPackageRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void findPublishedPackagesByConsultantReturnsOnlyPublishedOnesFromTheRepositoryQueryBOK12() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        TravelPackage published = new TravelPackage(UUID.randomUUID(), UUID.randomUUID(), consultantId,
+            "Goa Getaway", null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(11_371.20), BigDecimal.valueOf(500), CurrencyCode.INR, 4);
+        published.publish(false);
+        Pageable pageable = PageRequest.of(0, 20);
+        when(travelPackageRepository.findByConsultantIdAndStatus(consultantId, PackageStatus.PUBLISHED, pageable))
+            .thenReturn(new PageImpl<>(List.of(published)));
+
+        Page<com.adren.travel.booking.PackageView> result =
+            service.findPublishedPackagesByConsultant(consultantId, pageable);
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).name()).isEqualTo("Goa Getaway");
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

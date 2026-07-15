@@ -41,14 +41,14 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **BOK-05** — add transfer line items to an itinerary transferz
 - [ ] **BOK-06** — add cruise line items to an itinerary widgety
 - [ ] **BOK-07** — add activity line items to an itinerary hbactivities
-- [ ] **BOK-08** — save an itinerary as a quotation
-- [ ] **BOK-09** — create quotation entity with fx rate validity window
-- [ ] **BOK-10** — convert a quotation to a package
+- [x] **BOK-08** — save an itinerary as a quotation
+- [x] **BOK-09** — create quotation entity with fx rate validity window
+- [x] **BOK-10** — convert a quotation to a package
 - [ ] **BOK-11** — build the package builder screen with uk atol disclosure gate
-- [ ] **BOK-12** — publish a package making it visible to users
-- [ ] **BOK-13** — build the direct booking payment flow user facing
+- [x] **BOK-12** — publish a package making it visible to users (ATOL gate deferred to BOK-11/BOK-04 — see backend README)
+- [x] **BOK-13** — build the direct booking payment flow user facing (backend confirmBooking scaffold only — frontend screen deferred, see backend README)
 - [x] **BOK-14** — capture traveler profile details including passport document vault
-- [ ] **BOK-15** — generate a voucher on booking confirmation including atol certificate for uk dynamic packages
+- [x] **BOK-15** — generate a voucher on booking confirmation including atol certificate for uk dynamic packages (ATOL cert always null in this slice — see backend README)
 - [ ] **BOK-16** — prevent double booking of the last available inventory unit under concurrent requests
 - [ ] **BOK-17** — consolidate mixed currency line items to the consultant s sell currency at checkout
 - [ ] **BOK-18** — recalculate price when traveler count changes after quotation but before booking
@@ -63,10 +63,10 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **FIN-04** — snapshot and lock the fx rate at quotation time
 - [x] **FIN-05** — calculate sell rate through the full net buffer markup commission pipeline
 - [x] **FIN-06** — model the wallet with balance credit limit and pending holds
-- [ ] **FIN-07** — place a hold on booking confirmation release or debit on final confirmation
+- [x] **FIN-07** — place a hold on booking confirmation release or debit on final confirmation
 - [ ] **FIN-08** — block booking confirmation on credit limit breach with an actionable message
 - [ ] **FIN-09** — build the wallet billing screen with pre payment breach warning
-- [ ] **FIN-10** — guarantee atomic idempotent wallet ledger writes
+- [x] **FIN-10** — guarantee atomic idempotent wallet ledger writes
 - [x] **FIN-11** — integrate stripe for payment collection across six settlement currencies
 - [ ] **FIN-12** — support on account billing as a payment method
 - [ ] **FIN-13** — process refunds and credit notes tied to supplier cancellation policy
@@ -126,7 +126,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 
 ## Hardening (13)
 
-- [ ] **HRD-01** — implement notification dispatch for email plus region configurable secondary channel
+- [x] **HRD-01** — implement notification dispatch for email plus region configurable secondary channel
 - [ ] **HRD-02** — wire all prd 15 notification trigger events
 - [ ] **HRD-03** — make every notification listener idempotent
 - [ ] **HRD-04** — build the notification preferences screen

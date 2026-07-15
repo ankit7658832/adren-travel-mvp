@@ -70,6 +70,15 @@ public interface WhitelabelApi {
      */
     void requireConsultantActive(UUID consultantId);
 
+    /**
+     * The Consultant's home market (PRD §13.1) — same "consulted mid-flow
+     * by an already-authorized system step" shape as {@link
+     * #requireConsultantActive}, no {@code @PreAuthorize}. HRD-01's
+     * region-routed secondary notification channel (WhatsApp for India/
+     * Dubai, SMS elsewhere) is this method's first caller.
+     */
+    Market findConsultantMarket(UUID consultantId);
+
     /** Configures a Consultant's storefront branding (PRD §13.2, FND-06) — Super Admin only. */
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     void updateBranding(UpdateBrandingCommand command);

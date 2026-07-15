@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.modulith.test.Scenario;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -73,6 +74,9 @@ class NotificationTraceIdPropagationTest {
         this.bookingApi = bookingApi;
     }
 
+    @Autowired
+    JdbcTemplate jdbcTemplate;
+
     @AfterEach
     void tearDown() {
         Logger logger = (Logger) LoggerFactory.getLogger("com.adren.travel.notification.internal.BookingNotificationListener");
@@ -95,7 +99,8 @@ class NotificationTraceIdPropagationTest {
         MDC.put(TraceIds.MDC_KEY, requestTraceId);
 
         Money price = new Money(BigDecimal.valueOf(1000), CurrencyCode.INR);
-        scenario.stimulate(() -> bookingApi.confirmBooking(UUID.randomUUID(), price))
+        UUID quotationId = insertQuotationForANewDraftItinerary();
+        scenario.stimulate(() -> bookingApi.confirmBooking(quotationId, price))
             .andWaitForEventOfType(BookingConfirmedEvent.class)
             .toArrive();
 
@@ -103,6 +108,23 @@ class NotificationTraceIdPropagationTest {
 
         String listenerTraceId = appender.list.get(0).getMDCPropertyMap().get(TraceIds.MDC_KEY);
         assertThat(listenerTraceId).isEqualTo(requestTraceId);
+    }
+
+    // BOK-13: confirmBooking now resolves a real consultantId from the
+    // quotation/package it's given, so this test needs a genuinely
+    // persisted Quotation (+ its Itinerary) rather than a random UUID.
+    private UUID insertQuotationForANewDraftItinerary() {
+        UUID itineraryId = UUID.randomUUID();
+        jdbcTemplate.update(
+            "INSERT INTO itinerary (itinerary_id, consultant_id, status, ai_generated, created_at, updated_at) " +
+                "VALUES (?, ?, 'DRAFT', false, now(), now())",
+            itineraryId, UUID.randomUUID());
+        UUID quotationId = UUID.randomUUID();
+        jdbcTemplate.update(
+            "INSERT INTO quotation (quotation_id, itinerary_id, valid_until, shared_with_traveler, created_at) " +
+                "VALUES (?, ?, now() + interval '7 days', false, now())",
+            quotationId, itineraryId);
+        return quotationId;
     }
 
     private static void authenticateAsSuperAdmin() {
