@@ -82,8 +82,7 @@ class BookingServiceImpl implements BookingApi {
         UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
         UUID consultantId = UUID.randomUUID(); // resolved from the quotation/package in a full implementation
 
-        events.publishEvent(new BookingConfirmedEvent(
-            bookingId, consultantId, totalSellPrice.amount(), totalSellPrice.currency()));
+        events.publishEvent(new BookingConfirmedEvent(bookingId, consultantId, totalSellPrice));
         return bookingId;
     }
 

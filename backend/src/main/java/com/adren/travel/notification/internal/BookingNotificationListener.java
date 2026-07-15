@@ -45,13 +45,13 @@ class BookingNotificationListener {
         // one log statement rather than leaking into whatever runs next on
         // this (pooled) async thread.
         try (var consultantScope = MDC.putCloseable(LogFields.CONSULTANT_ID, event.consultantId().toString());
-             var currencyScope = MDC.putCloseable(LogFields.CURRENCY, event.currency().name())) {
+             var currencyScope = MDC.putCloseable(LogFields.CURRENCY, event.totalSellPrice().currency().name())) {
             // FND-21: this log line's traceId must match the request that
             // triggered confirmBooking(), proving MdcTaskDecorator carried MDC
             // context across the @Async executor boundary — see
             // NotificationTraceIdPropagationTest.
-            log.info("Booking confirmed notification stub invoked, bookingId={}, totalSellPrice={} {}, traceId={}",
-                event.bookingId(), event.totalSellPrice(), event.currency(), MDC.get(TraceIds.MDC_KEY));
+            log.info("Booking confirmed notification stub invoked, bookingId={}, totalSellPrice={}, traceId={}",
+                event.bookingId(), event.totalSellPrice(), MDC.get(TraceIds.MDC_KEY));
         }
         // TODO: resolve the Consultant's region-configured notification
         // channel (PRD Section 15) and publish to the SNS topic backing it

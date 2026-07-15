@@ -98,7 +98,7 @@ class BookingModuleIntegrationTests {
 
         scenario.stimulate(() -> bookingApi.confirmBooking(packageId, price))
             .andWaitForEventOfType(BookingConfirmedEvent.class)
-            .matchingMappedValue(BookingConfirmedEvent::totalSellPrice, price.amount());
+            .matchingMappedValue(BookingConfirmedEvent::totalSellPrice, price);
     }
 
     /**
