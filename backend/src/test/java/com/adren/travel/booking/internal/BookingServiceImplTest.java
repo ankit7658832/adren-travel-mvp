@@ -259,9 +259,11 @@ class BookingServiceImplTest {
     @Test
     void confirmBookingPublishesBookingConfirmedEventWithCorrectAmount() {
         Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
-        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(consultantId);
+        authenticateAs(Role.CONSULTANT, consultantId);
 
-        service.confirmBooking(UUID.randomUUID(), price);
+        service.confirmBooking(quotationId, price);
 
         // Explicit class matters: ApplicationEventPublisher overloads
         // publishEvent(ApplicationEvent) and publishEvent(Object), and a bare
@@ -271,26 +273,82 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void confirmBookingResolvesTheConsultantIdFromAPackageWhenNoQuotationMatchesBOK13() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = UUID.randomUUID();
+        when(quotationRepository.findById(packageId)).thenReturn(Optional.empty());
+        TravelPackage travelPackage = new TravelPackage(packageId, UUID.randomUUID(), consultantId, "Goa Getaway",
+            null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(11_371.20), BigDecimal.valueOf(500), CurrencyCode.INR, 4);
+        when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        UUID bookingId = service.confirmBooking(packageId, price);
+
+        assertThat(bookingId).isNotNull();
+        ArgumentCaptor<BookingConfirmedEvent> captor = ArgumentCaptor.forClass(BookingConfirmedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().consultantId()).isEqualTo(consultantId);
+    }
+
+    @Test
+    void confirmBookingFailsForAnUnknownQuotationOrPackageBOK13() {
+        UUID unknownId = UUID.randomUUID();
+        Money price = new Money(BigDecimal.valueOf(1000), CurrencyCode.INR);
+        when(quotationRepository.findById(unknownId)).thenReturn(Optional.empty());
+        when(travelPackageRepository.findById(unknownId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.confirmBooking(unknownId, price))
+            .isInstanceOf(IllegalArgumentException.class);
+        verify(events, org.mockito.Mockito.never()).publishEvent(any(BookingConfirmedEvent.class));
+    }
+
+    @Test
+    void aUserCannotConfirmABookingForAnotherConsultantsQuotationBOK13() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(ownerConsultantId);
+        Money price = new Money(BigDecimal.valueOf(1000), CurrencyCode.INR);
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> service.confirmBooking(quotationId, price))
+            .isInstanceOf(AccessDeniedException.class);
+        verify(events, org.mockito.Mockito.never()).publishEvent(any(BookingConfirmedEvent.class));
+    }
+
+    @Test
     void confirmBookingRejectsASuspendedConsultantsUserFND05() {
         UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(consultantId);
         Money price = new Money(BigDecimal.valueOf(1000), CurrencyCode.INR);
         authenticateAs(Role.USER, consultantId);
         org.mockito.Mockito.doThrow(new AccessDeniedException("suspended"))
             .when(whitelabelApi).requireConsultantActive(consultantId);
 
-        assertThatThrownBy(() -> service.confirmBooking(UUID.randomUUID(), price))
+        assertThatThrownBy(() -> service.confirmBooking(quotationId, price))
             .isInstanceOf(AccessDeniedException.class);
         verify(events, org.mockito.Mockito.never()).publishEvent(any(BookingConfirmedEvent.class));
     }
 
     @Test
     void confirmBookingSkipsTheActiveGateForASuperAdmin() {
+        UUID quotationId = stubQuotationResolvingTo(UUID.randomUUID());
         Money price = new Money(BigDecimal.valueOf(1000), CurrencyCode.INR);
         authenticateAs(Role.SUPER_ADMIN, null);
 
-        service.confirmBooking(UUID.randomUUID(), price);
+        service.confirmBooking(quotationId, price);
 
         verify(whitelabelApi, org.mockito.Mockito.never()).requireConsultantActive(any());
+    }
+
+    private UUID stubQuotationResolvingTo(UUID consultantId) {
+        UUID itineraryId = UUID.randomUUID();
+        UUID quotationId = UUID.randomUUID();
+        when(quotationRepository.findById(quotationId)).thenReturn(
+            Optional.of(new Quotation(quotationId, itineraryId, Instant.now().plusSeconds(3600))));
+        when(itineraryRepository.findById(itineraryId)).thenReturn(
+            Optional.of(new Itinerary(itineraryId, consultantId, null)));
+        return quotationId;
     }
 
     @Test

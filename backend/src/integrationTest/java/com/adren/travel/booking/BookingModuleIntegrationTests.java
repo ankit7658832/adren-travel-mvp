@@ -113,14 +113,14 @@ class BookingModuleIntegrationTests {
 
     @Test
     void confirmingABookingPublishesBookingConfirmedEvent(Scenario scenario) {
-        UUID packageId = UUID.randomUUID();
         Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
         // FND-05's tenant-active gate is exercised in BookingServiceImplTest;
         // authenticate as SUPER_ADMIN here (no consultantId, gate skipped)
         // so this test stays focused on the event-publication contract.
         authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(UUID.randomUUID());
 
-        scenario.stimulate(() -> bookingApi.confirmBooking(packageId, price))
+        scenario.stimulate(() -> bookingApi.confirmBooking(quotationId, price))
             .andWaitForEventOfType(BookingConfirmedEvent.class)
             .matchingMappedValue(BookingConfirmedEvent::totalSellPrice, price);
     }
@@ -140,12 +140,13 @@ class BookingModuleIntegrationTests {
     @Test
     void confirmBookingsEventPublicationRegistryEntryRollsBackWithItsSurroundingTransactionBOK01() {
         authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(UUID.randomUUID());
         Money price = new Money(BigDecimal.valueOf(87_654.32), CurrencyCode.AED);
         AtomicReference<UUID> bookingIdRef = new AtomicReference<>();
         TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
 
         assertThatThrownBy(() -> transactionTemplate.executeWithoutResult(status -> {
-            bookingIdRef.set(bookingApi.confirmBooking(UUID.randomUUID(), price));
+            bookingIdRef.set(bookingApi.confirmBooking(quotationId, price));
             throw new IllegalStateException("BOK-01: forcing a rollback after confirmBooking to prove outbox atomicity");
         })).isInstanceOf(IllegalStateException.class);
 

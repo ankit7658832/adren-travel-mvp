@@ -1,6 +1,7 @@
 package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.BookingApi;
+import com.adren.travel.shared.Money;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageImpl;
@@ -15,8 +16,10 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -53,5 +56,22 @@ class BookingQueryControllerTest {
             .andExpect(jsonPath("$.size").value(20))
             .andExpect(jsonPath("$.totalElements").value(1))
             .andExpect(jsonPath("$.totalPages").value(1));
+    }
+
+    @Test
+    void confirmingABookingDelegatesToBookingApiAndReturnsTheNewIdBOK13() throws Exception {
+        UUID quotationOrPackageId = UUID.randomUUID();
+        UUID bookingId = UUID.randomUUID();
+        when(bookingApi.confirmBooking(eq(quotationOrPackageId), any())).thenReturn(bookingId);
+
+        mockMvc.perform(post("/api/v1/bookings")
+                .contentType("application/json")
+                .content("{\"quotationOrPackageId\": \"" + quotationOrPackageId + "\", "
+                    + "\"totalSellPrice\": 11500, \"currency\": \"INR\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.bookingId").value(bookingId.toString()));
+
+        verify(bookingApi).confirmBooking(quotationOrPackageId, new Money(java.math.BigDecimal.valueOf(11500),
+            com.adren.travel.shared.CurrencyCode.INR));
     }
 }

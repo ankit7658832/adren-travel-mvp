@@ -15,7 +15,6 @@ import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.PaymentsApi;
 import com.adren.travel.payments.SellRateCalculation;
-import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.Money;
 import com.adren.travel.shared.ProductCategory;
@@ -113,11 +112,27 @@ class BookingServiceImpl implements BookingApi {
     @Override
     @Transactional
     public UUID confirmBooking(UUID quotationOrPackageId, Money totalSellPrice) {
-        AdrenPrincipal principal = CurrentPrincipal.get();
-        requireActiveUnlessSuperAdmin(principal.consultantId());
+        UUID consultantId = resolveConsultantIdFor(quotationOrPackageId);
+        CurrentPrincipal.resolveTenantScope(consultantId);
+        requireActiveUnlessSuperAdmin(consultantId);
 
-        UUID consultantId = UUID.randomUUID(); // resolved from the quotation/package in a full implementation
+        // BOK-13: FIN-07 (wallet hold placement) and FIN-08 (credit-limit
+        // breach block) wire into this exact point as a follow-up
+        // integration against this scaffold, per BOK-13's own dependency
+        // note — not stubbed here to avoid a call to a method that doesn't
+        // exist yet.
         return doConfirmBooking(totalSellPrice, consultantId);
+    }
+
+    // BOK-13 — quotationOrPackageId is polymorphic: a booking can be
+    // confirmed directly from a Quotation or from a published Package.
+    private UUID resolveConsultantIdFor(UUID quotationOrPackageId) {
+        return quotationRepository.findById(quotationOrPackageId)
+            .map(quotation -> itineraryRepository.findById(quotation.getItineraryId())
+                .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + quotation.getItineraryId()))
+                .getConsultantId())
+            .or(() -> travelPackageRepository.findById(quotationOrPackageId).map(TravelPackage::getConsultantId))
+            .orElseThrow(() -> new IllegalArgumentException("No quotation or package: " + quotationOrPackageId));
     }
 
     @Override
