@@ -1,21 +1,31 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
+import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
+import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
+import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
+import com.adren.travel.payments.CalculateSellRateCommand;
+import com.adren.travel.payments.PaymentsApi;
+import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.Money;
+import com.adren.travel.shared.ProductCategory;
 import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.whitelabel.WhitelabelApi;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -33,19 +43,27 @@ import java.util.UUID;
 class BookingServiceImpl implements BookingApi {
 
     private final ItineraryRepository itineraryRepository;
+    private final TravelerProfileRepository travelerProfileRepository;
+    private final HotelLineItemRepository hotelLineItemRepository;
     private final ApplicationEventPublisher events;
     private final WhitelabelApi whitelabelApi;
     private final SupplierSearchApi supplierSearchApi;
+    private final PaymentsApi paymentsApi;
 
-    BookingServiceImpl(ItineraryRepository itineraryRepository, ApplicationEventPublisher events,
-                        WhitelabelApi whitelabelApi, SupplierSearchApi supplierSearchApi) {
+    BookingServiceImpl(ItineraryRepository itineraryRepository, TravelerProfileRepository travelerProfileRepository,
+                        HotelLineItemRepository hotelLineItemRepository, ApplicationEventPublisher events,
+                        WhitelabelApi whitelabelApi, SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
         this.itineraryRepository = itineraryRepository;
+        this.travelerProfileRepository = travelerProfileRepository;
+        this.hotelLineItemRepository = hotelLineItemRepository;
         this.events = events;
         this.whitelabelApi = whitelabelApi;
         this.supplierSearchApi = supplierSearchApi;
+        this.paymentsApi = paymentsApi;
     }
 
     @Override
+    @Transactional
     public UUID saveAsQuotation(UUID itineraryId) {
         Itinerary itinerary = itineraryRepository.findById(itineraryId)
             .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + itineraryId));
@@ -66,15 +84,24 @@ class BookingServiceImpl implements BookingApi {
     }
 
     @Override
+    @Transactional
     public UUID confirmBooking(UUID quotationOrPackageId, Money totalSellPrice) {
         AdrenPrincipal principal = CurrentPrincipal.get();
         requireActiveUnlessSuperAdmin(principal.consultantId());
 
-        UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
         UUID consultantId = UUID.randomUUID(); // resolved from the quotation/package in a full implementation
+        return doConfirmBooking(totalSellPrice, consultantId);
+    }
 
-        events.publishEvent(new BookingConfirmedEvent(
-            bookingId, consultantId, totalSellPrice.amount(), totalSellPrice.currency()));
+    @Override
+    @Transactional
+    public UUID confirmBookingFromPaymentWebhook(UUID quotationOrPackageId, UUID consultantId, Money totalSellPrice) {
+        return doConfirmBooking(totalSellPrice, consultantId);
+    }
+
+    private UUID doConfirmBooking(Money totalSellPrice, UUID consultantId) {
+        UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
+        events.publishEvent(new BookingConfirmedEvent(bookingId, consultantId, totalSellPrice));
         return bookingId;
     }
 
@@ -99,6 +126,48 @@ class BookingServiceImpl implements BookingApi {
                 result.propertyName(), result.roomType(), result.netRate().amount(), result.netRate().currency(),
                 result.rating()))
             .toList();
+    }
+
+    @Override
+    @Transactional
+    public UUID createTravelerProfile(CreateTravelerProfileCommand command) {
+        UUID consultantId = CurrentPrincipal.get().consultantId();
+        UUID travelerId = UUID.randomUUID();
+        List<String> documentVaultReferences =
+            command.documentVaultReferences() != null ? command.documentVaultReferences() : List.of();
+        Map<String, String> preferences = command.preferences() != null ? command.preferences() : Map.of();
+
+        TravelerProfile profile = new TravelerProfile(travelerId, consultantId, command.name(), command.dateOfBirth(),
+            command.passportNumber(), command.passportExpiry(), command.nationality(), documentVaultReferences, preferences);
+        travelerProfileRepository.save(profile);
+
+        events.publishEvent(new TravelerProfileCreatedEvent(travelerId, consultantId));
+        return travelerId;
+    }
+
+    @Override
+    @Transactional
+    public UUID addHotelLineItem(UUID itineraryId, AddHotelLineItemCommand command) {
+        Itinerary itinerary = itineraryRepository.findById(itineraryId)
+            .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + itineraryId));
+        CurrentPrincipal.resolveTenantScope(itinerary.getConsultantId());
+        requireActiveUnlessSuperAdmin(itinerary.getConsultantId());
+
+        UUID lineItemId = UUID.randomUUID();
+        SellRateCalculation priced = paymentsApi.calculateSellRate(new CalculateSellRateCommand(
+            lineItemId, itinerary.getConsultantId(), ProductCategory.HOTEL, command.netRate(),
+            command.sellCurrency(), command.fxRate(), command.bufferPercent(), command.commissionPercent()));
+
+        HotelLineItem lineItem = new HotelLineItem(lineItemId, itineraryId, command.supplierId(),
+            command.supplierRateId(), command.propertyName(), command.roomType(), command.mealPlan(),
+            command.cancellationDeadline(), command.netRate().amount(), command.netRate().currency(),
+            priced.markupAmount().amount(), priced.bufferedAmount().amount().subtract(priced.fxConvertedBase().amount()),
+            priced.sellRate().amount(), priced.sellRate().currency(), priced.fxRateSnapshot().rate());
+        hotelLineItemRepository.save(lineItem);
+
+        events.publishEvent(new HotelLineItemAddedEvent(lineItemId, itineraryId, itinerary.getConsultantId(),
+            priced.sellRate()));
+        return lineItemId;
     }
 
     @Override

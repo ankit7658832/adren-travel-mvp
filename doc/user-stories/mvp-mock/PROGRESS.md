@@ -34,9 +34,9 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 
 ## Booking Core (20)
 
-- [ ] **BOK-01** — add transactional boundaries to booking state change methods
-- [ ] **BOK-02** — fix bookingconfirmedevent to carry money instead of decomposed amount currency
-- [ ] **BOK-03** — add hotel line items to an itinerary
+- [x] **BOK-01** — add transactional boundaries to booking state change methods
+- [x] **BOK-02** — fix bookingconfirmedevent to carry money instead of decomposed amount currency
+- [x] **BOK-03** — add hotel line items to an itinerary
 - [ ] **BOK-04** — add flight line items to an itinerary mystifly
 - [ ] **BOK-05** — add transfer line items to an itinerary transferz
 - [ ] **BOK-06** — add cruise line items to an itinerary widgety
@@ -47,7 +47,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **BOK-11** — build the package builder screen with uk atol disclosure gate
 - [ ] **BOK-12** — publish a package making it visible to users
 - [ ] **BOK-13** — build the direct booking payment flow user facing
-- [ ] **BOK-14** — capture traveler profile details including passport document vault
+- [x] **BOK-14** — capture traveler profile details including passport document vault
 - [ ] **BOK-15** — generate a voucher on booking confirmation including atol certificate for uk dynamic packages
 - [ ] **BOK-16** — prevent double booking of the last available inventory unit under concurrent requests
 - [ ] **BOK-17** — consolidate mixed currency line items to the consultant s sell currency at checkout
@@ -57,17 +57,17 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 
 ## Financial Layer (18)
 
-- [ ] **FIN-01** — configure per consultant per category markup rules
-- [ ] **FIN-02** — track adren commission separately from consultant markup
-- [ ] **FIN-03** — apply a configurable currency buffer on top of markup
-- [ ] **FIN-04** — snapshot and lock the fx rate at quotation time
-- [ ] **FIN-05** — calculate sell rate through the full net buffer markup commission pipeline
-- [ ] **FIN-06** — model the wallet with balance credit limit and pending holds
+- [x] **FIN-01** — configure per consultant per category markup rules
+- [x] **FIN-02** — track adren commission separately from consultant markup
+- [x] **FIN-03** — apply a configurable currency buffer on top of markup
+- [x] **FIN-04** — snapshot and lock the fx rate at quotation time
+- [x] **FIN-05** — calculate sell rate through the full net buffer markup commission pipeline
+- [x] **FIN-06** — model the wallet with balance credit limit and pending holds
 - [ ] **FIN-07** — place a hold on booking confirmation release or debit on final confirmation
 - [ ] **FIN-08** — block booking confirmation on credit limit breach with an actionable message
 - [ ] **FIN-09** — build the wallet billing screen with pre payment breach warning
 - [ ] **FIN-10** — guarantee atomic idempotent wallet ledger writes
-- [ ] **FIN-11** — integrate stripe for payment collection across six settlement currencies
+- [x] **FIN-11** — integrate stripe for payment collection across six settlement currencies
 - [ ] **FIN-12** — support on account billing as a payment method
 - [ ] **FIN-13** — process refunds and credit notes tied to supplier cancellation policy
 - [ ] **FIN-14** — reuse the original fx snapshot when calculating a refund

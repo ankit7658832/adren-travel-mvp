@@ -1,12 +1,22 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
+import com.adren.travel.booking.CreateTravelerProfileCommand;
+import com.adren.travel.booking.MealPlan;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
+import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
+import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
+import com.adren.travel.payments.CalculateSellRateCommand;
+import com.adren.travel.payments.FxRateSnapshot;
+import com.adren.travel.payments.PaymentsApi;
+import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
+import com.adren.travel.shared.ProductCategory;
 import com.adren.travel.supplier.SupplierId;
 import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.supplier.SupplierSearchResult;
@@ -31,8 +41,10 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -56,6 +68,9 @@ class BookingServiceImplTest {
     ItineraryRepository itineraryRepository;
 
     @Mock
+    TravelerProfileRepository travelerProfileRepository;
+
+    @Mock
     ApplicationEventPublisher events;
 
     @Mock
@@ -64,11 +79,18 @@ class BookingServiceImplTest {
     @Mock
     SupplierSearchApi supplierSearchApi;
 
+    @Mock
+    HotelLineItemRepository hotelLineItemRepository;
+
+    @Mock
+    PaymentsApi paymentsApi;
+
     BookingServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new BookingServiceImpl(itineraryRepository, events, whitelabelApi, supplierSearchApi);
+        service = new BookingServiceImpl(itineraryRepository, travelerProfileRepository, hotelLineItemRepository,
+            events, whitelabelApi, supplierSearchApi, paymentsApi);
     }
 
     @AfterEach
@@ -94,6 +116,23 @@ class BookingServiceImplTest {
         verify(events).publishEvent(captor.capture());
         assertThat(captor.getValue().itineraryId()).isEqualTo(itineraryId);
         assertThat(captor.getValue().consultantId()).isEqualTo(consultantId);
+    }
+
+    @Test
+    void savingAsQuotationNeverPublishesTheEventWhenTheRepositorySaveFailsBOK01() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        org.mockito.Mockito.doThrow(new RuntimeException("DB write failed"))
+            .when(itineraryRepository).save(draft);
+
+        assertThatThrownBy(() -> service.saveAsQuotation(itineraryId))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessage("DB write failed");
+
+        verify(events, org.mockito.Mockito.never()).publishEvent(any(ItineraryQuotationSavedEvent.class));
     }
 
     @Test
@@ -198,6 +237,21 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void confirmBookingFromPaymentWebhookPublishesTheEventWithoutRequiringAPrincipalFIN11() {
+        UUID consultantId = UUID.randomUUID();
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+
+        UUID bookingId = service.confirmBookingFromPaymentWebhook(UUID.randomUUID(), consultantId, price);
+
+        assertThat(bookingId).isNotNull();
+        ArgumentCaptor<BookingConfirmedEvent> captor = ArgumentCaptor.forClass(BookingConfirmedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().consultantId()).isEqualTo(consultantId);
+        assertThat(captor.getValue().totalSellPrice()).isEqualTo(price);
+        verify(whitelabelApi, org.mockito.Mockito.never()).requireConsultantActive(any());
+    }
+
+    @Test
     void findAlternatesReturnsEveryHotelOptionForTheLocationFND16() {
         authenticateAs(Role.CONSULTANT, UUID.randomUUID());
         LocalDate checkIn = LocalDate.now().plusDays(30);
@@ -275,6 +329,105 @@ class BookingServiceImplTest {
         authenticateAs(Role.SUPER_ADMIN, null);
 
         assertThat(service.findBookingsByConsultant(consultantId, pageable).getContent()).isEmpty();
+    }
+
+    @Test
+    void createTravelerProfileScopesToTheCallingConsultantsOwnAccountBOK14() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        var command = new CreateTravelerProfileCommand("Jane Traveler", LocalDate.of(1990, 5, 1),
+            "P1234567", LocalDate.of(2030, 1, 1), "IN", List.of("s3://vault/passport.pdf"), Map.of("meal", "vegetarian"));
+
+        UUID travelerId = service.createTravelerProfile(command);
+
+        ArgumentCaptor<TravelerProfile> captor = ArgumentCaptor.forClass(TravelerProfile.class);
+        verify(travelerProfileRepository).save(captor.capture());
+        assertThat(captor.getValue().getTravelerId()).isEqualTo(travelerId);
+        assertThat(captor.getValue().getConsultantId()).isEqualTo(consultantId);
+        assertThat(captor.getValue().getName()).isEqualTo("Jane Traveler");
+        assertThat(captor.getValue().getPassportNumber()).isEqualTo("P1234567");
+
+        ArgumentCaptor<TravelerProfileCreatedEvent> eventCaptor = ArgumentCaptor.forClass(TravelerProfileCreatedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().travelerId()).isEqualTo(travelerId);
+        assertThat(eventCaptor.getValue().consultantId()).isEqualTo(consultantId);
+    }
+
+    @Test
+    void createTravelerProfileAllowsOmittingOptionalPassportFieldsBOK14() {
+        authenticateAs(Role.USER, UUID.randomUUID());
+        var command = new CreateTravelerProfileCommand("Jane Traveler", LocalDate.of(1990, 5, 1),
+            null, null, null, null, null);
+
+        service.createTravelerProfile(command);
+
+        ArgumentCaptor<TravelerProfile> captor = ArgumentCaptor.forClass(TravelerProfile.class);
+        verify(travelerProfileRepository).save(captor.capture());
+        assertThat(captor.getValue().getPassportNumber()).isNull();
+        assertThat(captor.getValue().getDocumentVaultReferences()).isEmpty();
+        assertThat(captor.getValue().getPreferences()).isEmpty();
+    }
+
+    @Test
+    void addingAHotelLineItemPricesItThroughTheSellRatePipelineAndPublishesTheEventBOK03() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        Money netRate = new Money(BigDecimal.valueOf(100), CurrencyCode.INR);
+        Money fxConvertedBase = new Money(BigDecimal.valueOf(9_600), CurrencyCode.INR);
+        Money bufferedAmount = new Money(BigDecimal.valueOf(9_888), CurrencyCode.INR);
+        Money markupAmount = new Money(BigDecimal.valueOf(1_483.20), CurrencyCode.INR);
+        Money sellRate = new Money(BigDecimal.valueOf(11_371.20), CurrencyCode.INR);
+        Money commissionAmount = Money.zero(CurrencyCode.INR);
+        FxRateSnapshot snapshot = new FxRateSnapshot(CurrencyCode.INR, CurrencyCode.INR,
+            BigDecimal.valueOf(96), Instant.now());
+        when(paymentsApi.calculateSellRate(any())).thenReturn(new SellRateCalculation(
+            netRate, snapshot, fxConvertedBase, bufferedAmount, markupAmount, sellRate, commissionAmount));
+
+        var command = new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-1", "Taj Palace", "Deluxe Room",
+            MealPlan.BB, Instant.now().plusSeconds(3600), netRate, CurrencyCode.INR,
+            BigDecimal.valueOf(96), BigDecimal.valueOf(3), BigDecimal.ZERO);
+
+        UUID lineItemId = service.addHotelLineItem(itineraryId, command);
+
+        ArgumentCaptor<CalculateSellRateCommand> priceCaptor = ArgumentCaptor.forClass(CalculateSellRateCommand.class);
+        verify(paymentsApi).calculateSellRate(priceCaptor.capture());
+        assertThat(priceCaptor.getValue().category()).isEqualTo(ProductCategory.HOTEL);
+        assertThat(priceCaptor.getValue().consultantId()).isEqualTo(consultantId);
+
+        ArgumentCaptor<HotelLineItem> lineItemCaptor = ArgumentCaptor.forClass(HotelLineItem.class);
+        verify(hotelLineItemRepository).save(lineItemCaptor.capture());
+        assertThat(lineItemCaptor.getValue().getLineItemId()).isEqualTo(lineItemId);
+        assertThat(lineItemCaptor.getValue().getPropertyName()).isEqualTo("Taj Palace");
+        assertThat(lineItemCaptor.getValue().getMealPlan()).isEqualTo(MealPlan.BB);
+        assertThat(lineItemCaptor.getValue().getSellRate()).isEqualByComparingTo("11371.20");
+        assertThat(lineItemCaptor.getValue().getCurrencyBufferApplied()).isEqualByComparingTo("288.00");
+
+        ArgumentCaptor<HotelLineItemAddedEvent> eventCaptor = ArgumentCaptor.forClass(HotelLineItemAddedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().lineItemId()).isEqualTo(lineItemId);
+        assertThat(eventCaptor.getValue().itineraryId()).isEqualTo(itineraryId);
+        assertThat(eventCaptor.getValue().sellRate()).isEqualTo(sellRate);
+    }
+
+    @Test
+    void addingAHotelLineItemFailsForAnItineraryOwnedByAnotherConsultantBOK03() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID ownerConsultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, ownerConsultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        var command = new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-1", "Taj Palace", "Deluxe Room",
+            MealPlan.BB, Instant.now().plusSeconds(3600), new Money(BigDecimal.valueOf(100), CurrencyCode.INR),
+            CurrencyCode.INR, BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> service.addHotelLineItem(itineraryId, command))
+            .isInstanceOf(AccessDeniedException.class);
+        verify(hotelLineItemRepository, org.mockito.Mockito.never()).save(any());
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

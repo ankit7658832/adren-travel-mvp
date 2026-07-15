@@ -65,4 +65,34 @@ public interface BookingApi {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     List<AlternateOption> findAlternates(
         UUID itineraryId, String locationCode, String category, LocalDate checkIn, LocalDate checkOut);
+
+    /**
+     * Captures a Traveler Profile (PRD §20.10, BOK-14), scoped to the
+     * CALLING principal's own consultantId — never a client-supplied one,
+     * see {@link CreateTravelerProfileCommand}'s Javadoc. Publishes
+     * {@link com.adren.travel.booking.event.TravelerProfileCreatedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    UUID createTravelerProfile(CreateTravelerProfileCommand command);
+
+    /**
+     * Adds a Hotel line item to an itinerary (PRD §20.2, §9.3, BOK-03),
+     * pricing it through {@code PaymentsApi.calculateSellRate}'s full
+     * net→buffer→markup→commission pipeline (FIN-05). Publishes
+     * {@link com.adren.travel.booking.event.HotelLineItemAddedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    UUID addHotelLineItem(UUID itineraryId, AddHotelLineItemCommand command);
+
+    /**
+     * Confirms a booking once a Stripe webhook (not a direct user request)
+     * reports payment succeeded (PRD §12.4, FIN-11) — invoked by this
+     * module's own listener on {@code payments.event.StripePaymentSucceededEvent},
+     * not by an authenticated Adren principal, so unlike {@link
+     * #confirmBooking} this carries no {@code @PreAuthorize} and no tenant-
+     * active gate: there is no {@code CurrentPrincipal} on an async event
+     * listener's thread. Publishes the same {@link
+     * com.adren.travel.booking.event.BookingConfirmedEvent}.
+     */
+    UUID confirmBookingFromPaymentWebhook(UUID quotationOrPackageId, UUID consultantId, Money totalSellPrice);
 }

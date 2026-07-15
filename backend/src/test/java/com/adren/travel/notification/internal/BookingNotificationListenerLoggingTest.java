@@ -6,6 +6,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.LogFields;
+import com.adren.travel.shared.Money;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,7 +46,7 @@ class BookingNotificationListenerLoggingTest {
     void theMonetaryLogLineCarriesConsultantIdAndCurrencyAsStructuredFields() {
         UUID consultantId = UUID.randomUUID();
         BookingConfirmedEvent event = new BookingConfirmedEvent(
-            UUID.randomUUID(), consultantId, BigDecimal.valueOf(1000), CurrencyCode.INR);
+            UUID.randomUUID(), consultantId, new Money(BigDecimal.valueOf(1000), CurrencyCode.INR));
 
         listener.on(event);
 
@@ -59,7 +60,7 @@ class BookingNotificationListenerLoggingTest {
     @Test
     void theStructuredFieldsDoNotLeakOutsideTheLogStatementScope() {
         BookingConfirmedEvent event = new BookingConfirmedEvent(
-            UUID.randomUUID(), UUID.randomUUID(), BigDecimal.valueOf(500), CurrencyCode.USD);
+            UUID.randomUUID(), UUID.randomUUID(), new Money(BigDecimal.valueOf(500), CurrencyCode.USD));
 
         listener.on(event);
 

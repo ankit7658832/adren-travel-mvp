@@ -38,6 +38,26 @@ public record Money(BigDecimal amount, CurrencyCode currency) {
         return multiply(factor);
     }
 
+    /**
+     * The amount that {@code percent}% of this Money represents, e.g.
+     * {@code percentOf(5)} for a 5% Adren commission on the supplier net
+     * rate (PRD Section 12.1, FIN-02) — unlike {@link #applyMarkupPercent},
+     * this returns just the percentage slice, not the original plus it.
+     */
+    public Money percentOf(BigDecimal percent) {
+        return multiply(percent.movePointLeft(2));
+    }
+
+    /**
+     * Converts this amount into {@code targetCurrency} at {@code rate}
+     * (this amount times rate) — the FX layer this class's own
+     * currency-mismatch guard tells callers to use before combining
+     * cross-currency amounts (PRD Section 12.2, FIN-05).
+     */
+    public Money convertTo(CurrencyCode targetCurrency, BigDecimal rate) {
+        return new Money(this.amount.multiply(rate), targetCurrency);
+    }
+
     private void requireSameCurrency(Money other) {
         if (this.currency != other.currency) {
             throw new IllegalArgumentException(

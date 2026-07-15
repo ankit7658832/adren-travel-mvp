@@ -1,8 +1,7 @@
 package com.adren.travel.booking.event;
 
-import com.adren.travel.shared.CurrencyCode;
+import com.adren.travel.shared.Money;
 
-import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
@@ -12,6 +11,11 @@ import java.util.UUID;
  * finalizes the wallet debit (PRD Section 12.3), and the Ads module
  * attributes the booking to a campaign if applicable (PRD Section 20.13).
  * <p>
+ * {@code totalSellPrice} is carried as a single {@link Money} value rather
+ * than a decomposed amount/currency pair (BOK-02) — RULES.md §4.4: "an
+ * amount is never auditable without its currency", and a decomposed pair
+ * lets a listener accidentally read one field without the other.
+ * <p>
  * Each listener is independent — a failure in one (e.g., notification
  * delivery) must never roll back the booking itself. See the
  * {@code backend-spring-modulith} skill for the async-listener + event
@@ -20,7 +24,6 @@ import java.util.UUID;
 public record BookingConfirmedEvent(
     UUID bookingId,
     UUID consultantId,
-    BigDecimal totalSellPrice,
-    CurrencyCode currency
+    Money totalSellPrice
 ) {
 }
