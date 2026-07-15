@@ -1,17 +1,24 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
+import com.adren.travel.shared.Money;
+import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -50,5 +57,17 @@ class ItineraryController {
         LocalDate resolvedCheckIn = checkIn != null ? checkIn : LocalDate.now().plusDays(30);
         LocalDate resolvedCheckOut = checkOut != null ? checkOut : resolvedCheckIn.plusDays(3);
         return bookingApi.findAlternates(itineraryId, location, category, resolvedCheckIn, resolvedCheckOut);
+    }
+
+    /** PRD §20.2, §9.3 — adds a Hotel line item to the itinerary (BOK-03). */
+    @PostMapping("/{itineraryId}/line-items/hotel")
+    @ResponseStatus(HttpStatus.CREATED)
+    Map<String, UUID> addHotelLineItem(@PathVariable UUID itineraryId, @Valid @RequestBody AddHotelLineItemRequest request) {
+        UUID lineItemId = bookingApi.addHotelLineItem(itineraryId, new AddHotelLineItemCommand(
+            request.supplierId(), request.supplierRateId(), request.propertyName(), request.roomType(),
+            request.mealPlan(), request.cancellationDeadline(),
+            new Money(request.netRate(), request.netRateCurrency()), request.sellCurrency(),
+            request.fxRate(), request.bufferPercent(), request.commissionPercent()));
+        return Map.of("lineItemId", lineItemId);
     }
 }

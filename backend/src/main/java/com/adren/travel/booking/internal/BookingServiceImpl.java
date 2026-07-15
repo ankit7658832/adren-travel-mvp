@@ -1,14 +1,20 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
+import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
+import com.adren.travel.payments.CalculateSellRateCommand;
+import com.adren.travel.payments.PaymentsApi;
+import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.Money;
+import com.adren.travel.shared.ProductCategory;
 import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.whitelabel.WhitelabelApi;
 import org.springframework.context.ApplicationEventPublisher;
@@ -38,18 +44,22 @@ class BookingServiceImpl implements BookingApi {
 
     private final ItineraryRepository itineraryRepository;
     private final TravelerProfileRepository travelerProfileRepository;
+    private final HotelLineItemRepository hotelLineItemRepository;
     private final ApplicationEventPublisher events;
     private final WhitelabelApi whitelabelApi;
     private final SupplierSearchApi supplierSearchApi;
+    private final PaymentsApi paymentsApi;
 
     BookingServiceImpl(ItineraryRepository itineraryRepository, TravelerProfileRepository travelerProfileRepository,
-                        ApplicationEventPublisher events, WhitelabelApi whitelabelApi,
-                        SupplierSearchApi supplierSearchApi) {
+                        HotelLineItemRepository hotelLineItemRepository, ApplicationEventPublisher events,
+                        WhitelabelApi whitelabelApi, SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
         this.itineraryRepository = itineraryRepository;
         this.travelerProfileRepository = travelerProfileRepository;
+        this.hotelLineItemRepository = hotelLineItemRepository;
         this.events = events;
         this.whitelabelApi = whitelabelApi;
         this.supplierSearchApi = supplierSearchApi;
+        this.paymentsApi = paymentsApi;
     }
 
     @Override
@@ -124,6 +134,31 @@ class BookingServiceImpl implements BookingApi {
 
         events.publishEvent(new TravelerProfileCreatedEvent(travelerId, consultantId));
         return travelerId;
+    }
+
+    @Override
+    @Transactional
+    public UUID addHotelLineItem(UUID itineraryId, AddHotelLineItemCommand command) {
+        Itinerary itinerary = itineraryRepository.findById(itineraryId)
+            .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + itineraryId));
+        CurrentPrincipal.resolveTenantScope(itinerary.getConsultantId());
+        requireActiveUnlessSuperAdmin(itinerary.getConsultantId());
+
+        UUID lineItemId = UUID.randomUUID();
+        SellRateCalculation priced = paymentsApi.calculateSellRate(new CalculateSellRateCommand(
+            lineItemId, itinerary.getConsultantId(), ProductCategory.HOTEL, command.netRate(),
+            command.sellCurrency(), command.fxRate(), command.bufferPercent(), command.commissionPercent()));
+
+        HotelLineItem lineItem = new HotelLineItem(lineItemId, itineraryId, command.supplierId(),
+            command.supplierRateId(), command.propertyName(), command.roomType(), command.mealPlan(),
+            command.cancellationDeadline(), command.netRate().amount(), command.netRate().currency(),
+            priced.markupAmount().amount(), priced.bufferedAmount().amount().subtract(priced.fxConvertedBase().amount()),
+            priced.sellRate().amount(), priced.sellRate().currency(), priced.fxRateSnapshot().rate());
+        hotelLineItemRepository.save(lineItem);
+
+        events.publishEvent(new HotelLineItemAddedEvent(lineItemId, itineraryId, itinerary.getConsultantId(),
+            priced.sellRate()));
+        return lineItemId;
     }
 
     @Override

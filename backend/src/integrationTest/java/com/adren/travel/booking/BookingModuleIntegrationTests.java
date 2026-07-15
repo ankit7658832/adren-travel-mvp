@@ -1,11 +1,17 @@
 package com.adren.travel.booking;
 
 import com.adren.travel.booking.event.BookingConfirmedEvent;
+import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
+import com.adren.travel.payments.ConfigureMarkupCommand;
+import com.adren.travel.payments.MarkupType;
+import com.adren.travel.payments.PaymentsApi;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
+import com.adren.travel.shared.ProductCategory;
+import com.adren.travel.supplier.SupplierId;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +30,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -75,6 +82,18 @@ class BookingModuleIntegrationTests {
 
     @Autowired
     BookingApi bookingApi;
+
+    // Field injection is fine for same-module/framework types (above/below),
+    // but Spring Modulith's own architecture check flags field injection of
+    // ANOTHER application module's type from outside it — constructor
+    // injection makes this test's real cross-module dependency (on
+    // payments, exercised by BOK-03's tests below) visible up front.
+    final PaymentsApi paymentsApi;
+
+    @Autowired
+    BookingModuleIntegrationTests(PaymentsApi paymentsApi) {
+        this.paymentsApi = paymentsApi;
+    }
 
     @Autowired
     PlatformTransactionManager transactionManager;
@@ -141,6 +160,56 @@ class BookingModuleIntegrationTests {
         scenario.stimulate(() -> bookingApi.createTravelerProfile(command))
             .andWaitForEventOfType(TravelerProfileCreatedEvent.class)
             .matchingMappedValue(TravelerProfileCreatedEvent::consultantId, consultantId);
+    }
+
+    @Test
+    void addingAHotelLineItemPublishesHotelLineItemAddedEventBOK03(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        // FND-05's tenant-active gate does a real lookup against
+        // whitelabel's consultant table — authenticate as SUPER_ADMIN
+        // (gate skipped) so this test stays focused on the
+        // event-publication contract, same as confirmBooking's test above,
+        // rather than needing a fixture Consultant row too.
+        authenticateAsSuperAdmin();
+        UUID itineraryId = insertDraftItinerary(consultantId);
+        paymentsApi.configureMarkup(consultantId, new ConfigureMarkupCommand(
+            ProductCategory.HOTEL, MarkupType.PERCENTAGE, BigDecimal.valueOf(15), null, null));
+
+        var command = new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-1", "Taj Palace", "Deluxe Room",
+            MealPlan.BB, Instant.now().plusSeconds(3600), new Money(BigDecimal.valueOf(100), CurrencyCode.INR),
+            CurrencyCode.INR, BigDecimal.valueOf(96), BigDecimal.valueOf(3), BigDecimal.ZERO);
+
+        scenario.stimulate(() -> bookingApi.addHotelLineItem(itineraryId, command))
+            .andWaitForEventOfType(HotelLineItemAddedEvent.class)
+            .matchingMappedValue(HotelLineItemAddedEvent::itineraryId, itineraryId);
+    }
+
+    @Test
+    void addingAHotelLineItemPricesItThroughTheRealPersistedMarkupRuleBOK03() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID itineraryId = insertDraftItinerary(consultantId);
+        paymentsApi.configureMarkup(consultantId, new ConfigureMarkupCommand(
+            ProductCategory.HOTEL, MarkupType.PERCENTAGE, BigDecimal.valueOf(15), null, null));
+
+        var command = new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-1", "Taj Palace", "Deluxe Room",
+            MealPlan.BB, Instant.now().plusSeconds(3600), new Money(BigDecimal.valueOf(100), CurrencyCode.INR),
+            CurrencyCode.INR, BigDecimal.valueOf(96), BigDecimal.valueOf(3), BigDecimal.ZERO);
+
+        UUID lineItemId = bookingApi.addHotelLineItem(itineraryId, command);
+
+        BigDecimal sellRate = jdbcTemplate.queryForObject(
+            "SELECT sell_rate FROM hotel_line_item WHERE line_item_id = ?", BigDecimal.class, lineItemId);
+        assertThat(sellRate).isEqualByComparingTo("11371.2000");
+    }
+
+    private UUID insertDraftItinerary(UUID consultantId) {
+        UUID itineraryId = UUID.randomUUID();
+        jdbcTemplate.update(
+            "INSERT INTO itinerary (itinerary_id, consultant_id, status, ai_generated, created_at, updated_at) " +
+                "VALUES (?, ?, 'DRAFT', false, now(), now())",
+            itineraryId, consultantId);
+        return itineraryId;
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

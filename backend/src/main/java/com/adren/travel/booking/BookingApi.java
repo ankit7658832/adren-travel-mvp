@@ -74,4 +74,13 @@ public interface BookingApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     UUID createTravelerProfile(CreateTravelerProfileCommand command);
+
+    /**
+     * Adds a Hotel line item to an itinerary (PRD §20.2, §9.3, BOK-03),
+     * pricing it through {@code PaymentsApi.calculateSellRate}'s full
+     * net→buffer→markup→commission pipeline (FIN-05). Publishes
+     * {@link com.adren.travel.booking.event.HotelLineItemAddedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    UUID addHotelLineItem(UUID itineraryId, AddHotelLineItemCommand command);
 }

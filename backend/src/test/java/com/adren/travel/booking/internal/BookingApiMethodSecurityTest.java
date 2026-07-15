@@ -1,6 +1,7 @@
 package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.BookingApi;
+import com.adren.travel.payments.PaymentsApi;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.supplier.SupplierSearchApi;
@@ -70,10 +71,21 @@ class BookingApiMethodSecurityTest {
         }
 
         @Bean
+        HotelLineItemRepository hotelLineItemRepository() {
+            return Mockito.mock(HotelLineItemRepository.class);
+        }
+
+        @Bean
+        PaymentsApi paymentsApi() {
+            return Mockito.mock(PaymentsApi.class);
+        }
+
+        @Bean
         BookingApi bookingApi(ItineraryRepository repository, TravelerProfileRepository travelerProfileRepository,
-                               ApplicationEventPublisher publisher, WhitelabelApi whitelabelApi,
-                               SupplierSearchApi supplierSearchApi) {
-            return new BookingServiceImpl(repository, travelerProfileRepository, publisher, whitelabelApi, supplierSearchApi);
+                               HotelLineItemRepository hotelLineItemRepository, ApplicationEventPublisher publisher,
+                               WhitelabelApi whitelabelApi, SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
+            return new BookingServiceImpl(repository, travelerProfileRepository, hotelLineItemRepository, publisher,
+                whitelabelApi, supplierSearchApi, paymentsApi);
         }
     }
 

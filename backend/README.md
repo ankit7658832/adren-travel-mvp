@@ -8,7 +8,7 @@ your build environment; this scaffold was authored against a Java 21 JDK).
 
 | Package | PRD Module | Status |
 |---|---|---|
-| `booking` | Core Booking Engine (Section 9) | Reference implementation |
+| `booking` | Core Booking Engine (Section 9) | Reference implementation; Hotel line items (BOK-03) priced through the `payments` module's FIN-05 pipeline |
 | `supplier` | Supplier & Inventory Integration (Section 10) | Reference implementation (Hotelbeds stub; STUBA/TBO/others follow the same pattern); Adren-owned credentials in Secrets Manager by ARN (FND-11) and Consultant-owned BYOS credentials as row-level KMS-envelope-encrypted secrets (FND-12) |
 | `ai` | AI Itinerary & Governance (Section 11) | Package-info stub — build next |
 | `payments` | Payments, Yield/Markup & Wallet (Section 12) | Per-Consultant, per-category markup configuration (FIN-01), wallet balance/credit-limit/pending-holds query with lazy auto-provisioning (FIN-06), Adren commission separate from Consultant markup (FIN-02), currency buffer before markup (FIN-03), locked FX rate snapshotting (FIN-04), and the full net→buffer→markup→commission `PricingPipeline` (FIN-05) implemented; Stripe/holds-ledger follow |
