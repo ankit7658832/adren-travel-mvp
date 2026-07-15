@@ -1,6 +1,7 @@
 package com.adren.travel.whitelabel.internal;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
@@ -28,8 +29,18 @@ import java.util.List;
  * to the response at all, which is what makes the browser block the
  * cross-origin request; there is deliberately no fallback branch that
  * returns an allow-all configuration.
+ * <p>
+ * {@code @Primary}: Spring MVC's auto-configured
+ * {@code HandlerMappingIntrospector} bean also implements
+ * {@code CorsConfigurationSource} (an internal detail of its own
+ * request-matching machinery, unrelated to this application's CORS
+ * policy) — without {@code @Primary}, {@code SecurityConfig}'s
+ * {@code CorsConfigurationSource} injection point is ambiguous between
+ * the two and the application fails to start with a
+ * {@code NoUniqueBeanDefinitionException}.
  */
 @Component
+@Primary
 class DynamicCorsConfigurationSource implements CorsConfigurationSource {
 
     private final RegisteredDomainsCache registeredDomainsCache;

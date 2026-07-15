@@ -13,6 +13,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -46,6 +47,7 @@ class BookingServiceImpl implements BookingApi {
     }
 
     @Override
+    @Transactional
     public UUID saveAsQuotation(UUID itineraryId) {
         Itinerary itinerary = itineraryRepository.findById(itineraryId)
             .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + itineraryId));
@@ -66,6 +68,7 @@ class BookingServiceImpl implements BookingApi {
     }
 
     @Override
+    @Transactional
     public UUID confirmBooking(UUID quotationOrPackageId, Money totalSellPrice) {
         AdrenPrincipal principal = CurrentPrincipal.get();
         requireActiveUnlessSuperAdmin(principal.consultantId());

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.modulith.test.Scenario;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -17,11 +18,17 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * {@code @ApplicationModuleTest} boots ONLY the Booking module (plus the
@@ -37,9 +44,16 @@ import java.util.UUID;
  * {@code DIRECT_DEPENDENCIES} (rather than the default {@code STANDALONE},
  * which boots only this module) is required since FND-13:
  * {@code GeocodeAndSearchService} has a real constructor dependency on
- * {@code supplier.SupplierSearchApi}.
+ * {@code supplier.SupplierSearchApi}. {@code extraIncludes = "security"}
+ * is required since FND-09/FND-05: {@code whitelabel.internal.WhitelabelServiceImpl}
+ * (itself pulled in because {@code booking} directly depends on
+ * {@code whitelabel.WhitelabelApi}) has its own constructor dependency on
+ * {@code security.CapabilityGrantService} — DIRECT_DEPENDENCIES only
+ * widens one hop from the tested module ({@code booking}'s own direct
+ * dependencies), not transitively through a dependency's dependencies, so
+ * this second-degree edge has to be named explicitly.
  */
-@ApplicationModuleTest(ApplicationModuleTest.BootstrapMode.DIRECT_DEPENDENCIES)
+@ApplicationModuleTest(value = ApplicationModuleTest.BootstrapMode.DIRECT_DEPENDENCIES, extraIncludes = "security")
 class BookingModuleIntegrationTests {
 
     /**
@@ -59,6 +73,12 @@ class BookingModuleIntegrationTests {
     @Autowired
     BookingApi bookingApi;
 
+    @Autowired
+    PlatformTransactionManager transactionManager;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
+
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
@@ -76,6 +96,36 @@ class BookingModuleIntegrationTests {
         scenario.stimulate(() -> bookingApi.confirmBooking(packageId, price))
             .andWaitForEventOfType(BookingConfirmedEvent.class)
             .matchingMappedValue(BookingConfirmedEvent::totalSellPrice, price.amount());
+    }
+
+    /**
+     * BOK-01's actual acceptance criterion: {@code confirmBooking}'s
+     * {@code @Transactional} boundary means the JPA event publication
+     * registry write is part of the SAME physical transaction as
+     * {@code confirmBooking}'s own work, not a separate one that could
+     * commit independently. {@code TransactionTemplate} with default
+     * (REQUIRED) propagation makes {@code confirmBooking} join this test's
+     * outer transaction rather than open its own — so forcing the outer
+     * transaction to roll back after {@code confirmBooking} returns proves
+     * the registry row rolls back with it, not just that the Java call
+     * sequence happened to throw before reaching the publish line.
+     */
+    @Test
+    void confirmBookingsEventPublicationRegistryEntryRollsBackWithItsSurroundingTransactionBOK01() {
+        authenticateAsSuperAdmin();
+        Money price = new Money(BigDecimal.valueOf(87_654.32), CurrencyCode.AED);
+        AtomicReference<UUID> bookingIdRef = new AtomicReference<>();
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+
+        assertThatThrownBy(() -> transactionTemplate.executeWithoutResult(status -> {
+            bookingIdRef.set(bookingApi.confirmBooking(UUID.randomUUID(), price));
+            throw new IllegalStateException("BOK-01: forcing a rollback after confirmBooking to prove outbox atomicity");
+        })).isInstanceOf(IllegalStateException.class);
+
+        Long count = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM event_publication WHERE serialized_event LIKE ?",
+            Long.class, "%" + bookingIdRef.get() + "%");
+        assertThat(count).isZero();
     }
 
     private static void authenticateAsSuperAdmin() {

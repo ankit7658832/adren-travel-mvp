@@ -97,6 +97,23 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void savingAsQuotationNeverPublishesTheEventWhenTheRepositorySaveFailsBOK01() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        org.mockito.Mockito.doThrow(new RuntimeException("DB write failed"))
+            .when(itineraryRepository).save(draft);
+
+        assertThatThrownBy(() -> service.saveAsQuotation(itineraryId))
+            .isInstanceOf(RuntimeException.class)
+            .hasMessage("DB write failed");
+
+        verify(events, org.mockito.Mockito.never()).publishEvent(any(ItineraryQuotationSavedEvent.class));
+    }
+
+    @Test
     void savingAsQuotationFailsForUnknownItinerary() {
         UUID itineraryId = UUID.randomUUID();
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.empty());

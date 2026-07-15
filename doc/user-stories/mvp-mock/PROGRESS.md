@@ -34,7 +34,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 
 ## Booking Core (20)
 
-- [ ] **BOK-01** — add transactional boundaries to booking state change methods
+- [x] **BOK-01** — add transactional boundaries to booking state change methods
 - [ ] **BOK-02** — fix bookingconfirmedevent to carry money instead of decomposed amount currency
 - [ ] **BOK-03** — add hotel line items to an itinerary
 - [ ] **BOK-04** — add flight line items to an itinerary mystifly
