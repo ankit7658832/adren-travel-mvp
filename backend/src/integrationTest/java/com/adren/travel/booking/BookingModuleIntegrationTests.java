@@ -2,6 +2,7 @@ package com.adren.travel.booking;
 
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
+import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.MarkupType;
@@ -201,6 +202,81 @@ class BookingModuleIntegrationTests {
         BigDecimal sellRate = jdbcTemplate.queryForObject(
             "SELECT sell_rate FROM hotel_line_item WHERE line_item_id = ?", BigDecimal.class, lineItemId);
         assertThat(sellRate).isEqualByComparingTo("11371.2000");
+    }
+
+    @Test
+    void savingAnItineraryWithALineItemAsQuotationPublishesTheEventAndPersistsTheQuotationBOK08BOK09(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID itineraryId = insertDraftItinerary(consultantId);
+        paymentsApi.configureMarkup(consultantId, new ConfigureMarkupCommand(
+            ProductCategory.HOTEL, MarkupType.PERCENTAGE, BigDecimal.valueOf(15), null, null));
+        bookingApi.addHotelLineItem(itineraryId, new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-1",
+            "Taj Palace", "Deluxe Room", MealPlan.BB, Instant.now().plusSeconds(3600),
+            new Money(BigDecimal.valueOf(100), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.valueOf(96), BigDecimal.valueOf(3), BigDecimal.ZERO));
+
+        scenario.stimulate(() -> bookingApi.saveAsQuotation(itineraryId))
+            .andWaitForEventOfType(ItineraryQuotationSavedEvent.class)
+            .matchingMappedValue(ItineraryQuotationSavedEvent::itineraryId, itineraryId);
+    }
+
+    @Test
+    void savingAnItineraryWithNoLineItemsAsQuotationIsRejectedBOK08() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID itineraryId = insertDraftItinerary(consultantId);
+
+        assertThatThrownBy(() -> bookingApi.saveAsQuotation(itineraryId))
+            .isInstanceOf(IllegalStateException.class);
+
+        String status = jdbcTemplate.queryForObject(
+            "SELECT status FROM itinerary WHERE itinerary_id = ?", String.class, itineraryId);
+        assertThat(status).isEqualTo("DRAFT");
+    }
+
+    @Test
+    void savingAsQuotationPersistsAQuotationRowWithAFutureValidUntilBOK09() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID itineraryId = insertDraftItinerary(consultantId);
+        paymentsApi.configureMarkup(consultantId, new ConfigureMarkupCommand(
+            ProductCategory.HOTEL, MarkupType.PERCENTAGE, BigDecimal.valueOf(15), null, null));
+        bookingApi.addHotelLineItem(itineraryId, new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-1",
+            "Taj Palace", "Deluxe Room", MealPlan.BB, Instant.now().plusSeconds(3600),
+            new Money(BigDecimal.valueOf(100), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.valueOf(96), BigDecimal.valueOf(3), BigDecimal.ZERO));
+
+        UUID quotationId = bookingApi.saveAsQuotation(itineraryId);
+
+        Instant validUntil = jdbcTemplate.queryForObject(
+            "SELECT valid_until FROM quotation WHERE quotation_id = ?", Instant.class, quotationId);
+        assertThat(validUntil).isAfter(Instant.now());
+        Boolean sharedWithTraveler = jdbcTemplate.queryForObject(
+            "SELECT shared_with_traveler FROM quotation WHERE quotation_id = ?", Boolean.class, quotationId);
+        assertThat(sharedWithTraveler).isFalse();
+    }
+
+    @Test
+    void addingALineItemAfterSaveAsQuotationIsRejectedBOK08() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAsSuperAdmin();
+        UUID itineraryId = insertDraftItinerary(consultantId);
+        paymentsApi.configureMarkup(consultantId, new ConfigureMarkupCommand(
+            ProductCategory.HOTEL, MarkupType.PERCENTAGE, BigDecimal.valueOf(15), null, null));
+        bookingApi.addHotelLineItem(itineraryId, new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-1",
+            "Taj Palace", "Deluxe Room", MealPlan.BB, Instant.now().plusSeconds(3600),
+            new Money(BigDecimal.valueOf(100), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.valueOf(96), BigDecimal.valueOf(3), BigDecimal.ZERO));
+        bookingApi.saveAsQuotation(itineraryId);
+
+        var secondLineItem = new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-2", "Another Hotel",
+            "Standard Room", MealPlan.RO, Instant.now().plusSeconds(3600),
+            new Money(BigDecimal.valueOf(50), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> bookingApi.addHotelLineItem(itineraryId, secondLineItem))
+            .isInstanceOf(IllegalStateException.class);
     }
 
     private UUID insertDraftItinerary(UUID consultantId) {

@@ -76,16 +76,22 @@ class BookingApiMethodSecurityTest {
         }
 
         @Bean
+        QuotationRepository quotationRepository() {
+            return Mockito.mock(QuotationRepository.class);
+        }
+
+        @Bean
         PaymentsApi paymentsApi() {
             return Mockito.mock(PaymentsApi.class);
         }
 
         @Bean
         BookingApi bookingApi(ItineraryRepository repository, TravelerProfileRepository travelerProfileRepository,
-                               HotelLineItemRepository hotelLineItemRepository, ApplicationEventPublisher publisher,
-                               WhitelabelApi whitelabelApi, SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
-            return new BookingServiceImpl(repository, travelerProfileRepository, hotelLineItemRepository, publisher,
-                whitelabelApi, supplierSearchApi, paymentsApi);
+                               HotelLineItemRepository hotelLineItemRepository, QuotationRepository quotationRepository,
+                               ApplicationEventPublisher publisher, WhitelabelApi whitelabelApi,
+                               SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
+            return new BookingServiceImpl(repository, travelerProfileRepository, hotelLineItemRepository,
+                quotationRepository, publisher, whitelabelApi, supplierSearchApi, paymentsApi);
         }
     }
 
@@ -123,6 +129,7 @@ class BookingApiMethodSecurityTest {
         ItineraryRepository repository = context.getBean(ItineraryRepository.class);
         Itinerary draft = new Itinerary(itineraryId, consultantId, null);
         when(repository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
 
         authenticateAs(Role.CONSULTANT, consultantId);
 
@@ -136,6 +143,7 @@ class BookingApiMethodSecurityTest {
         ItineraryRepository repository = context.getBean(ItineraryRepository.class);
         Itinerary draft = new Itinerary(itineraryId, consultantId, null);
         when(repository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
 
         authenticateAs(Role.USER, consultantId);
 
@@ -169,6 +177,17 @@ class BookingApiMethodSecurityTest {
 
         authenticateAs(Role.SUPER_ADMIN, null);
         assertThat(bookingApi.findBookingsByConsultant(consultantId, PageRequest.of(0, 20)).getContent()).isEmpty();
+    }
+
+    private static void stubExistingHotelLineItem(UUID itineraryId) {
+        HotelLineItemRepository hotelLineItemRepository = context.getBean(HotelLineItemRepository.class);
+        HotelLineItem existing = new HotelLineItem(UUID.randomUUID(), itineraryId,
+            com.adren.travel.supplier.SupplierId.HOTELBEDS, "rate-key-1", "Taj Palace", "Deluxe Room",
+            com.adren.travel.booking.MealPlan.BB, java.time.Instant.now().plusSeconds(3600),
+            java.math.BigDecimal.valueOf(100), com.adren.travel.shared.CurrencyCode.INR,
+            java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, java.math.BigDecimal.valueOf(100),
+            com.adren.travel.shared.CurrencyCode.INR, java.math.BigDecimal.ONE);
+        when(hotelLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of(existing));
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

@@ -41,8 +41,8 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **BOK-05** — add transfer line items to an itinerary transferz
 - [ ] **BOK-06** — add cruise line items to an itinerary widgety
 - [ ] **BOK-07** — add activity line items to an itinerary hbactivities
-- [ ] **BOK-08** — save an itinerary as a quotation
-- [ ] **BOK-09** — create quotation entity with fx rate validity window
+- [x] **BOK-08** — save an itinerary as a quotation
+- [x] **BOK-09** — create quotation entity with fx rate validity window
 - [ ] **BOK-10** — convert a quotation to a package
 - [ ] **BOK-11** — build the package builder screen with uk atol disclosure gate
 - [ ] **BOK-12** — publish a package making it visible to users

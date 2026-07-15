@@ -23,6 +23,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -42,20 +44,28 @@ import java.util.UUID;
 @Service
 class BookingServiceImpl implements BookingApi {
 
+    // BOK-09 — PRD §20.9 gives no explicit default validity duration for
+    // valid_until; 7 days is a documented assumption pending business
+    // input, not a value derived from any PRD section.
+    private static final Duration QUOTATION_VALIDITY_WINDOW = Duration.ofDays(7);
+
     private final ItineraryRepository itineraryRepository;
     private final TravelerProfileRepository travelerProfileRepository;
     private final HotelLineItemRepository hotelLineItemRepository;
+    private final QuotationRepository quotationRepository;
     private final ApplicationEventPublisher events;
     private final WhitelabelApi whitelabelApi;
     private final SupplierSearchApi supplierSearchApi;
     private final PaymentsApi paymentsApi;
 
     BookingServiceImpl(ItineraryRepository itineraryRepository, TravelerProfileRepository travelerProfileRepository,
-                        HotelLineItemRepository hotelLineItemRepository, ApplicationEventPublisher events,
-                        WhitelabelApi whitelabelApi, SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
+                        HotelLineItemRepository hotelLineItemRepository, QuotationRepository quotationRepository,
+                        ApplicationEventPublisher events, WhitelabelApi whitelabelApi,
+                        SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
         this.itineraryRepository = itineraryRepository;
         this.travelerProfileRepository = travelerProfileRepository;
         this.hotelLineItemRepository = hotelLineItemRepository;
+        this.quotationRepository = quotationRepository;
         this.events = events;
         this.whitelabelApi = whitelabelApi;
         this.supplierSearchApi = supplierSearchApi;
@@ -75,10 +85,21 @@ class BookingServiceImpl implements BookingApi {
         CurrentPrincipal.resolveTenantScope(itinerary.getConsultantId());
         requireActiveUnlessSuperAdmin(itinerary.getConsultantId());
 
+        // BOK-08 AC: "at least one line item per required category" — this
+        // vertical slice only implements Hotel line items (BOK-04..07's
+        // other categories aren't built yet), so that narrows to "at least
+        // one line item" given the categories this slice actually supports.
+        if (hotelLineItemRepository.findByItineraryId(itineraryId).isEmpty()) {
+            throw new IllegalStateException("Cannot save as quotation: itinerary " + itineraryId + " has no line items");
+        }
+
         itinerary.markAsQuotation();
         itineraryRepository.save(itinerary);
 
-        UUID quotationId = UUID.randomUUID(); // simplified — a real Quotation entity would be created here
+        UUID quotationId = UUID.randomUUID();
+        Instant validUntil = Instant.now().plus(QUOTATION_VALIDITY_WINDOW);
+        quotationRepository.save(new Quotation(quotationId, itineraryId, validUntil));
+
         events.publishEvent(new ItineraryQuotationSavedEvent(itineraryId, quotationId, itinerary.getConsultantId()));
         return quotationId;
     }
@@ -152,6 +173,16 @@ class BookingServiceImpl implements BookingApi {
             .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + itineraryId));
         CurrentPrincipal.resolveTenantScope(itinerary.getConsultantId());
         requireActiveUnlessSuperAdmin(itinerary.getConsultantId());
+
+        // PRD §22.3 T4 / BOK-08: once saved as a Quotation, an itinerary is
+        // read-only "except via explicit edit" — adding a line item here is
+        // an implicit edit, not that explicit path (BOK-18's traveler-count
+        // recalculation is the first such explicit-edit mechanism), so it's
+        // blocked once the itinerary has left DRAFT.
+        if (itinerary.getStatus() != ItineraryStatus.DRAFT) {
+            throw new IllegalStateException(
+                "Cannot add a line item: itinerary " + itineraryId + " is " + itinerary.getStatus() + ", not DRAFT");
+        }
 
         UUID lineItemId = UUID.randomUUID();
         SellRateCalculation priced = paymentsApi.calculateSellRate(new CalculateSellRateCommand(

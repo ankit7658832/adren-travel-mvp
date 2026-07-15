@@ -83,6 +83,9 @@ class BookingServiceImplTest {
     HotelLineItemRepository hotelLineItemRepository;
 
     @Mock
+    QuotationRepository quotationRepository;
+
+    @Mock
     PaymentsApi paymentsApi;
 
     BookingServiceImpl service;
@@ -90,7 +93,17 @@ class BookingServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new BookingServiceImpl(itineraryRepository, travelerProfileRepository, hotelLineItemRepository,
-            events, whitelabelApi, supplierSearchApi, paymentsApi);
+            quotationRepository, events, whitelabelApi, supplierSearchApi, paymentsApi);
+    }
+
+    // BOK-08: saveAsQuotation now requires at least one line item — stub a
+    // non-empty result for any test that expects the transition to succeed.
+    private void stubExistingHotelLineItem(UUID itineraryId) {
+        HotelLineItem existing = new HotelLineItem(UUID.randomUUID(), itineraryId, SupplierId.HOTELBEDS,
+            "rate-key-1", "Taj Palace", "Deluxe Room", MealPlan.BB, Instant.now().plusSeconds(3600),
+            BigDecimal.valueOf(100), CurrencyCode.INR, BigDecimal.ZERO, BigDecimal.ZERO,
+            BigDecimal.valueOf(100), CurrencyCode.INR, BigDecimal.ONE);
+        when(hotelLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of(existing));
     }
 
     @AfterEach
@@ -104,6 +117,7 @@ class BookingServiceImplTest {
         UUID consultantId = UUID.randomUUID();
         Itinerary draft = new Itinerary(itineraryId, consultantId, null);
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
         authenticateAs(Role.CONSULTANT, consultantId);
 
         service.saveAsQuotation(itineraryId);
@@ -124,6 +138,7 @@ class BookingServiceImplTest {
         UUID consultantId = UUID.randomUUID();
         Itinerary draft = new Itinerary(itineraryId, consultantId, null);
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
         authenticateAs(Role.CONSULTANT, consultantId);
         org.mockito.Mockito.doThrow(new RuntimeException("DB write failed"))
             .when(itineraryRepository).save(draft);
@@ -146,6 +161,40 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void savingAsQuotationRejectsAnItineraryWithNoLineItemsBOK08() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        when(hotelLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of());
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        assertThatThrownBy(() -> service.saveAsQuotation(itineraryId))
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(draft.getStatus()).isEqualTo(ItineraryStatus.DRAFT);
+        verify(events, org.mockito.Mockito.never()).publishEvent(any(ItineraryQuotationSavedEvent.class));
+    }
+
+    @Test
+    void savingAsQuotationCreatesAQuotationWithAFutureValidUntilBOK09() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        service.saveAsQuotation(itineraryId);
+
+        ArgumentCaptor<Quotation> captor = ArgumentCaptor.forClass(Quotation.class);
+        verify(quotationRepository).save(captor.capture());
+        assertThat(captor.getValue().getItineraryId()).isEqualTo(itineraryId);
+        assertThat(captor.getValue().getValidUntil()).isAfter(Instant.now());
+        assertThat(captor.getValue().isSharedWithTraveler()).isFalse();
+        assertThat(captor.getValue().getConvertedToBookingId()).isNull();
+    }
+
+    @Test
     void aConsultantCannotSaveAnotherConsultantsItineraryAsQuotationFND03() {
         UUID itineraryId = UUID.randomUUID();
         UUID ownerConsultantId = UUID.randomUUID();
@@ -165,6 +214,7 @@ class BookingServiceImplTest {
         UUID consultantId = UUID.randomUUID();
         Itinerary draft = new Itinerary(itineraryId, consultantId, null);
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
         authenticateAs(Role.USER, consultantId);
 
         service.saveAsQuotation(itineraryId);
@@ -192,6 +242,7 @@ class BookingServiceImplTest {
         UUID itineraryId = UUID.randomUUID();
         Itinerary draft = new Itinerary(itineraryId, UUID.randomUUID(), null);
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
         authenticateAs(Role.SUPER_ADMIN, null);
 
         service.saveAsQuotation(itineraryId);
@@ -427,6 +478,24 @@ class BookingServiceImplTest {
 
         assertThatThrownBy(() -> service.addHotelLineItem(itineraryId, command))
             .isInstanceOf(AccessDeniedException.class);
+        verify(hotelLineItemRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void addingAHotelLineItemRejectsAnItineraryThatIsAlreadyAQuotationBOK08() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        itinerary.markAsQuotation();
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        var command = new AddHotelLineItemCommand(SupplierId.HOTELBEDS, "rate-key-1", "Taj Palace", "Deluxe Room",
+            MealPlan.BB, Instant.now().plusSeconds(3600), new Money(BigDecimal.valueOf(100), CurrencyCode.INR),
+            CurrencyCode.INR, BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> service.addHotelLineItem(itineraryId, command))
+            .isInstanceOf(IllegalStateException.class);
         verify(hotelLineItemRepository, org.mockito.Mockito.never()).save(any());
     }
 
