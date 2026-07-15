@@ -11,7 +11,7 @@ your build environment; this scaffold was authored against a Java 21 JDK).
 | `booking` | Core Booking Engine (Section 9) | Reference implementation |
 | `supplier` | Supplier & Inventory Integration (Section 10) | Reference implementation (Hotelbeds stub; STUBA/TBO/others follow the same pattern); Adren-owned credentials in Secrets Manager by ARN (FND-11) and Consultant-owned BYOS credentials as row-level KMS-envelope-encrypted secrets (FND-12) |
 | `ai` | AI Itinerary & Governance (Section 11) | Package-info stub — build next |
-| `payments` | Payments, Yield/Markup & Wallet (Section 12) | Package-info stub |
+| `payments` | Payments, Yield/Markup & Wallet (Section 12) | Per-Consultant, per-category markup configuration (FIN-01) implemented; FX buffer/wallet/Stripe follow |
 | `whitelabel` | White-Label & Admin Console (Section 13) | Consultant onboarding + market-driven KYC (FND-04), lifecycle suspend/reinstate (FND-05), branding config with a 30s-TTL cache + commit-time invalidation (FND-06/FND-07), locale/market selection (FND-17), and the dynamic per-Consultant CORS domain registry (FND-08) implemented |
 | `ads` | Ads/Campaign Management (Section 14) | Package-info stub |
 | `notification` | Notifications (Section 15) | Reference event listener implemented |
