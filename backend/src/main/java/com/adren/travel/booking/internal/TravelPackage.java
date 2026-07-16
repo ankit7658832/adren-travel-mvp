@@ -1,5 +1,6 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AtolDisclosureRequiredException;
 import com.adren.travel.shared.CurrencyCode;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -47,6 +48,7 @@ class TravelPackage {
     private boolean promotedViaAds;
     private UUID adCampaignId;
     private boolean dynamicFlightHotelCombo;
+    private boolean atolDisclosureCompleted;
 
     @Enumerated(EnumType.STRING)
     private PackageStatus status;
@@ -84,10 +86,11 @@ class TravelPackage {
      * records whether the Consultant opted into Meta campaign promotion
      * (PRD §20.7's {@code promoted_via_ads}); the actual hand-off into the
      * Ads Campaign Builder (ADS-03) is a frontend navigation concern, not
-     * modeled here. The UK ATOL disclosure gate (BOK-11) is deferred: this
-     * vertical slice has no Flight line item type yet, so {@code
-     * dynamicFlightHotelCombo} can never actually be true and a gate
-     * checking it would be unreachable, untestable code.
+     * modeled here. Callers must invoke {@link
+     * #requireAtolDisclosureIfNeeded} first (BOK-11) — kept as a separate
+     * method rather than folded in here because it needs the caller's
+     * consultant market lookup ({@code WhitelabelApi.findConsultantMarket},
+     * a cross-module call this entity itself must not make).
      */
     void publish(boolean promoteViaAds) {
         if (status == PackageStatus.PUBLISHED) {
@@ -95,6 +98,28 @@ class TravelPackage {
         }
         this.status = PackageStatus.PUBLISHED;
         this.promotedViaAds = promoteViaAds;
+    }
+
+    /**
+     * PRD §17.2/§22.3 T5, BOK-11: a UK Consultant's dynamic flight+hotel
+     * package cannot publish until the ATOL disclosure step is completed.
+     * {@code isUkMarket} is resolved by the caller (a cross-module lookup
+     * this entity itself must not perform, per RULES.md §4.1).
+     */
+    void requireAtolDisclosureIfNeeded(boolean isUkMarket) {
+        if (isUkMarket && dynamicFlightHotelCombo && !atolDisclosureCompleted) {
+            throw new AtolDisclosureRequiredException(packageId);
+        }
+    }
+
+    /** PRD §20.7 — set once both a Hotel and a Flight line item exist on the source itinerary (BOK-11). */
+    void markDynamicFlightHotelCombo() {
+        this.dynamicFlightHotelCombo = true;
+    }
+
+    /** Records that the Consultant completed the ATOL disclosure step (BOK-11) — irreversible, no "undo" path modeled. */
+    void completeAtolDisclosure() {
+        this.atolDisclosureCompleted = true;
     }
 
     UUID getPackageId() {
@@ -139,6 +164,10 @@ class TravelPackage {
 
     boolean isDynamicFlightHotelCombo() {
         return dynamicFlightHotelCombo;
+    }
+
+    boolean isAtolDisclosureCompleted() {
+        return atolDisclosureCompleted;
     }
 
     boolean isPromotedViaAds() {

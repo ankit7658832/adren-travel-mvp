@@ -33,6 +33,7 @@ import com.adren.travel.shared.Money;
 import com.adren.travel.shared.ProductCategory;
 import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.supplier.SupplierSearchResult;
+import com.adren.travel.whitelabel.Market;
 import com.adren.travel.whitelabel.WhitelabelApi;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -559,6 +560,17 @@ class BookingServiceImpl implements BookingApi {
         TravelPackage travelPackage = new TravelPackage(packageId, quotation.getItineraryId(),
             itinerary.getConsultantId(), command.name(), command.description(), command.validityStart(),
             command.validityEnd(), basePrice.amount(), command.markupPrice(), basePrice.currency(), command.maxPax());
+
+        // BOK-11, PRD §20.7 is_dynamic_flight_hotel_combo: now that BOK-04
+        // (Flight line items) exists, this is detectable — a package is a
+        // "dynamic" flight+hotel combo when its source itinerary carries
+        // both product types.
+        boolean hasHotel = !lineItems.isEmpty();
+        boolean hasFlight = !flightLineItemRepository.findByItineraryId(quotation.getItineraryId()).isEmpty();
+        if (hasHotel && hasFlight) {
+            travelPackage.markDynamicFlightHotelCombo();
+        }
+
         travelPackageRepository.save(travelPackage);
 
         events.publishEvent(new PackageCreatedEvent(packageId, quotation.getItineraryId(), itinerary.getConsultantId()));
@@ -573,12 +585,30 @@ class BookingServiceImpl implements BookingApi {
         CurrentPrincipal.resolveTenantScope(travelPackage.getConsultantId());
         requireActiveUnlessSuperAdmin(travelPackage.getConsultantId());
 
+        // BOK-11, PRD §17.2/§22.3 T5: blocks publish until ATOL disclosure
+        // is complete, but only for a UK Consultant's dynamic combo —
+        // requireAtolDisclosureIfNeeded is a no-op for every other case.
+        Market market = whitelabelApi.findConsultantMarket(travelPackage.getConsultantId());
+        travelPackage.requireAtolDisclosureIfNeeded(market == Market.UK);
+
         travelPackage.publish(promoteViaAds);
         travelPackageRepository.save(travelPackage);
 
         events.publishEvent(new PackagePublishedEvent(packageId, travelPackage.getSourceItineraryId(),
             travelPackage.getConsultantId(), promoteViaAds));
         return packageId;
+    }
+
+    @Override
+    @Transactional
+    public void completeAtolDisclosure(UUID packageId) {
+        TravelPackage travelPackage = travelPackageRepository.findById(packageId)
+            .orElseThrow(() -> new IllegalArgumentException("No package: " + packageId));
+        CurrentPrincipal.resolveTenantScope(travelPackage.getConsultantId());
+        requireActiveUnlessSuperAdmin(travelPackage.getConsultantId());
+
+        travelPackage.completeAtolDisclosure();
+        travelPackageRepository.save(travelPackage);
     }
 
     @Override

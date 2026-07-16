@@ -34,6 +34,7 @@ import com.adren.travel.shared.ProductCategory;
 import com.adren.travel.supplier.SupplierId;
 import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.supplier.SupplierSearchResult;
+import com.adren.travel.whitelabel.Market;
 import com.adren.travel.whitelabel.WhitelabelApi;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -1213,6 +1214,60 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void convertingAQuotationToAPackageDetectsADynamicFlightHotelComboBOK11() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(quotationRepository.findById(quotationId)).thenReturn(
+            Optional.of(new Quotation(quotationId, itineraryId, Instant.now().plusSeconds(3600))));
+        when(itineraryRepository.findById(itineraryId)).thenReturn(
+            Optional.of(new Itinerary(itineraryId, consultantId, null)));
+        HotelLineItem hotel = new HotelLineItem(UUID.randomUUID(), itineraryId, SupplierId.HOTELBEDS,
+            "rate-key-1", "Taj Palace", "Deluxe Room", MealPlan.BB, Instant.now().plusSeconds(3600),
+            BigDecimal.valueOf(100), CurrencyCode.INR, BigDecimal.ZERO, BigDecimal.ZERO,
+            BigDecimal.valueOf(5000), CurrencyCode.INR, BigDecimal.ONE);
+        when(hotelLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of(hotel));
+        FlightLineItem flight = new FlightLineItem(UUID.randomUUID(), itineraryId, SupplierId.MYSTIFLY, "f1",
+            "AI", "AI101", CabinClass.ECONOMY, "23kg", BigDecimal.valueOf(100), CurrencyCode.INR,
+            BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.valueOf(2000), CurrencyCode.INR, BigDecimal.ONE);
+        when(flightLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of(flight));
+        var command = new ConvertQuotationToPackageCommand("UK Escape", null,
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 2);
+
+        service.convertQuotationToPackage(quotationId, command);
+
+        ArgumentCaptor<TravelPackage> captor = ArgumentCaptor.forClass(TravelPackage.class);
+        verify(travelPackageRepository).save(captor.capture());
+        assertThat(captor.getValue().isDynamicFlightHotelCombo()).isTrue();
+    }
+
+    @Test
+    void convertingAHotelOnlyQuotationIsNotADynamicComboBOK11() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(quotationRepository.findById(quotationId)).thenReturn(
+            Optional.of(new Quotation(quotationId, itineraryId, Instant.now().plusSeconds(3600))));
+        when(itineraryRepository.findById(itineraryId)).thenReturn(
+            Optional.of(new Itinerary(itineraryId, consultantId, null)));
+        HotelLineItem hotel = new HotelLineItem(UUID.randomUUID(), itineraryId, SupplierId.HOTELBEDS,
+            "rate-key-1", "Taj Palace", "Deluxe Room", MealPlan.BB, Instant.now().plusSeconds(3600),
+            BigDecimal.valueOf(100), CurrencyCode.INR, BigDecimal.ZERO, BigDecimal.ZERO,
+            BigDecimal.valueOf(5000), CurrencyCode.INR, BigDecimal.ONE);
+        when(hotelLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of(hotel));
+        var command = new ConvertQuotationToPackageCommand("Goa Getaway", null,
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 2);
+
+        service.convertQuotationToPackage(quotationId, command);
+
+        ArgumentCaptor<TravelPackage> captor = ArgumentCaptor.forClass(TravelPackage.class);
+        verify(travelPackageRepository).save(captor.capture());
+        assertThat(captor.getValue().isDynamicFlightHotelCombo()).isFalse();
+    }
+
+    @Test
     void convertingAnUnknownQuotationFailsBOK10() {
         UUID quotationId = UUID.randomUUID();
         when(quotationRepository.findById(quotationId)).thenReturn(Optional.empty());
@@ -1339,6 +1394,75 @@ class BookingServiceImplTest {
 
         assertThatThrownBy(() -> service.publishPackage(packageId, true))
             .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void publishingAUkDynamicComboPackageIsBlockedWithoutAtolDisclosureBOK11() {
+        UUID packageId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        TravelPackage travelPackage = new TravelPackage(packageId, UUID.randomUUID(), consultantId, "UK Escape",
+            null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(7000), BigDecimal.valueOf(500), CurrencyCode.GBP, 2);
+        travelPackage.markDynamicFlightHotelCombo();
+        when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+        when(whitelabelApi.findConsultantMarket(consultantId)).thenReturn(Market.UK);
+
+        assertThatThrownBy(() -> service.publishPackage(packageId, false))
+            .isInstanceOf(com.adren.travel.booking.AtolDisclosureRequiredException.class);
+        assertThat(travelPackage.getStatus()).isEqualTo(PackageStatus.DRAFT);
+        verify(travelPackageRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void publishingAUkDynamicComboPackageSucceedsAfterAtolDisclosureCompletedBOK11() {
+        UUID packageId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        TravelPackage travelPackage = new TravelPackage(packageId, UUID.randomUUID(), consultantId, "UK Escape",
+            null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(7000), BigDecimal.valueOf(500), CurrencyCode.GBP, 2);
+        travelPackage.markDynamicFlightHotelCombo();
+        travelPackage.completeAtolDisclosure();
+        when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+        when(whitelabelApi.findConsultantMarket(consultantId)).thenReturn(Market.UK);
+
+        service.publishPackage(packageId, false);
+
+        assertThat(travelPackage.getStatus()).isEqualTo(PackageStatus.PUBLISHED);
+    }
+
+    @Test
+    void publishingANonUkDynamicComboPackageIsNotGatedByAtolDisclosureBOK11() {
+        UUID packageId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        TravelPackage travelPackage = new TravelPackage(packageId, UUID.randomUUID(), consultantId, "India Getaway",
+            null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(7000), BigDecimal.valueOf(500), CurrencyCode.INR, 2);
+        travelPackage.markDynamicFlightHotelCombo();
+        when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+        when(whitelabelApi.findConsultantMarket(consultantId)).thenReturn(Market.INDIA);
+
+        service.publishPackage(packageId, false);
+
+        assertThat(travelPackage.getStatus()).isEqualTo(PackageStatus.PUBLISHED);
+    }
+
+    @Test
+    void completingAtolDisclosureSetsTheFlagBOK11() {
+        UUID packageId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        TravelPackage travelPackage = new TravelPackage(packageId, UUID.randomUUID(), consultantId, "UK Escape",
+            null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(7000), BigDecimal.valueOf(500), CurrencyCode.GBP, 2);
+        when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+
+        service.completeAtolDisclosure(packageId);
+
+        assertThat(travelPackage.isAtolDisclosureCompleted()).isTrue();
+        verify(travelPackageRepository).save(travelPackage);
     }
 
     @Test

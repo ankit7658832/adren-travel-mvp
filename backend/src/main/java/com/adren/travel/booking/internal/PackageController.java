@@ -30,6 +30,12 @@ class PackageController {
         return bookingApi.publishPackage(packageId, request.promoteViaAds());
     }
 
+    /** PRD §17.2/§22.3 T5 — completes the UK ATOL disclosure step, a precondition for publishing a dynamic combo (BOK-11). */
+    @PostMapping("/{packageId}/atol-disclosure")
+    void completeAtolDisclosure(@PathVariable UUID packageId) {
+        bookingApi.completeAtolDisclosure(packageId);
+    }
+
     @GetMapping
     Page<PackageView> findPublished(@RequestParam UUID consultantId, Pageable pageable) {
         return bookingApi.findPublishedPackagesByConsultant(consultantId, pageable);

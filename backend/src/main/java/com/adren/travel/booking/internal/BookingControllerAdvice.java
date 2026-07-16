@@ -1,5 +1,6 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AtolDisclosureRequiredException;
 import com.adren.travel.booking.InventoryNoLongerAvailableException;
 import com.adren.travel.shared.ProblemDetailFactory;
 import jakarta.servlet.http.HttpServletRequest;
@@ -45,6 +46,14 @@ class BookingControllerAdvice {
     ProblemDetail handleInventoryNoLongerAvailable(InventoryNoLongerAvailableException ex, HttpServletRequest request) {
         return ProblemDetailFactory.create(HttpStatus.CONFLICT,
             "https://docs.adren.travel/errors/inventory-no-longer-available", "No longer available",
+            ex.getMessage(), request.getRequestURI());
+    }
+
+    @ExceptionHandler(AtolDisclosureRequiredException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ProblemDetail handleAtolDisclosureRequired(AtolDisclosureRequiredException ex, HttpServletRequest request) {
+        return ProblemDetailFactory.create(HttpStatus.CONFLICT,
+            "https://docs.adren.travel/errors/atol-disclosure-required", "ATOL disclosure required",
             ex.getMessage(), request.getRequestURI());
     }
 

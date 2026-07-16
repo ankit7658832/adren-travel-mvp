@@ -154,6 +154,17 @@ public interface BookingApi {
     void recalculateQuotation(UUID quotationId, int newTravelerCount);
 
     /**
+     * Marks a Package's ATOL disclosure step complete (PRD §17.2, §22.3 T5,
+     * BOK-11) — the precondition {@link #publishPackage} checks for a UK
+     * Consultant's dynamic flight+hotel package. Same "Create package"
+     * role/capability-grant shape as {@link #publishPackage} itself.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT') or "
+        + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
+        + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
+    void completeAtolDisclosure(UUID packageId);
+
+    /**
      * Confirms a booking once a Stripe webhook (not a direct user request)
      * reports payment succeeded (PRD §12.4, FIN-11) — invoked by this
      * module's own listener on {@code payments.event.StripePaymentSucceededEvent},
