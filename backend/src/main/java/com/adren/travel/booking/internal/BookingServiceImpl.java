@@ -1,5 +1,6 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AddActivityLineItemCommand;
 import com.adren.travel.booking.AddCruiseLineItemCommand;
 import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
@@ -9,6 +10,7 @@ import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.PackageView;
+import com.adren.travel.booking.event.ActivityLineItemAddedEvent;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.CruiseLineItemAddedEvent;
 import com.adren.travel.booking.event.FlightLineItemAddedEvent;
@@ -65,6 +67,7 @@ class BookingServiceImpl implements BookingApi {
     private final FlightLineItemRepository flightLineItemRepository;
     private final TransferLineItemRepository transferLineItemRepository;
     private final CruiseLineItemRepository cruiseLineItemRepository;
+    private final ActivityLineItemRepository activityLineItemRepository;
     private final QuotationRepository quotationRepository;
     private final TravelPackageRepository travelPackageRepository;
     private final VoucherService voucherService;
@@ -77,6 +80,7 @@ class BookingServiceImpl implements BookingApi {
                         HotelLineItemRepository hotelLineItemRepository, FlightLineItemRepository flightLineItemRepository,
                         TransferLineItemRepository transferLineItemRepository,
                         CruiseLineItemRepository cruiseLineItemRepository,
+                        ActivityLineItemRepository activityLineItemRepository,
                         QuotationRepository quotationRepository,
                         TravelPackageRepository travelPackageRepository, VoucherService voucherService,
                         ApplicationEventPublisher events, WhitelabelApi whitelabelApi,
@@ -87,6 +91,7 @@ class BookingServiceImpl implements BookingApi {
         this.flightLineItemRepository = flightLineItemRepository;
         this.transferLineItemRepository = transferLineItemRepository;
         this.cruiseLineItemRepository = cruiseLineItemRepository;
+        this.activityLineItemRepository = activityLineItemRepository;
         this.quotationRepository = quotationRepository;
         this.travelPackageRepository = travelPackageRepository;
         this.voucherService = voucherService;
@@ -109,11 +114,16 @@ class BookingServiceImpl implements BookingApi {
         CurrentPrincipal.resolveTenantScope(itinerary.getConsultantId());
         requireActiveUnlessSuperAdmin(itinerary.getConsultantId());
 
-        // BOK-08 AC: "at least one line item per required category" — this
-        // vertical slice only implements Hotel line items (BOK-04..07's
-        // other categories aren't built yet), so that narrows to "at least
-        // one line item" given the categories this slice actually supports.
-        if (hotelLineItemRepository.findByItineraryId(itineraryId).isEmpty()) {
+        // BOK-08 AC: "at least one line item per required category" —
+        // narrowed to "at least one line item of any of the five supported
+        // types" now that BOK-04..07 all exist (was Hotel-only when only
+        // BOK-03 existed).
+        boolean hasAnyLineItem = !hotelLineItemRepository.findByItineraryId(itineraryId).isEmpty()
+            || !flightLineItemRepository.findByItineraryId(itineraryId).isEmpty()
+            || !transferLineItemRepository.findByItineraryId(itineraryId).isEmpty()
+            || !cruiseLineItemRepository.findByItineraryId(itineraryId).isEmpty()
+            || !activityLineItemRepository.findByItineraryId(itineraryId).isEmpty();
+        if (!hasAnyLineItem) {
             throw new IllegalStateException("Cannot save as quotation: itinerary " + itineraryId + " has no line items");
         }
 
@@ -306,6 +316,45 @@ class BookingServiceImpl implements BookingApi {
         events.publishEvent(new CruiseLineItemAddedEvent(lineItemId, itineraryId, itinerary.getConsultantId(),
             priced.sellRate()));
         return lineItemId;
+    }
+
+    @Override
+    @Transactional
+    public UUID addActivityLineItem(UUID itineraryId, AddActivityLineItemCommand command) {
+        Itinerary itinerary = requireOwnedDraftItinerary(itineraryId);
+
+        UUID lineItemId = UUID.randomUUID();
+        SellRateCalculation priced = paymentsApi.calculateSellRate(new CalculateSellRateCommand(
+            lineItemId, itinerary.getConsultantId(), ProductCategory.ACTIVITY, command.netRate(),
+            command.sellCurrency(), command.fxRate(), command.bufferPercent(), command.commissionPercent()));
+
+        ActivityLineItem lineItem = new ActivityLineItem(lineItemId, itineraryId, command.supplierId(),
+            command.supplierRateId(), command.durationMinutes(), command.timeSlot(), command.headcount(),
+            command.netRate().amount(), command.netRate().currency(), priced.markupAmount().amount(),
+            priced.bufferedAmount().amount().subtract(priced.fxConvertedBase().amount()),
+            priced.sellRate().amount(), priced.sellRate().currency(), priced.fxRateSnapshot().rate());
+        activityLineItemRepository.save(lineItem);
+
+        events.publishEvent(new ActivityLineItemAddedEvent(lineItemId, itineraryId, itinerary.getConsultantId(),
+            priced.sellRate()));
+        return lineItemId;
+    }
+
+    @Override
+    @Transactional
+    public void updateActivityHeadcount(UUID itineraryId, UUID lineItemId, int newHeadcount) {
+        // Same DRAFT-only immutability boundary as adding a line item —
+        // see ActivityLineItem.updateHeadcount's Javadoc for the scoping
+        // note on what "post-confirmation" means in this codebase today.
+        requireOwnedDraftItinerary(itineraryId);
+
+        ActivityLineItem lineItem = activityLineItemRepository.findById(lineItemId)
+            .orElseThrow(() -> new IllegalArgumentException("No activity line item: " + lineItemId));
+        if (!lineItem.getItineraryId().equals(itineraryId)) {
+            throw new IllegalArgumentException("Line item " + lineItemId + " does not belong to itinerary " + itineraryId);
+        }
+        lineItem.updateHeadcount(newHeadcount);
+        activityLineItemRepository.save(lineItem);
     }
 
     // PRD §22.3 T4 / BOK-08: once saved as a Quotation, an itinerary is

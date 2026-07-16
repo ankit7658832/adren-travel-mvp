@@ -1,5 +1,6 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AddActivityLineItemCommand;
 import com.adren.travel.booking.AddCruiseLineItemCommand;
 import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
@@ -9,6 +10,7 @@ import com.adren.travel.booking.CabinClass;
 import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.MealPlan;
+import com.adren.travel.booking.event.ActivityLineItemAddedEvent;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.CruiseLineItemAddedEvent;
 import com.adren.travel.booking.event.FlightLineItemAddedEvent;
@@ -102,6 +104,9 @@ class BookingServiceImplTest {
     CruiseLineItemRepository cruiseLineItemRepository;
 
     @Mock
+    ActivityLineItemRepository activityLineItemRepository;
+
+    @Mock
     QuotationRepository quotationRepository;
 
     @Mock
@@ -118,8 +123,9 @@ class BookingServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new BookingServiceImpl(itineraryRepository, travelerProfileRepository, hotelLineItemRepository,
-            flightLineItemRepository, transferLineItemRepository, cruiseLineItemRepository, quotationRepository,
-            travelPackageRepository, voucherService, events, whitelabelApi, supplierSearchApi, paymentsApi);
+            flightLineItemRepository, transferLineItemRepository, cruiseLineItemRepository,
+            activityLineItemRepository, quotationRepository, travelPackageRepository, voucherService, events,
+            whitelabelApi, supplierSearchApi, paymentsApi);
     }
 
     // BOK-08: saveAsQuotation now requires at least one line item — stub a
@@ -862,6 +868,114 @@ class BookingServiceImplTest {
         assertThatThrownBy(() -> service.addCruiseLineItem(itineraryId, command))
             .isInstanceOf(IllegalStateException.class);
         verify(cruiseLineItemRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void addingAnActivityLineItemPricesItThroughTheSellRatePipelineAndPublishesTheEventBOK07() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        Money netRate = new Money(BigDecimal.valueOf(2000), CurrencyCode.INR);
+        Money fxConvertedBase = new Money(BigDecimal.valueOf(2000), CurrencyCode.INR);
+        Money bufferedAmount = new Money(BigDecimal.valueOf(2060), CurrencyCode.INR);
+        Money markupAmount = new Money(BigDecimal.valueOf(309), CurrencyCode.INR);
+        Money sellRate = new Money(BigDecimal.valueOf(2369), CurrencyCode.INR);
+        Money commissionAmount = Money.zero(CurrencyCode.INR);
+        FxRateSnapshot snapshot = new FxRateSnapshot(CurrencyCode.INR, CurrencyCode.INR, BigDecimal.ONE, Instant.now());
+        when(paymentsApi.calculateSellRate(any())).thenReturn(new SellRateCalculation(
+            netRate, snapshot, fxConvertedBase, bufferedAmount, markupAmount, sellRate, commissionAmount));
+
+        var command = new AddActivityLineItemCommand(SupplierId.HBACTIVITIES, "activity-1", 120,
+            java.time.LocalTime.of(9, 0), 4, netRate, CurrencyCode.INR, BigDecimal.ONE, BigDecimal.valueOf(3), BigDecimal.ZERO);
+
+        UUID lineItemId = service.addActivityLineItem(itineraryId, command);
+
+        ArgumentCaptor<CalculateSellRateCommand> priceCaptor = ArgumentCaptor.forClass(CalculateSellRateCommand.class);
+        verify(paymentsApi).calculateSellRate(priceCaptor.capture());
+        assertThat(priceCaptor.getValue().category()).isEqualTo(ProductCategory.ACTIVITY);
+
+        ArgumentCaptor<ActivityLineItem> lineItemCaptor = ArgumentCaptor.forClass(ActivityLineItem.class);
+        verify(activityLineItemRepository).save(lineItemCaptor.capture());
+        assertThat(lineItemCaptor.getValue().getLineItemId()).isEqualTo(lineItemId);
+        assertThat(lineItemCaptor.getValue().getDurationMinutes()).isEqualTo(120);
+        assertThat(lineItemCaptor.getValue().getTimeSlot()).isEqualTo(java.time.LocalTime.of(9, 0));
+        assertThat(lineItemCaptor.getValue().getHeadcount()).isEqualTo(4);
+
+        ArgumentCaptor<ActivityLineItemAddedEvent> eventCaptor = ArgumentCaptor.forClass(ActivityLineItemAddedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().lineItemId()).isEqualTo(lineItemId);
+    }
+
+    @Test
+    void addingAnActivityLineItemFailsForAnItineraryOwnedByAnotherConsultantBOK07() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID ownerConsultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, ownerConsultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        var command = new AddActivityLineItemCommand(SupplierId.HBACTIVITIES, "activity-1", 120,
+            java.time.LocalTime.of(9, 0), 4, new Money(BigDecimal.valueOf(2000), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> service.addActivityLineItem(itineraryId, command))
+            .isInstanceOf(AccessDeniedException.class);
+        verify(activityLineItemRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void addingAnActivityLineItemRejectsAnItineraryThatIsAlreadyAQuotationBOK07() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        itinerary.markAsQuotation();
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        var command = new AddActivityLineItemCommand(SupplierId.HBACTIVITIES, "activity-1", 120,
+            java.time.LocalTime.of(9, 0), 4, new Money(BigDecimal.valueOf(2000), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> service.addActivityLineItem(itineraryId, command))
+            .isInstanceOf(IllegalStateException.class);
+        verify(activityLineItemRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void updatingActivityHeadcountSucceedsWhileTheItineraryIsStillDraftBOK07() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID lineItemId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        ActivityLineItem lineItem = new ActivityLineItem(lineItemId, itineraryId, SupplierId.HBACTIVITIES,
+            "activity-1", 120, java.time.LocalTime.of(9, 0), 4, BigDecimal.valueOf(2000), CurrencyCode.INR,
+            BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.valueOf(2000), CurrencyCode.INR, BigDecimal.ONE);
+        when(activityLineItemRepository.findById(lineItemId)).thenReturn(Optional.of(lineItem));
+
+        service.updateActivityHeadcount(itineraryId, lineItemId, 6);
+
+        assertThat(lineItem.getHeadcount()).isEqualTo(6);
+        verify(activityLineItemRepository).save(lineItem);
+    }
+
+    @Test
+    void updatingActivityHeadcountIsBlockedOnceTheItineraryHasLeftDraftBOK07() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID lineItemId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        itinerary.markAsQuotation();
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        assertThatThrownBy(() -> service.updateActivityHeadcount(itineraryId, lineItemId, 6))
+            .isInstanceOf(IllegalStateException.class);
+        verify(activityLineItemRepository, org.mockito.Mockito.never()).save(any());
     }
 
     @Test

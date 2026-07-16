@@ -42,7 +42,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **BOK-04** — add flight line items to an itinerary mystifly
 - [x] **BOK-05** — add transfer line items to an itinerary transferz
 - [x] **BOK-06** — add cruise line items to an itinerary widgety
-- [ ] **BOK-07** — add activity line items to an itinerary hbactivities
+- [x] **BOK-07** — add activity line items to an itinerary hbactivities
 - [x] **BOK-08** — save an itinerary as a quotation
 - [x] **BOK-09** — create quotation entity with fx rate validity window
 - [x] **BOK-10** — convert a quotation to a package

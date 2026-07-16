@@ -112,6 +112,25 @@ public interface BookingApi {
     UUID addCruiseLineItem(UUID itineraryId, AddCruiseLineItemCommand command);
 
     /**
+     * Adds an Activity line item to an itinerary (PRD §20.6, §10.2.7, BOK-07),
+     * priced through the same {@code PaymentsApi.calculateSellRate} pipeline
+     * under {@code ProductCategory.ACTIVITY}. Publishes {@link
+     * com.adren.travel.booking.event.ActivityLineItemAddedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    UUID addActivityLineItem(UUID itineraryId, AddActivityLineItemCommand command);
+
+    /**
+     * Changes an Activity line item's headcount (PRD §20.6, §10.2.7, BOK-07)
+     * — blocked once the owning itinerary has left DRAFT (the same
+     * immutability boundary {@link #addActivityLineItem} and every other
+     * {@code add*LineItem} method already enforces), matching most
+     * suppliers' fixed-at-booking headcount constraint.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    void updateActivityHeadcount(UUID itineraryId, UUID lineItemId, int newHeadcount);
+
+    /**
      * Confirms a booking once a Stripe webhook (not a direct user request)
      * reports payment succeeded (PRD §12.4, FIN-11) — invoked by this
      * module's own listener on {@code payments.event.StripePaymentSucceededEvent},

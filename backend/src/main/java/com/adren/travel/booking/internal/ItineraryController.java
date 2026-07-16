@@ -1,5 +1,6 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AddActivityLineItemCommand;
 import com.adren.travel.booking.AddCruiseLineItemCommand;
 import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
@@ -11,6 +12,7 @@ import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -107,5 +109,26 @@ class ItineraryController {
             new Money(request.netRate(), request.netRateCurrency()), request.sellCurrency(),
             request.fxRate(), request.bufferPercent(), request.commissionPercent()));
         return Map.of("lineItemId", lineItemId);
+    }
+
+    /** PRD §20.6, §10.2.7 — adds an Activity line item to the itinerary (BOK-07). */
+    @PostMapping("/{itineraryId}/line-items/activity")
+    @ResponseStatus(HttpStatus.CREATED)
+    Map<String, UUID> addActivityLineItem(@PathVariable UUID itineraryId, @Valid @RequestBody AddActivityLineItemRequest request) {
+        UUID lineItemId = bookingApi.addActivityLineItem(itineraryId, new AddActivityLineItemCommand(
+            request.supplierId(), request.supplierRateId(), request.durationMinutes(), request.timeSlot(),
+            request.headcount(), new Money(request.netRate(), request.netRateCurrency()), request.sellCurrency(),
+            request.fxRate(), request.bufferPercent(), request.commissionPercent()));
+        return Map.of("lineItemId", lineItemId);
+    }
+
+    /**
+     * PRD §10.2.7 — changes an Activity line item's headcount, blocked once
+     * the itinerary has left DRAFT (BOK-07).
+     */
+    @PatchMapping("/{itineraryId}/line-items/activity/{lineItemId}/headcount")
+    void updateActivityHeadcount(@PathVariable UUID itineraryId, @PathVariable UUID lineItemId,
+                                  @RequestBody UpdateActivityHeadcountRequest request) {
+        bookingApi.updateActivityHeadcount(itineraryId, lineItemId, request.headcount());
     }
 }
