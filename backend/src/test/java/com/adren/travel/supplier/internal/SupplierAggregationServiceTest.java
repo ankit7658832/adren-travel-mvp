@@ -2,10 +2,15 @@ package com.adren.travel.supplier.internal;
 
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
+import com.adren.travel.shared.CurrencyCode;
+import com.adren.travel.shared.Money;
 import com.adren.travel.supplier.SupplierCredentialSummary;
 import com.adren.travel.supplier.SupplierId;
+import com.adren.travel.supplier.SupplierSearchResult;
 import com.adren.travel.supplier.UpdateSupplierCredentialCommand;
 import com.adren.travel.supplier.internal.hotelbeds.HotelbedsClient;
+import com.adren.travel.supplier.internal.stuba.StubaClient;
+import com.adren.travel.supplier.internal.tbo.TboClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +24,8 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,6 +41,12 @@ class SupplierAggregationServiceTest {
     HotelbedsClient hotelbedsClient;
 
     @Mock
+    StubaClient stubaClient;
+
+    @Mock
+    TboClient tboClient;
+
+    @Mock
     SupplierCredentialRepository credentialRepository;
 
     @Mock
@@ -47,7 +60,8 @@ class SupplierAggregationServiceTest {
     @BeforeEach
     void setUp() {
         service = new SupplierAggregationService(
-            hotelbedsClient, credentialRepository, auditLogRepository, supplierSecretsService);
+            hotelbedsClient, stubaClient, tboClient, new SupplierCircuitBreakerGateway(),
+            credentialRepository, auditLogRepository, supplierSecretsService);
     }
 
     @AfterEach
@@ -103,6 +117,63 @@ class SupplierAggregationServiceTest {
         // all — the absence itself is the guarantee; this assertion
         // documents intent.
         assertThat(summaries.get(0).toString()).doesNotContain("secretsmanager");
+    }
+
+    @Test
+    void searchHotelsMergesResultsFromAllThreeHotelSuppliers() {
+        when(hotelbedsClient.search("BOM", checkIn(), checkOut())).thenReturn(List.of(hotelResult(SupplierId.HOTELBEDS)));
+        when(stubaClient.search("BOM", checkIn(), checkOut())).thenReturn(List.of(hotelResult(SupplierId.STUBA)));
+        when(tboClient.search("BOM", checkIn(), checkOut(), null))
+            .thenReturn(new TboClient.TboSearchResponse(List.of(hotelResult(SupplierId.TBO)), "trace-id"));
+
+        List<SupplierSearchResult> results = service.searchHotels("BOM", checkIn(), checkOut());
+
+        assertThat(results).extracting(SupplierSearchResult::supplierId)
+            .containsExactlyInAnyOrder(SupplierId.HOTELBEDS, SupplierId.STUBA, SupplierId.TBO);
+    }
+
+    @Test
+    void searchHotelsIsolatesAFailingSupplierBOK26() {
+        when(hotelbedsClient.search("BOM", checkIn(), checkOut())).thenReturn(List.of(hotelResult(SupplierId.HOTELBEDS)));
+        when(stubaClient.search("BOM", checkIn(), checkOut())).thenThrow(new RuntimeException("simulated STUBA downtime"));
+        when(tboClient.search("BOM", checkIn(), checkOut(), null))
+            .thenReturn(new TboClient.TboSearchResponse(List.of(hotelResult(SupplierId.TBO)), "trace-id"));
+
+        List<SupplierSearchResult> results = service.searchHotels("BOM", checkIn(), checkOut());
+
+        // The failing supplier is excluded from this cycle (PRD §10.2.1);
+        // the other two suppliers' results are unaffected by STUBA's failure.
+        assertThat(results).extracting(SupplierSearchResult::supplierId)
+            .containsExactlyInAnyOrder(SupplierId.HOTELBEDS, SupplierId.TBO);
+    }
+
+    @Test
+    void repeatedSupplierFailuresOpenOnlyThatSuppliersBreakerBOK26() {
+        SupplierCircuitBreakerGateway gateway = new SupplierCircuitBreakerGateway();
+
+        for (int i = 0; i < 5; i++) {
+            gateway.call(SupplierId.STUBA, () -> {
+                throw new RuntimeException("simulated STUBA downtime");
+            }, List.of());
+        }
+        List<String> healthySupplierResult = gateway.call(SupplierId.TBO, () -> List.of("ok"), List.of());
+
+        assertThat(gateway.stateOf(SupplierId.STUBA)).isEqualTo(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.OPEN);
+        assertThat(gateway.stateOf(SupplierId.TBO)).isEqualTo(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED);
+        assertThat(healthySupplierResult).containsExactly("ok");
+    }
+
+    private static LocalDate checkIn() {
+        return LocalDate.of(2026, 8, 1);
+    }
+
+    private static LocalDate checkOut() {
+        return LocalDate.of(2026, 8, 5);
+    }
+
+    private static SupplierSearchResult hotelResult(SupplierId supplierId) {
+        return new SupplierSearchResult(supplierId, "rate-id-" + supplierId, "Test Hotel", "Standard Room",
+            new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), null);
     }
 
     private static UUID authenticateAsSuperAdmin() {

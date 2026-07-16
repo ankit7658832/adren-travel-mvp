@@ -90,6 +90,12 @@ dependencies {
     // no dedicated SDK dependency required.
     implementation("org.springframework.boot:spring-boot-starter-webflux")
 
+    // --- Resilience4j: per-supplier circuit breaker (PRD §24.2, BOK-26) ---
+    // Programmatic CircuitBreakerRegistry usage only (SupplierCircuitBreakerGateway) —
+    // the plain circuitbreaker module is enough, no Spring AOP/annotation
+    // wiring (resilience4j-spring-boot3) needed for this.
+    implementation("io.github.resilience4j:resilience4j-circuitbreaker:2.2.0")
+
     // --- Test ---
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     // Spring Boot 4 split web MVC's test-slice support (@WebMvcTest) out of

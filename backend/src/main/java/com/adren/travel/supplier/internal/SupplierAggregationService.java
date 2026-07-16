@@ -2,41 +2,54 @@ package com.adren.travel.supplier.internal;
 
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.supplier.SupplierCredentialSummary;
+import com.adren.travel.supplier.SupplierId;
 import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.supplier.SupplierSearchResult;
 import com.adren.travel.supplier.UpdateSupplierCredentialCommand;
 import com.adren.travel.supplier.internal.hotelbeds.HotelbedsClient;
+import com.adren.travel.supplier.internal.stuba.StubaClient;
+import com.adren.travel.supplier.internal.tbo.TboClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Aggregates all connected suppliers behind {@link SupplierSearchApi}.
- * Per PRD Section 24.2 (NFR): each supplier call is isolated so one
- * supplier's downtime doesn't degrade the others — in the full
- * implementation, wrap each call below in its own circuit breaker
- * (e.g., Resilience4j) rather than calling them inline as shown in this
- * scaffold.
+ * Per PRD Section 24.2 (NFR): each supplier call is isolated behind its own
+ * named circuit breaker (BOK-26's {@link SupplierCircuitBreakerGateway}) and
+ * fanned out in parallel with a bounded per-call timeout, so one supplier's
+ * downtime or latency can't degrade — or block — the others.
  */
 @Service
 class SupplierAggregationService implements SupplierSearchApi {
 
+    private static final long SUPPLIER_CALL_TIMEOUT_SECONDS = 5;
+
     private final HotelbedsClient hotelbedsClient;
+    private final StubaClient stubaClient;
+    private final TboClient tboClient;
+    private final SupplierCircuitBreakerGateway circuitBreakerGateway;
     private final SupplierCredentialRepository credentialRepository;
     private final SupplierCredentialAuditLogRepository auditLogRepository;
     private final SupplierSecretsService supplierSecretsService;
-    // TODO: inject StubaClient, TboClient, LocalDmcRepository, ByosClient
-    // as each is built out, following the HotelbedsClient pattern
-    // (PRD Section 10.2.2 - 10.2.9).
+    // TODO: inject LocalDmcRepository, ByosClient as each is built out,
+    // following the HotelbedsClient/StubaClient/TboClient pattern
+    // (PRD Section 10.2.8 - 10.2.9).
 
-    SupplierAggregationService(HotelbedsClient hotelbedsClient, SupplierCredentialRepository credentialRepository,
+    SupplierAggregationService(HotelbedsClient hotelbedsClient, StubaClient stubaClient, TboClient tboClient,
+                               SupplierCircuitBreakerGateway circuitBreakerGateway,
+                               SupplierCredentialRepository credentialRepository,
                                SupplierCredentialAuditLogRepository auditLogRepository,
                                SupplierSecretsService supplierSecretsService) {
         this.hotelbedsClient = hotelbedsClient;
+        this.stubaClient = stubaClient;
+        this.tboClient = tboClient;
+        this.circuitBreakerGateway = circuitBreakerGateway;
         this.credentialRepository = credentialRepository;
         this.auditLogRepository = auditLogRepository;
         this.supplierSecretsService = supplierSecretsService;
@@ -44,16 +57,30 @@ class SupplierAggregationService implements SupplierSearchApi {
 
     @Override
     public List<SupplierSearchResult> searchHotels(String locationCode, LocalDate checkIn, LocalDate checkOut) {
-        List<SupplierSearchResult> results = new ArrayList<>();
-        try {
-            results.addAll(hotelbedsClient.search(locationCode, checkIn, checkOut));
-        } catch (Exception e) {
-            // PRD 10.2.1: on timeout, exclude Hotelbeds from this cycle rather
-            // than failing the whole search.
-        }
-        // TODO: merge STUBA/TBO/Local DMC/BYOS results here, then apply the
-        // deduplication + Default Selection Algorithm (PRD Section 9.2, 9.4).
-        return results;
+        List<CompletableFuture<List<SupplierSearchResult>>> futures = List.of(
+            searchAsync(SupplierId.HOTELBEDS, () -> hotelbedsClient.search(locationCode, checkIn, checkOut)),
+            searchAsync(SupplierId.STUBA, () -> stubaClient.search(locationCode, checkIn, checkOut)),
+            // TBO's TraceId is itinerary-draft-scoped (PRD §10.2.3); passing
+            // null here starts a fresh search-session TraceId each call —
+            // persisting/reusing it against the draft itinerary is follow-up
+            // work once the itinerary-builder search flow calls this method.
+            searchAsync(SupplierId.TBO, () -> tboClient.search(locationCode, checkIn, checkOut, null).results())
+        );
+        // TODO: merge Local DMC/BYOS results here too, then apply
+        // deduplication (BOK-20) + the Default Selection Algorithm
+        // (PRD Section 9.2, 9.4).
+        return futures.stream()
+            .map(CompletableFuture::join)
+            .flatMap(List::stream)
+            .toList();
+    }
+
+    private CompletableFuture<List<SupplierSearchResult>> searchAsync(
+            SupplierId supplierId, java.util.function.Supplier<List<SupplierSearchResult>> call) {
+        return CompletableFuture
+            .supplyAsync(() -> circuitBreakerGateway.call(supplierId, call, List.of()))
+            .orTimeout(SUPPLIER_CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .exceptionally(ex -> List.of()); // timeout or unexpected failure -> exclude this supplier (PRD §10.2.1)
     }
 
     @Override
