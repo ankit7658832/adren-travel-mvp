@@ -58,7 +58,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **BOK-20** — deduplicate the same physical hotel property offered by two suppliers
 - [x] **BOK-21** — integrate a stuba client stub for hotel search
 - [x] **BOK-22** — integrate a tbo client stub for hotel search
-- [ ] **BOK-23** — integrate a transferz client stub for transfer search
+- [x] **BOK-23** — integrate a transferz client stub for transfer search
 - [ ] **BOK-24** — integrate a widgety client stub for cruise search
 - [ ] **BOK-25** — integrate an hbactivities client stub for activity search
 - [ ] **BOK-26** — isolate each supplier integration behind a circuit breaker
