@@ -39,7 +39,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **BOK-01** — add transactional boundaries to booking state change methods
 - [x] **BOK-02** — fix bookingconfirmedevent to carry money instead of decomposed amount currency
 - [x] **BOK-03** — add hotel line items to an itinerary
-- [ ] **BOK-04** — add flight line items to an itinerary mystifly
+- [x] **BOK-04** — add flight line items to an itinerary mystifly
 - [ ] **BOK-05** — add transfer line items to an itinerary transferz
 - [ ] **BOK-06** — add cruise line items to an itinerary widgety
 - [ ] **BOK-07** — add activity line items to an itinerary hbactivities

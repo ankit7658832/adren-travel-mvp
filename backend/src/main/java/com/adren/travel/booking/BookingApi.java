@@ -85,6 +85,15 @@ public interface BookingApi {
     UUID addHotelLineItem(UUID itineraryId, AddHotelLineItemCommand command);
 
     /**
+     * Adds a Flight line item to an itinerary (PRD §20.3, §10.2.4, BOK-04),
+     * priced through the same {@code PaymentsApi.calculateSellRate} pipeline
+     * as {@link #addHotelLineItem} under {@code ProductCategory.FLIGHT}.
+     * Publishes {@link com.adren.travel.booking.event.FlightLineItemAddedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    UUID addFlightLineItem(UUID itineraryId, AddFlightLineItemCommand command);
+
+    /**
      * Confirms a booking once a Stripe webhook (not a direct user request)
      * reports payment succeeded (PRD §12.4, FIN-11) — invoked by this
      * module's own listener on {@code payments.event.StripePaymentSucceededEvent},

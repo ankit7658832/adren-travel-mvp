@@ -1,5 +1,6 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
@@ -66,6 +67,18 @@ class ItineraryController {
         UUID lineItemId = bookingApi.addHotelLineItem(itineraryId, new AddHotelLineItemCommand(
             request.supplierId(), request.supplierRateId(), request.propertyName(), request.roomType(),
             request.mealPlan(), request.cancellationDeadline(),
+            new Money(request.netRate(), request.netRateCurrency()), request.sellCurrency(),
+            request.fxRate(), request.bufferPercent(), request.commissionPercent()));
+        return Map.of("lineItemId", lineItemId);
+    }
+
+    /** PRD §20.3, §10.2.4 — adds a Flight line item to the itinerary (BOK-04). */
+    @PostMapping("/{itineraryId}/line-items/flight")
+    @ResponseStatus(HttpStatus.CREATED)
+    Map<String, UUID> addFlightLineItem(@PathVariable UUID itineraryId, @Valid @RequestBody AddFlightLineItemRequest request) {
+        UUID lineItemId = bookingApi.addFlightLineItem(itineraryId, new AddFlightLineItemCommand(
+            request.supplierId(), request.supplierRateId(), request.airlineCode(), request.flightNumber(),
+            request.cabinClass(), request.baggageAllowance(),
             new Money(request.netRate(), request.netRateCurrency()), request.sellCurrency(),
             request.fxRate(), request.bufferPercent(), request.commissionPercent()));
         return Map.of("lineItemId", lineItemId);

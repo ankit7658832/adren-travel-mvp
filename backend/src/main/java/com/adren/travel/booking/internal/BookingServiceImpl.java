@@ -1,5 +1,6 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
@@ -7,6 +8,7 @@ import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.PackageView;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
+import com.adren.travel.booking.event.FlightLineItemAddedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
 import com.adren.travel.booking.event.PackageCreatedEvent;
@@ -56,6 +58,7 @@ class BookingServiceImpl implements BookingApi {
     private final ItineraryRepository itineraryRepository;
     private final TravelerProfileRepository travelerProfileRepository;
     private final HotelLineItemRepository hotelLineItemRepository;
+    private final FlightLineItemRepository flightLineItemRepository;
     private final QuotationRepository quotationRepository;
     private final TravelPackageRepository travelPackageRepository;
     private final VoucherService voucherService;
@@ -65,13 +68,15 @@ class BookingServiceImpl implements BookingApi {
     private final PaymentsApi paymentsApi;
 
     BookingServiceImpl(ItineraryRepository itineraryRepository, TravelerProfileRepository travelerProfileRepository,
-                        HotelLineItemRepository hotelLineItemRepository, QuotationRepository quotationRepository,
+                        HotelLineItemRepository hotelLineItemRepository, FlightLineItemRepository flightLineItemRepository,
+                        QuotationRepository quotationRepository,
                         TravelPackageRepository travelPackageRepository, VoucherService voucherService,
                         ApplicationEventPublisher events, WhitelabelApi whitelabelApi,
                         SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
         this.itineraryRepository = itineraryRepository;
         this.travelerProfileRepository = travelerProfileRepository;
         this.hotelLineItemRepository = hotelLineItemRepository;
+        this.flightLineItemRepository = flightLineItemRepository;
         this.quotationRepository = quotationRepository;
         this.travelPackageRepository = travelPackageRepository;
         this.voucherService = voucherService;
@@ -208,20 +213,7 @@ class BookingServiceImpl implements BookingApi {
     @Override
     @Transactional
     public UUID addHotelLineItem(UUID itineraryId, AddHotelLineItemCommand command) {
-        Itinerary itinerary = itineraryRepository.findById(itineraryId)
-            .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + itineraryId));
-        CurrentPrincipal.resolveTenantScope(itinerary.getConsultantId());
-        requireActiveUnlessSuperAdmin(itinerary.getConsultantId());
-
-        // PRD §22.3 T4 / BOK-08: once saved as a Quotation, an itinerary is
-        // read-only "except via explicit edit" — adding a line item here is
-        // an implicit edit, not that explicit path (BOK-18's traveler-count
-        // recalculation is the first such explicit-edit mechanism), so it's
-        // blocked once the itinerary has left DRAFT.
-        if (itinerary.getStatus() != ItineraryStatus.DRAFT) {
-            throw new IllegalStateException(
-                "Cannot add a line item: itinerary " + itineraryId + " is " + itinerary.getStatus() + ", not DRAFT");
-        }
+        Itinerary itinerary = requireOwnedDraftItinerary(itineraryId);
 
         UUID lineItemId = UUID.randomUUID();
         SellRateCalculation priced = paymentsApi.calculateSellRate(new CalculateSellRateCommand(
@@ -238,6 +230,47 @@ class BookingServiceImpl implements BookingApi {
         events.publishEvent(new HotelLineItemAddedEvent(lineItemId, itineraryId, itinerary.getConsultantId(),
             priced.sellRate()));
         return lineItemId;
+    }
+
+    @Override
+    @Transactional
+    public UUID addFlightLineItem(UUID itineraryId, AddFlightLineItemCommand command) {
+        Itinerary itinerary = requireOwnedDraftItinerary(itineraryId);
+
+        UUID lineItemId = UUID.randomUUID();
+        SellRateCalculation priced = paymentsApi.calculateSellRate(new CalculateSellRateCommand(
+            lineItemId, itinerary.getConsultantId(), ProductCategory.FLIGHT, command.netRate(),
+            command.sellCurrency(), command.fxRate(), command.bufferPercent(), command.commissionPercent()));
+
+        FlightLineItem lineItem = new FlightLineItem(lineItemId, itineraryId, command.supplierId(),
+            command.supplierRateId(), command.airlineCode(), command.flightNumber(), command.cabinClass(),
+            command.baggageAllowance(), command.netRate().amount(), command.netRate().currency(),
+            priced.markupAmount().amount(), priced.bufferedAmount().amount().subtract(priced.fxConvertedBase().amount()),
+            priced.sellRate().amount(), priced.sellRate().currency(), priced.fxRateSnapshot().rate());
+        flightLineItemRepository.save(lineItem);
+
+        events.publishEvent(new FlightLineItemAddedEvent(lineItemId, itineraryId, itinerary.getConsultantId(),
+            priced.sellRate()));
+        return lineItemId;
+    }
+
+    // PRD §22.3 T4 / BOK-08: once saved as a Quotation, an itinerary is
+    // read-only "except via explicit edit" — adding a line item here is an
+    // implicit edit, not that explicit path (BOK-18's traveler-count
+    // recalculation is the first such explicit-edit mechanism), so it's
+    // blocked once the itinerary has left DRAFT. Shared by every
+    // add*LineItem method (BOK-03 through BOK-07).
+    private Itinerary requireOwnedDraftItinerary(UUID itineraryId) {
+        Itinerary itinerary = itineraryRepository.findById(itineraryId)
+            .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + itineraryId));
+        CurrentPrincipal.resolveTenantScope(itinerary.getConsultantId());
+        requireActiveUnlessSuperAdmin(itinerary.getConsultantId());
+
+        if (itinerary.getStatus() != ItineraryStatus.DRAFT) {
+            throw new IllegalStateException(
+                "Cannot add a line item: itinerary " + itineraryId + " is " + itinerary.getStatus() + ", not DRAFT");
+        }
+        return itinerary;
     }
 
     @Override

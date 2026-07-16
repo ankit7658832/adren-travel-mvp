@@ -1,11 +1,14 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
+import com.adren.travel.booking.CabinClass;
 import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.MealPlan;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
+import com.adren.travel.booking.event.FlightLineItemAddedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
 import com.adren.travel.booking.event.PackageCreatedEvent;
@@ -86,6 +89,9 @@ class BookingServiceImplTest {
     HotelLineItemRepository hotelLineItemRepository;
 
     @Mock
+    FlightLineItemRepository flightLineItemRepository;
+
+    @Mock
     QuotationRepository quotationRepository;
 
     @Mock
@@ -102,8 +108,8 @@ class BookingServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new BookingServiceImpl(itineraryRepository, travelerProfileRepository, hotelLineItemRepository,
-            quotationRepository, travelPackageRepository, voucherService, events, whitelabelApi, supplierSearchApi,
-            paymentsApi);
+            flightLineItemRepository, quotationRepository, travelPackageRepository, voucherService, events,
+            whitelabelApi, supplierSearchApi, paymentsApi);
     }
 
     // BOK-08: saveAsQuotation now requires at least one line item — stub a
@@ -612,6 +618,84 @@ class BookingServiceImplTest {
         assertThatThrownBy(() -> service.addHotelLineItem(itineraryId, command))
             .isInstanceOf(IllegalStateException.class);
         verify(hotelLineItemRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void addingAFlightLineItemPricesItThroughTheSellRatePipelineAndPublishesTheEventBOK04() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        Money netRate = new Money(BigDecimal.valueOf(5000), CurrencyCode.INR);
+        Money fxConvertedBase = new Money(BigDecimal.valueOf(5000), CurrencyCode.INR);
+        Money bufferedAmount = new Money(BigDecimal.valueOf(5150), CurrencyCode.INR);
+        Money markupAmount = new Money(BigDecimal.valueOf(772.50), CurrencyCode.INR);
+        Money sellRate = new Money(BigDecimal.valueOf(5922.50), CurrencyCode.INR);
+        Money commissionAmount = Money.zero(CurrencyCode.INR);
+        FxRateSnapshot snapshot = new FxRateSnapshot(CurrencyCode.INR, CurrencyCode.INR, BigDecimal.ONE, Instant.now());
+        when(paymentsApi.calculateSellRate(any())).thenReturn(new SellRateCalculation(
+            netRate, snapshot, fxConvertedBase, bufferedAmount, markupAmount, sellRate, commissionAmount));
+
+        var command = new AddFlightLineItemCommand(SupplierId.MYSTIFLY, "fare-basis-1", "AI", "AI101",
+            CabinClass.ECONOMY, "23kg", netRate, CurrencyCode.INR, BigDecimal.ONE, BigDecimal.valueOf(3), BigDecimal.ZERO);
+
+        UUID lineItemId = service.addFlightLineItem(itineraryId, command);
+
+        ArgumentCaptor<CalculateSellRateCommand> priceCaptor = ArgumentCaptor.forClass(CalculateSellRateCommand.class);
+        verify(paymentsApi).calculateSellRate(priceCaptor.capture());
+        assertThat(priceCaptor.getValue().category()).isEqualTo(ProductCategory.FLIGHT);
+        assertThat(priceCaptor.getValue().consultantId()).isEqualTo(consultantId);
+
+        ArgumentCaptor<FlightLineItem> lineItemCaptor = ArgumentCaptor.forClass(FlightLineItem.class);
+        verify(flightLineItemRepository).save(lineItemCaptor.capture());
+        assertThat(lineItemCaptor.getValue().getLineItemId()).isEqualTo(lineItemId);
+        assertThat(lineItemCaptor.getValue().getAirlineCode()).isEqualTo("AI");
+        assertThat(lineItemCaptor.getValue().getFlightNumber()).isEqualTo("AI101");
+        assertThat(lineItemCaptor.getValue().getCabinClass()).isEqualTo(CabinClass.ECONOMY);
+        assertThat(lineItemCaptor.getValue().getSellRate()).isEqualByComparingTo("5922.50");
+
+        ArgumentCaptor<FlightLineItemAddedEvent> eventCaptor = ArgumentCaptor.forClass(FlightLineItemAddedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().lineItemId()).isEqualTo(lineItemId);
+        assertThat(eventCaptor.getValue().itineraryId()).isEqualTo(itineraryId);
+        assertThat(eventCaptor.getValue().sellRate()).isEqualTo(sellRate);
+    }
+
+    @Test
+    void addingAFlightLineItemFailsForAnItineraryOwnedByAnotherConsultantBOK04() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID ownerConsultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, ownerConsultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        var command = new AddFlightLineItemCommand(SupplierId.MYSTIFLY, "fare-basis-1", "AI", "AI101",
+            CabinClass.ECONOMY, "23kg", new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> service.addFlightLineItem(itineraryId, command))
+            .isInstanceOf(AccessDeniedException.class);
+        verify(flightLineItemRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void addingAFlightLineItemRejectsAnItineraryThatIsAlreadyAQuotationBOK04() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        itinerary.markAsQuotation();
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        var command = new AddFlightLineItemCommand(SupplierId.MYSTIFLY, "fare-basis-1", "AI", "AI101",
+            CabinClass.ECONOMY, "23kg", new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> service.addFlightLineItem(itineraryId, command))
+            .isInstanceOf(IllegalStateException.class);
+        verify(flightLineItemRepository, org.mockito.Mockito.never()).save(any());
     }
 
     @Test
