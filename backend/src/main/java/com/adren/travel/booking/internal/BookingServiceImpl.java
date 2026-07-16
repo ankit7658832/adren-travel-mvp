@@ -174,17 +174,42 @@ class BookingServiceImpl implements BookingApi {
         UUID bookingId = UUID.randomUUID();
 
         // FIN-07: this direct (non-Stripe) confirmBooking path is the
-        // wallet/on-account payment method — Stripe payments instead go
-        // through confirmBookingFromPaymentWebhook and never touch the
-        // wallet. Placing then immediately resolving the hold in the same
-        // call is a simplification: this scaffold has no separate "reach
-        // payment step" moment distinct from confirmation itself, unlike
-        // the full booking flow PRD §12.3 describes.
+        // wallet payment method — Stripe payments instead go through
+        // confirmBookingFromPaymentWebhook, and On-Account payments through
+        // confirmBookingOnAccount (FIN-12); neither of those touches the
+        // wallet balance/credit the way this path does. Placing then
+        // immediately resolving the hold in the same call is a
+        // simplification: this scaffold has no separate "reach payment
+        // step" moment distinct from confirmation itself, unlike the full
+        // booking flow PRD §12.3 describes.
         paymentsApi.placeHold(new WalletHoldCommand(bookingId, target.consultantId(), totalSellPrice));
         paymentsApi.resolveHoldAsDebit(new WalletHoldCommand(bookingId, target.consultantId(), totalSellPrice));
 
         return finalizeConfirmedBooking(
             bookingId, target.itineraryId(), target.consultantId(), totalSellPrice, PaymentMethod.WALLET);
+    }
+
+    @Override
+    @Transactional
+    public UUID confirmBookingOnAccount(UUID quotationOrPackageId, Money totalSellPrice) {
+        ConfirmationTarget target = resolveConfirmationTargetFor(quotationOrPackageId);
+        CurrentPrincipal.resolveTenantScope(target.consultantId());
+        requireActiveUnlessSuperAdmin(target.consultantId());
+
+        // BOK-16, PRD §23.1 Edge Case #1: same concurrency guard as the
+        // wallet path — the last available inventory unit can't be
+        // double-booked regardless of payment method.
+        lockForBooking(target.itineraryId());
+
+        UUID bookingId = UUID.randomUUID();
+
+        // FIN-12: On-Account billing — never a wallet hold/debit, never
+        // gated by FIN-08's credit-limit check (a separate settlement
+        // path, settled later, not against wallet balance/credit).
+        paymentsApi.payOnAccount(new WalletHoldCommand(bookingId, target.consultantId(), totalSellPrice));
+
+        return finalizeConfirmedBooking(
+            bookingId, target.itineraryId(), target.consultantId(), totalSellPrice, PaymentMethod.ON_ACCOUNT);
     }
 
     // BOK-13 — quotationOrPackageId is polymorphic: a booking can be

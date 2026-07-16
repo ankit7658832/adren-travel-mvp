@@ -479,6 +479,34 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void confirmBookingOnAccountNeverTouchesTheWalletHoldMachineryFIN12() {
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(consultantId);
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        UUID bookingId = service.confirmBookingOnAccount(quotationId, price);
+
+        assertThat(bookingId).isNotNull();
+        verify(paymentsApi).payOnAccount(new com.adren.travel.payments.WalletHoldCommand(bookingId, consultantId, price));
+        verify(paymentsApi, org.mockito.Mockito.never()).placeHold(any());
+        verify(paymentsApi, org.mockito.Mockito.never()).resolveHoldAsDebit(any());
+        verify(events).publishEvent(any(BookingConfirmedEvent.class));
+    }
+
+    @Test
+    void confirmBookingOnAccountFailsForAnUnknownQuotationOrPackageBOK13() {
+        UUID unknownId = UUID.randomUUID();
+        Money price = new Money(BigDecimal.valueOf(1000), CurrencyCode.INR);
+        when(quotationRepository.findById(unknownId)).thenReturn(Optional.empty());
+        when(travelPackageRepository.findById(unknownId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.confirmBookingOnAccount(unknownId, price))
+            .isInstanceOf(IllegalArgumentException.class);
+        org.mockito.Mockito.verifyNoInteractions(paymentsApi);
+    }
+
+    @Test
     void confirmBookingPlacesThenResolvesAWalletHoldForTheDirectPathFIN07() {
         UUID consultantId = UUID.randomUUID();
         UUID quotationId = stubQuotationResolvingTo(consultantId);

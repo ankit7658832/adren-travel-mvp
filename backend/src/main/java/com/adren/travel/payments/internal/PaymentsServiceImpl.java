@@ -16,6 +16,7 @@ import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.SnapshotFxRateCommand;
 import com.adren.travel.payments.WalletHoldCommand;
 import com.adren.travel.payments.WalletView;
+import com.adren.travel.payments.event.BookingPaidOnAccountEvent;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
@@ -224,6 +225,27 @@ class PaymentsServiceImpl implements PaymentsApi {
         }
 
         events.publishEvent(new WalletHoldReleasedEvent(command.bookingId(), command.consultantId(), command.amount()));
+    }
+
+    @Override
+    @Transactional
+    public void payOnAccount(WalletHoldCommand command) {
+        if (walletLedgerEntryRepository.existsByRelatedBookingIdAndType(command.bookingId(), LedgerEntryType.ON_ACCOUNT)) {
+            return; // FIN-10: already recorded — idempotent no-op on a sequential retry.
+        }
+
+        Wallet wallet = walletRepository.findById(command.consultantId())
+            .orElseGet(() -> provisionWallet(command.consultantId()));
+        // FIN-12: deliberately no wallet.placeHold/resolveHoldAsDebit call
+        // here — On-Account billing is settled later, not against wallet
+        // balance/credit/pendingHolds, so tryRecordAndApply's save() below
+        // just re-persists the wallet unchanged.
+
+        if (!tryRecordAndApply(command, LedgerEntryType.ON_ACCOUNT, wallet)) {
+            return; // FIN-10: lost a concurrent race — the other writer already recorded this.
+        }
+
+        events.publishEvent(new BookingPaidOnAccountEvent(command.bookingId(), command.consultantId(), command.amount()));
     }
 
     // FIN-10: the ledger insert is attempted (and, on a unique-constraint

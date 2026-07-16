@@ -688,6 +688,61 @@ class PaymentsServiceImplTest {
         assertThat(eventCaptor.getValue().bookingId()).isEqualTo(bookingId);
     }
 
+    @Test
+    void payOnAccountRecordsALedgerEntryWithoutTouchingWalletBalanceOrPublishesTheEventFIN12() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR); // zero balance, zero credit limit
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+
+        service.payOnAccount(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        // FIN-12: never gated by FIN-08's credit-limit check, and never
+        // touches balance/pendingHolds — a zero-zero wallet still succeeds.
+        assertThat(wallet.getAvailableBalance()).isEqualByComparingTo("0");
+        assertThat(wallet.getPendingHolds()).isEqualByComparingTo("0");
+        verify(walletRepository).save(wallet);
+
+        ArgumentCaptor<WalletLedgerEntry> entryCaptor = ArgumentCaptor.forClass(WalletLedgerEntry.class);
+        verify(walletLedgerEntryRepository).saveAndFlush(entryCaptor.capture());
+        assertThat(entryCaptor.getValue().getType()).isEqualTo(LedgerEntryType.ON_ACCOUNT);
+        assertThat(entryCaptor.getValue().getRelatedBookingId()).isEqualTo(bookingId);
+
+        ArgumentCaptor<com.adren.travel.payments.event.BookingPaidOnAccountEvent> eventCaptor =
+            ArgumentCaptor.forClass(com.adren.travel.payments.event.BookingPaidOnAccountEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().bookingId()).isEqualTo(bookingId);
+        assertThat(eventCaptor.getValue().amount()).isEqualTo(amount);
+    }
+
+    @Test
+    void payOnAccountAutoProvisionsAWalletWhenNoneExistsFIN12() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.empty());
+        Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
+
+        service.payOnAccount(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        verify(walletRepository, org.mockito.Mockito.atLeastOnce()).save(any());
+    }
+
+    @Test
+    void payOnAccountIsANoOpWhenAnEntryAlreadyExistsForTheBookingFIN10() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        when(walletLedgerEntryRepository.existsByRelatedBookingIdAndType(bookingId, LedgerEntryType.ON_ACCOUNT))
+            .thenReturn(true);
+        Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
+
+        service.payOnAccount(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        verifyNoInteractions(walletRepository);
+        verify(walletLedgerEntryRepository, org.mockito.Mockito.never()).saveAndFlush(any());
+        verifyNoInteractions(events);
+    }
+
     private static void authenticateAs(Role role, UUID consultantId) {
         AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), role, consultantId);
         List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));

@@ -134,4 +134,17 @@ public interface PaymentsApi {
      * caller this is built for.
      */
     void resolveHoldAsRelease(WalletHoldCommand command);
+
+    /**
+     * Bills a booking to a Consultant's On-Account balance (PRD §21.4's
+     * third payment-method option alongside Stripe/Wallet, §20.8, FIN-12) —
+     * to be settled later, so unlike {@link #placeHold}/{@link
+     * #resolveHoldAsDebit} this never touches {@code availableBalance}/
+     * {@code creditLimit}/{@code pendingHolds}, only writes the ledger
+     * entry those methods already share. Idempotent the same way (FIN-10):
+     * retrying with the same {@code bookingId} is a no-op. Same internal-
+     * pricing-pipeline-step shape as {@link #calculateCommission} — no
+     * {@code @PreAuthorize}; invoked from {@code BookingApi.confirmBookingOnAccount}.
+     */
+    void payOnAccount(WalletHoldCommand command);
 }

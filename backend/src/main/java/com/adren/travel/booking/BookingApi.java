@@ -43,6 +43,19 @@ public interface BookingApi {
     UUID confirmBooking(UUID quotationOrPackageId, Money totalSellPrice);
 
     /**
+     * Confirms a booking billed to the Consultant's On-Account balance
+     * (PRD §21.4's third payment-method option alongside Stripe/Wallet,
+     * §20.8, FIN-12) — same concurrency-safe/tenant-scoped shape as {@link
+     * #confirmBooking}, but settles via {@code PaymentsApi.payOnAccount}
+     * instead of a wallet hold+debit, and is never gated by FIN-08's
+     * credit-limit check (On-Account is a separate settlement path, not
+     * wallet balance/credit). Publishes the same {@link
+     * com.adren.travel.booking.event.BookingConfirmedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    UUID confirmBookingOnAccount(UUID quotationOrPackageId, Money totalSellPrice);
+
+    /**
      * Paginated per RULES.md §3.4 — never a bare {@code List<UUID>} at a
      * public Api boundary a controller might wire up unbounded, given a
      * Consultant can accumulate thousands of bookings over time.

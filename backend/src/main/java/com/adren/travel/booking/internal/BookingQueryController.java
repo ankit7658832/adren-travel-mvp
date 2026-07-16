@@ -42,4 +42,12 @@ class BookingQueryController {
             new Money(request.totalSellPrice(), request.currency()));
         return Map.of("bookingId", bookingId);
     }
+
+    /** PRD §21.4's third payment-method option — On-Account billing (FIN-12). */
+    @PostMapping("/on-account")
+    Map<String, UUID> confirmOnAccount(@Valid @RequestBody ConfirmBookingRequest request) {
+        UUID bookingId = bookingApi.confirmBookingOnAccount(request.quotationOrPackageId(),
+            new Money(request.totalSellPrice(), request.currency()));
+        return Map.of("bookingId", bookingId);
+    }
 }
