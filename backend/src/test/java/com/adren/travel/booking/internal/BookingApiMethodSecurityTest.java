@@ -84,6 +84,11 @@ class BookingApiMethodSecurityTest {
         }
 
         @Bean
+        TransferLineItemRepository transferLineItemRepository() {
+            return Mockito.mock(TransferLineItemRepository.class);
+        }
+
+        @Bean
         QuotationRepository quotationRepository() {
             return Mockito.mock(QuotationRepository.class);
         }
@@ -111,13 +116,14 @@ class BookingApiMethodSecurityTest {
         @Bean
         BookingApi bookingApi(ItineraryRepository repository, TravelerProfileRepository travelerProfileRepository,
                                HotelLineItemRepository hotelLineItemRepository, FlightLineItemRepository flightLineItemRepository,
+                               TransferLineItemRepository transferLineItemRepository,
                                QuotationRepository quotationRepository,
                                TravelPackageRepository travelPackageRepository, VoucherService voucherService,
                                ApplicationEventPublisher publisher, WhitelabelApi whitelabelApi,
                                SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
             return new BookingServiceImpl(repository, travelerProfileRepository, hotelLineItemRepository,
-                flightLineItemRepository, quotationRepository, travelPackageRepository, voucherService, publisher,
-                whitelabelApi, supplierSearchApi, paymentsApi);
+                flightLineItemRepository, transferLineItemRepository, quotationRepository, travelPackageRepository,
+                voucherService, publisher, whitelabelApi, supplierSearchApi, paymentsApi);
         }
     }
 

@@ -2,6 +2,7 @@ package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
+import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.ConvertQuotationToPackageCommand;
@@ -11,6 +12,7 @@ import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.FlightLineItemAddedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
+import com.adren.travel.booking.event.TransferLineItemAddedEvent;
 import com.adren.travel.booking.event.PackageCreatedEvent;
 import com.adren.travel.booking.event.PackagePublishedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
@@ -59,6 +61,7 @@ class BookingServiceImpl implements BookingApi {
     private final TravelerProfileRepository travelerProfileRepository;
     private final HotelLineItemRepository hotelLineItemRepository;
     private final FlightLineItemRepository flightLineItemRepository;
+    private final TransferLineItemRepository transferLineItemRepository;
     private final QuotationRepository quotationRepository;
     private final TravelPackageRepository travelPackageRepository;
     private final VoucherService voucherService;
@@ -69,6 +72,7 @@ class BookingServiceImpl implements BookingApi {
 
     BookingServiceImpl(ItineraryRepository itineraryRepository, TravelerProfileRepository travelerProfileRepository,
                         HotelLineItemRepository hotelLineItemRepository, FlightLineItemRepository flightLineItemRepository,
+                        TransferLineItemRepository transferLineItemRepository,
                         QuotationRepository quotationRepository,
                         TravelPackageRepository travelPackageRepository, VoucherService voucherService,
                         ApplicationEventPublisher events, WhitelabelApi whitelabelApi,
@@ -77,6 +81,7 @@ class BookingServiceImpl implements BookingApi {
         this.travelerProfileRepository = travelerProfileRepository;
         this.hotelLineItemRepository = hotelLineItemRepository;
         this.flightLineItemRepository = flightLineItemRepository;
+        this.transferLineItemRepository = transferLineItemRepository;
         this.quotationRepository = quotationRepository;
         this.travelPackageRepository = travelPackageRepository;
         this.voucherService = voucherService;
@@ -250,6 +255,28 @@ class BookingServiceImpl implements BookingApi {
         flightLineItemRepository.save(lineItem);
 
         events.publishEvent(new FlightLineItemAddedEvent(lineItemId, itineraryId, itinerary.getConsultantId(),
+            priced.sellRate()));
+        return lineItemId;
+    }
+
+    @Override
+    @Transactional
+    public UUID addTransferLineItem(UUID itineraryId, AddTransferLineItemCommand command) {
+        Itinerary itinerary = requireOwnedDraftItinerary(itineraryId);
+
+        UUID lineItemId = UUID.randomUUID();
+        SellRateCalculation priced = paymentsApi.calculateSellRate(new CalculateSellRateCommand(
+            lineItemId, itinerary.getConsultantId(), ProductCategory.TRANSFER, command.netRate(),
+            command.sellCurrency(), command.fxRate(), command.bufferPercent(), command.commissionPercent()));
+
+        TransferLineItem lineItem = new TransferLineItem(lineItemId, itineraryId, command.supplierId(),
+            command.supplierRateId(), command.vehicleType(), command.pickupPoint(), command.dropoffPoint(),
+            command.netRate().amount(), command.netRate().currency(), priced.markupAmount().amount(),
+            priced.bufferedAmount().amount().subtract(priced.fxConvertedBase().amount()),
+            priced.sellRate().amount(), priced.sellRate().currency(), priced.fxRateSnapshot().rate());
+        transferLineItemRepository.save(lineItem);
+
+        events.publishEvent(new TransferLineItemAddedEvent(lineItemId, itineraryId, itinerary.getConsultantId(),
             priced.sellRate()));
         return lineItemId;
     }

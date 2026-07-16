@@ -2,6 +2,7 @@ package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
+import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.CabinClass;
 import com.adren.travel.booking.ConvertQuotationToPackageCommand;
@@ -11,6 +12,7 @@ import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.FlightLineItemAddedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
+import com.adren.travel.booking.event.TransferLineItemAddedEvent;
 import com.adren.travel.booking.event.PackageCreatedEvent;
 import com.adren.travel.booking.event.PackagePublishedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
@@ -92,6 +94,9 @@ class BookingServiceImplTest {
     FlightLineItemRepository flightLineItemRepository;
 
     @Mock
+    TransferLineItemRepository transferLineItemRepository;
+
+    @Mock
     QuotationRepository quotationRepository;
 
     @Mock
@@ -108,8 +113,8 @@ class BookingServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new BookingServiceImpl(itineraryRepository, travelerProfileRepository, hotelLineItemRepository,
-            flightLineItemRepository, quotationRepository, travelPackageRepository, voucherService, events,
-            whitelabelApi, supplierSearchApi, paymentsApi);
+            flightLineItemRepository, transferLineItemRepository, quotationRepository, travelPackageRepository,
+            voucherService, events, whitelabelApi, supplierSearchApi, paymentsApi);
     }
 
     // BOK-08: saveAsQuotation now requires at least one line item — stub a
@@ -696,6 +701,84 @@ class BookingServiceImplTest {
         assertThatThrownBy(() -> service.addFlightLineItem(itineraryId, command))
             .isInstanceOf(IllegalStateException.class);
         verify(flightLineItemRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void addingATransferLineItemPricesItThroughTheSellRatePipelineAndPublishesTheEventBOK05() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        Money netRate = new Money(BigDecimal.valueOf(1200), CurrencyCode.INR);
+        Money fxConvertedBase = new Money(BigDecimal.valueOf(1200), CurrencyCode.INR);
+        Money bufferedAmount = new Money(BigDecimal.valueOf(1236), CurrencyCode.INR);
+        Money markupAmount = new Money(BigDecimal.valueOf(185.40), CurrencyCode.INR);
+        Money sellRate = new Money(BigDecimal.valueOf(1421.40), CurrencyCode.INR);
+        Money commissionAmount = Money.zero(CurrencyCode.INR);
+        FxRateSnapshot snapshot = new FxRateSnapshot(CurrencyCode.INR, CurrencyCode.INR, BigDecimal.ONE, Instant.now());
+        when(paymentsApi.calculateSellRate(any())).thenReturn(new SellRateCalculation(
+            netRate, snapshot, fxConvertedBase, bufferedAmount, markupAmount, sellRate, commissionAmount));
+
+        var command = new AddTransferLineItemCommand(SupplierId.TRANSFERZ, "transfer-option-1", "Sedan",
+            "BOM Airport", "Hotel Taj", netRate, CurrencyCode.INR, BigDecimal.ONE, BigDecimal.valueOf(3), BigDecimal.ZERO);
+
+        UUID lineItemId = service.addTransferLineItem(itineraryId, command);
+
+        ArgumentCaptor<CalculateSellRateCommand> priceCaptor = ArgumentCaptor.forClass(CalculateSellRateCommand.class);
+        verify(paymentsApi).calculateSellRate(priceCaptor.capture());
+        assertThat(priceCaptor.getValue().category()).isEqualTo(ProductCategory.TRANSFER);
+        assertThat(priceCaptor.getValue().consultantId()).isEqualTo(consultantId);
+
+        ArgumentCaptor<TransferLineItem> lineItemCaptor = ArgumentCaptor.forClass(TransferLineItem.class);
+        verify(transferLineItemRepository).save(lineItemCaptor.capture());
+        assertThat(lineItemCaptor.getValue().getLineItemId()).isEqualTo(lineItemId);
+        assertThat(lineItemCaptor.getValue().getVehicleType()).isEqualTo("Sedan");
+        assertThat(lineItemCaptor.getValue().getPickupPoint()).isEqualTo("BOM Airport");
+        assertThat(lineItemCaptor.getValue().getDropoffPoint()).isEqualTo("Hotel Taj");
+        assertThat(lineItemCaptor.getValue().getSellRate()).isEqualByComparingTo("1421.40");
+
+        ArgumentCaptor<TransferLineItemAddedEvent> eventCaptor = ArgumentCaptor.forClass(TransferLineItemAddedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().lineItemId()).isEqualTo(lineItemId);
+        assertThat(eventCaptor.getValue().itineraryId()).isEqualTo(itineraryId);
+        assertThat(eventCaptor.getValue().sellRate()).isEqualTo(sellRate);
+    }
+
+    @Test
+    void addingATransferLineItemFailsForAnItineraryOwnedByAnotherConsultantBOK05() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID ownerConsultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, ownerConsultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        var command = new AddTransferLineItemCommand(SupplierId.TRANSFERZ, "transfer-option-1", "Sedan",
+            "BOM Airport", "Hotel Taj", new Money(BigDecimal.valueOf(1200), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> service.addTransferLineItem(itineraryId, command))
+            .isInstanceOf(AccessDeniedException.class);
+        verify(transferLineItemRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void addingATransferLineItemRejectsAnItineraryThatIsAlreadyAQuotationBOK05() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        itinerary.markAsQuotation();
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        var command = new AddTransferLineItemCommand(SupplierId.TRANSFERZ, "transfer-option-1", "Sedan",
+            "BOM Airport", "Hotel Taj", new Money(BigDecimal.valueOf(1200), CurrencyCode.INR), CurrencyCode.INR,
+            BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> service.addTransferLineItem(itineraryId, command))
+            .isInstanceOf(IllegalStateException.class);
+        verify(transferLineItemRepository, org.mockito.Mockito.never()).save(any());
     }
 
     @Test

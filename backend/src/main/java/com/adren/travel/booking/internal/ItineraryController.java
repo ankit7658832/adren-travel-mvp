@@ -2,6 +2,7 @@ package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
+import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.shared.Money;
@@ -80,6 +81,17 @@ class ItineraryController {
             request.supplierId(), request.supplierRateId(), request.airlineCode(), request.flightNumber(),
             request.cabinClass(), request.baggageAllowance(),
             new Money(request.netRate(), request.netRateCurrency()), request.sellCurrency(),
+            request.fxRate(), request.bufferPercent(), request.commissionPercent()));
+        return Map.of("lineItemId", lineItemId);
+    }
+
+    /** PRD §20.4, §10.2.5 — adds a Transfer line item to the itinerary (BOK-05). */
+    @PostMapping("/{itineraryId}/line-items/transfer")
+    @ResponseStatus(HttpStatus.CREATED)
+    Map<String, UUID> addTransferLineItem(@PathVariable UUID itineraryId, @Valid @RequestBody AddTransferLineItemRequest request) {
+        UUID lineItemId = bookingApi.addTransferLineItem(itineraryId, new AddTransferLineItemCommand(
+            request.supplierId(), request.supplierRateId(), request.vehicleType(), request.pickupPoint(),
+            request.dropoffPoint(), new Money(request.netRate(), request.netRateCurrency()), request.sellCurrency(),
             request.fxRate(), request.bufferPercent(), request.commissionPercent()));
         return Map.of("lineItemId", lineItemId);
     }
