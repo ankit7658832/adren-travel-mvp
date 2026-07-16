@@ -175,4 +175,16 @@ public interface PaymentsApi {
      * {@code @PreAuthorize}; invoked from {@code BookingApi.calculateCancellationRefund}.
      */
     RefundCalculation calculateRefund(CalculateRefundCommand command);
+
+    /**
+     * Calculates India GST/TCS on an outbound package (PRD §12.1 Worked
+     * Example C, §17.2, §25 T24, FIN-17) — GST on the Consultant's margin
+     * component, TCS on the full package value above the notified
+     * threshold. Gated behind {@code adren.payments.tax.india.enabled}
+     * (off by default, see {@link IndiaGstTcsCalculation}'s Javadoc) since
+     * PRD §19 flags the exact rates as pending tax-counsel sign-off. Same
+     * internal-pricing-pipeline-step shape as {@link #calculateCommission}
+     * — no {@code @PreAuthorize}.
+     */
+    IndiaGstTcsCalculation calculateIndiaGstTcs(CalculateIndiaGstTcsCommand command);
 }

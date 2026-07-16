@@ -412,6 +412,27 @@ class PaymentsModuleIntegrationTests {
         assertThat(count).isZero();
     }
 
+    /**
+     * FIN-17's real acceptance criterion: against the actual application.yml
+     * wiring (not a hand-constructed test double), the India GST/TCS layer
+     * is off by default — PRD §19's tax-counsel sign-off is still pending,
+     * so a real Spring context must never silently apply the illustrative
+     * rates. Flipping it on is covered at the unit tier
+     * (PaymentsServiceImplTest), which also proves the actual GST/TCS math.
+     */
+    @Test
+    void indiaGstTcsIsDisabledByDefaultInTheRealApplicationConfigurationFIN17() {
+        Money margin = new Money(BigDecimal.valueOf(50_000), CurrencyCode.INR);
+        Money packageValue = new Money(BigDecimal.valueOf(1_000_000), CurrencyCode.INR);
+
+        IndiaGstTcsCalculation calculation = paymentsApi.calculateIndiaGstTcs(
+            new CalculateIndiaGstTcsCommand(UUID.randomUUID(), UUID.randomUUID(), margin, packageValue));
+
+        assertThat(calculation.applied()).isFalse();
+        assertThat(calculation.gstAmount().amount()).isEqualByComparingTo("0");
+        assertThat(calculation.tcsAmount().amount()).isEqualByComparingTo("0");
+    }
+
     private static void authenticateAs(Role role, UUID consultantId) {
         AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), role, consultantId);
         List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));

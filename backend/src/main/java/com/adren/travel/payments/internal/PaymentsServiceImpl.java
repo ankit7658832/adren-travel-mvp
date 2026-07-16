@@ -2,12 +2,14 @@ package com.adren.travel.payments.internal;
 
 import com.adren.travel.payments.ApplyCurrencyBufferCommand;
 import com.adren.travel.payments.CalculateCommissionCommand;
+import com.adren.travel.payments.CalculateIndiaGstTcsCommand;
 import com.adren.travel.payments.CalculateRefundCommand;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.CreatePaymentIntentCommand;
 import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.HandleStripeWebhookCommand;
+import com.adren.travel.payments.IndiaGstTcsCalculation;
 import com.adren.travel.payments.InitiateWalletTopUpCommand;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
@@ -23,6 +25,7 @@ import com.adren.travel.payments.event.BookingPaidOnAccountEvent;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
+import com.adren.travel.payments.event.IndiaGstTcsCalculatedEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.RefundCalculatedEvent;
 import com.adren.travel.payments.event.StripePaymentSucceededEvent;
@@ -54,12 +57,14 @@ class PaymentsServiceImpl implements PaymentsApi {
     private final ApplicationEventPublisher events;
     private final PricingPipeline pricingPipeline;
     private final StripeClient stripeClient;
+    private final IndiaTaxProperties indiaTaxProperties;
 
     PaymentsServiceImpl(MarkupRuleRepository markupRuleRepository, WalletRepository walletRepository,
                          PaymentIntentRepository paymentIntentRepository,
                          WalletLedgerEntryRepository walletLedgerEntryRepository,
                          WalletLedgerEntryRecorder walletLedgerEntryRecorder, ApplicationEventPublisher events,
-                         PricingPipeline pricingPipeline, StripeClient stripeClient) {
+                         PricingPipeline pricingPipeline, StripeClient stripeClient,
+                         IndiaTaxProperties indiaTaxProperties) {
         this.markupRuleRepository = markupRuleRepository;
         this.walletRepository = walletRepository;
         this.paymentIntentRepository = paymentIntentRepository;
@@ -68,6 +73,7 @@ class PaymentsServiceImpl implements PaymentsApi {
         this.events = events;
         this.pricingPipeline = pricingPipeline;
         this.stripeClient = stripeClient;
+        this.indiaTaxProperties = indiaTaxProperties;
     }
 
     @Override
@@ -321,6 +327,31 @@ class PaymentsServiceImpl implements PaymentsApi {
             penaltyAmount, requiresConsultantApproval));
 
         return new RefundCalculation(refundAmount, penaltyAmount, requiresConsultantApproval);
+    }
+
+    @Override
+    @Transactional
+    public IndiaGstTcsCalculation calculateIndiaGstTcs(CalculateIndiaGstTcsCommand command) {
+        Money gstAmount;
+        Money tcsAmount;
+        boolean applied = indiaTaxProperties.enabled();
+        if (applied) {
+            gstAmount = command.marginAmount().percentOf(indiaTaxProperties.gstPercent());
+            boolean overThreshold = command.packageValue().amount().compareTo(indiaTaxProperties.tcsThreshold()) > 0;
+            tcsAmount = overThreshold
+                ? command.packageValue().percentOf(indiaTaxProperties.tcsPercent())
+                : Money.zero(command.packageValue().currency());
+        } else {
+            // PRD §19: exact rates pending tax-counsel sign-off — never
+            // silently charge the PRD's illustrative figures as if final.
+            gstAmount = Money.zero(command.marginAmount().currency());
+            tcsAmount = Money.zero(command.packageValue().currency());
+        }
+
+        events.publishEvent(new IndiaGstTcsCalculatedEvent(command.bookingId(), command.consultantId(), gstAmount,
+            tcsAmount, applied));
+
+        return new IndiaGstTcsCalculation(gstAmount, tcsAmount, applied);
     }
 
     // FIN-10: the ledger insert is attempted (and, on a unique-constraint

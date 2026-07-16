@@ -2,6 +2,7 @@ package com.adren.travel.payments.internal;
 
 import com.adren.travel.payments.ApplyCurrencyBufferCommand;
 import com.adren.travel.payments.CalculateCommissionCommand;
+import com.adren.travel.payments.CalculateIndiaGstTcsCommand;
 import com.adren.travel.payments.CalculateRefundCommand;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
@@ -9,6 +10,7 @@ import com.adren.travel.payments.CreatePaymentIntentCommand;
 import com.adren.travel.payments.CreditLimitExceededException;
 import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.HandleStripeWebhookCommand;
+import com.adren.travel.payments.IndiaGstTcsCalculation;
 import com.adren.travel.payments.InitiateWalletTopUpCommand;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
@@ -22,6 +24,7 @@ import com.adren.travel.payments.WalletView;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
+import com.adren.travel.payments.event.IndiaGstTcsCalculatedEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.RefundCalculatedEvent;
 import com.adren.travel.payments.event.StripePaymentSucceededEvent;
@@ -93,9 +96,14 @@ class PaymentsServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        // Disabled by default (illustrative rates, pending tax-counsel
+        // sign-off — see IndiaTaxProperties' Javadoc); FIN-17's own tests
+        // construct an enabled instance explicitly where they need one.
+        IndiaTaxProperties disabledIndiaTax = new IndiaTaxProperties(false, BigDecimal.valueOf(5),
+            BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
         service = new PaymentsServiceImpl(markupRuleRepository, walletRepository, paymentIntentRepository,
             walletLedgerEntryRepository, new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
-            new PricingPipeline(markupRuleRepository, events), stripeClient);
+            new PricingPipeline(markupRuleRepository, events), stripeClient, disabledIndiaTax);
     }
 
     @AfterEach
@@ -870,6 +878,63 @@ class PaymentsServiceImplTest {
         assertThatThrownBy(() -> new CalculateRefundCommand(
             UUID.randomUUID(), UUID.randomUUID(), sellPrice, Instant.now(), Instant.now(), BigDecimal.valueOf(150)))
             .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void calculateIndiaGstTcsAppliesNothingWhenTheFeatureFlagIsOffFIN17() {
+        // Default `service` from setUp() is built with the flag disabled.
+        Money margin = new Money(BigDecimal.valueOf(50_000), CurrencyCode.INR);
+        Money packageValue = new Money(BigDecimal.valueOf(1_000_000), CurrencyCode.INR);
+
+        IndiaGstTcsCalculation calculation = service.calculateIndiaGstTcs(
+            new CalculateIndiaGstTcsCommand(UUID.randomUUID(), UUID.randomUUID(), margin, packageValue));
+
+        assertThat(calculation.applied()).isFalse();
+        assertThat(calculation.gstAmount().amount()).isEqualByComparingTo("0");
+        assertThat(calculation.tcsAmount().amount()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void calculateIndiaGstTcsAppliesGstOnMarginAndTcsOnPackageValueAboveThresholdWhenEnabledFIN17() {
+        IndiaTaxProperties enabledIndiaTax = new IndiaTaxProperties(true, BigDecimal.valueOf(5),
+            BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
+        PaymentsServiceImpl enabledService = new PaymentsServiceImpl(markupRuleRepository, walletRepository,
+            paymentIntentRepository, walletLedgerEntryRepository,
+            new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
+            new PricingPipeline(markupRuleRepository, events), stripeClient, enabledIndiaTax);
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money margin = new Money(BigDecimal.valueOf(50_000), CurrencyCode.INR);
+        Money packageValue = new Money(BigDecimal.valueOf(1_000_000), CurrencyCode.INR); // over the 700,000 threshold
+
+        IndiaGstTcsCalculation calculation = enabledService.calculateIndiaGstTcs(
+            new CalculateIndiaGstTcsCommand(bookingId, consultantId, margin, packageValue));
+
+        assertThat(calculation.applied()).isTrue();
+        assertThat(calculation.gstAmount().amount()).isEqualByComparingTo("2500.00"); // 5% of margin
+        assertThat(calculation.tcsAmount().amount()).isEqualByComparingTo("50000.00"); // 5% of package value
+
+        ArgumentCaptor<IndiaGstTcsCalculatedEvent> captor = ArgumentCaptor.forClass(IndiaGstTcsCalculatedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().applied()).isTrue();
+    }
+
+    @Test
+    void calculateIndiaGstTcsAppliesNoTcsBelowTheThresholdEvenWhenEnabledFIN17() {
+        IndiaTaxProperties enabledIndiaTax = new IndiaTaxProperties(true, BigDecimal.valueOf(5),
+            BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
+        PaymentsServiceImpl enabledService = new PaymentsServiceImpl(markupRuleRepository, walletRepository,
+            paymentIntentRepository, walletLedgerEntryRepository,
+            new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
+            new PricingPipeline(markupRuleRepository, events), stripeClient, enabledIndiaTax);
+        Money margin = new Money(BigDecimal.valueOf(20_000), CurrencyCode.INR);
+        Money packageValue = new Money(BigDecimal.valueOf(500_000), CurrencyCode.INR); // under the threshold
+
+        IndiaGstTcsCalculation calculation = enabledService.calculateIndiaGstTcs(
+            new CalculateIndiaGstTcsCommand(UUID.randomUUID(), UUID.randomUUID(), margin, packageValue));
+
+        assertThat(calculation.gstAmount().amount()).isEqualByComparingTo("1000.00"); // GST still applies to margin
+        assertThat(calculation.tcsAmount().amount()).isEqualByComparingTo("0"); // TCS does not, below the threshold
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {
