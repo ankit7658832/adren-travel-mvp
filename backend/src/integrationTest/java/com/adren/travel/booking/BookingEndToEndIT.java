@@ -76,10 +76,17 @@ class BookingEndToEndIT {
     // must insert the post-transition status itself.
     private UUID insertQuotationForANewDraftItinerary() {
         UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
         jdbcTemplate.update(
             "INSERT INTO itinerary (itinerary_id, consultant_id, status, ai_generated, created_at, updated_at) " +
                 "VALUES (?, ?, 'QUOTATION', false, now(), now())",
-            itineraryId, UUID.randomUUID());
+            itineraryId, consultantId);
+        // FIN-08: confirmBooking's wallet path now enforces the credit
+        // limit — this consultant needs a funded wallet to confirm at all.
+        jdbcTemplate.update(
+            "INSERT INTO wallet (consultant_id, available_balance, credit_limit, pending_holds, currency, updated_at) " +
+                "VALUES (?, 0, 100000, 0, 'INR', now())",
+            consultantId);
         UUID quotationId = UUID.randomUUID();
         jdbcTemplate.update(
             "INSERT INTO quotation (quotation_id, itinerary_id, valid_until, shared_with_traveler, created_at) " +

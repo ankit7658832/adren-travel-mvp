@@ -1,5 +1,6 @@
 package com.adren.travel.payments.internal;
 
+import com.adren.travel.payments.CreditLimitExceededException;
 import com.adren.travel.shared.CurrencyCode;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -51,9 +52,23 @@ class Wallet {
         this.updatedAt = Instant.now();
     }
 
-    /** A booking reaching the payment step sets aside funds (PRD §12.3, FIN-07) — increases pendingHolds only. */
+    /**
+     * A booking reaching the payment step sets aside funds (PRD §12.3,
+     * FIN-07) — increases pendingHolds only. PRD §22.4 T8/FIN-08: rejected
+     * outright if it would push {@code pendingHolds} past {@code
+     * availableBalance + creditLimit} — this in-memory check is the
+     * fast-path/UX layer (an actionable message before any DB round trip);
+     * the {@code chk_wallet_within_credit_limit} CHECK constraint (V29) is
+     * the actual DB-level guarantee backend-best-practices §3 calls for,
+     * catching what a same-wallet concurrent-hold race could otherwise slip
+     * past this single-threaded in-memory check.
+     */
     void placeHold(BigDecimal amount) {
-        this.pendingHolds = this.pendingHolds.add(amount);
+        BigDecimal newPendingHolds = this.pendingHolds.add(amount);
+        if (availableBalance.add(creditLimit).subtract(newPendingHolds).signum() < 0) {
+            throw new CreditLimitExceededException(consultantId);
+        }
+        this.pendingHolds = newPendingHolds;
         this.updatedAt = Instant.now();
     }
 
@@ -67,6 +82,30 @@ class Wallet {
     /** The booking is abandoned/cancelled before confirmation (PRD §12.3, FIN-07) — the hold is released, availableBalance untouched. */
     void resolveHoldAsRelease(BigDecimal amount) {
         this.pendingHolds = this.pendingHolds.subtract(amount);
+        this.updatedAt = Instant.now();
+    }
+
+    /**
+     * Increases {@code availableBalance} — the entity-level primitive a
+     * wallet top-up (FIN-15, on Stripe webhook success) or on-account
+     * billing settlement (FIN-12) will call once those flows exist; not
+     * wired to any REST endpoint yet. Added now because FIN-08's credit
+     * check makes a wallet's funding path a genuine prerequisite rather
+     * than a theoretical one — every wallet was reachable at zero balance
+     * before this, which made the credit-limit check untestable/always-tripped.
+     */
+    void credit(BigDecimal amount) {
+        this.availableBalance = this.availableBalance.add(amount);
+        this.updatedAt = Instant.now();
+    }
+
+    /**
+     * Sets {@code creditLimit} — the entity-level primitive a future Super
+     * Admin/Consultant credit-grant action will call; not wired to any REST
+     * endpoint yet (no such story exists in the mvp-mock catalogue today).
+     */
+    void grantCreditLimit(BigDecimal newLimit) {
+        this.creditLimit = newLimit;
         this.updatedAt = Instant.now();
     }
 

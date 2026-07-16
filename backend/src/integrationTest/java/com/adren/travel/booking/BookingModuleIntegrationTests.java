@@ -399,6 +399,12 @@ class BookingModuleIntegrationTests {
             "INSERT INTO itinerary (itinerary_id, consultant_id, status, ai_generated, created_at, updated_at) " +
                 "VALUES (?, ?, 'DRAFT', false, now(), now())",
             itineraryId, consultantId);
+        // FIN-08: confirmBooking's wallet path now enforces the credit
+        // limit — harmless to seed for tests that never reach confirmBooking.
+        jdbcTemplate.update(
+            "INSERT INTO wallet (consultant_id, available_balance, credit_limit, pending_holds, currency, updated_at) " +
+                "VALUES (?, 0, 100000, 0, 'INR', now()) ON CONFLICT (consultant_id) DO NOTHING",
+            consultantId);
         return itineraryId;
     }
 

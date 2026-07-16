@@ -203,12 +203,15 @@ class FullVerticalSliceEndToEndIT {
         // 7. Publish the Package.
         postForRawBody("/api/v1/packages/" + packageId + "/publish", Map.of("promoteViaAds", false), token);
 
-        // 8. Wallet baseline — auto-provisioned at zero on first access.
+        // 8. Wallet baseline — availableBalance starts at 0 (insertDraftItinerary
+        // pre-seeds a 100,000 INR credit_limit so step 9's 11,500 INR
+        // confirmation clears FIN-08's credit-limit check).
         Map<String, Object> walletBefore = getJson("/api/v1/wallet?consultantId=" + consultantId, token);
         assertThat(new BigDecimal(walletBefore.get("availableBalance").toString())).isEqualByComparingTo("0");
 
         // 9. Direct (non-Stripe) booking confirmation — places then
-        // immediately resolves a wallet hold as a debit (FIN-07).
+        // immediately resolves a wallet hold as a debit (FIN-07), after
+        // clearing the FIN-08 credit-limit check.
         BigDecimal totalSellPrice = BigDecimal.valueOf(11_500);
         Map<String, Object> bookingResponse = postJson("/api/v1/bookings",
             Map.of("quotationOrPackageId", packageId.toString(), "totalSellPrice", totalSellPrice, "currency", "INR"),
@@ -216,8 +219,7 @@ class FullVerticalSliceEndToEndIT {
         UUID bookingId = UUID.fromString((String) bookingResponse.get("bookingId"));
         assertThat(bookingId).isNotNull();
 
-        // 10. Wallet debited by exactly totalSellPrice — no credit-limit
-        // gate exists yet (FIN-08, not built), so this simple delta holds.
+        // 10. Wallet debited by exactly totalSellPrice.
         Map<String, Object> walletAfter = getJson("/api/v1/wallet?consultantId=" + consultantId, token);
         assertThat(new BigDecimal(walletAfter.get("availableBalance").toString()))
             .isEqualByComparingTo(totalSellPrice.negate());
@@ -322,6 +324,12 @@ class FullVerticalSliceEndToEndIT {
             "INSERT INTO itinerary (itinerary_id, consultant_id, status, ai_generated, created_at, updated_at) " +
                 "VALUES (?, ?, 'DRAFT', false, now(), now())",
             itineraryId, consultantId);
+        // FIN-08: the direct booking path now enforces the credit limit —
+        // seed enough credit for step 9's 11,500 INR confirmation below.
+        jdbcTemplate.update(
+            "INSERT INTO wallet (consultant_id, available_balance, credit_limit, pending_holds, currency, updated_at) " +
+                "VALUES (?, 0, 100000, 0, 'INR', now())",
+            consultantId);
         return itineraryId;
     }
 

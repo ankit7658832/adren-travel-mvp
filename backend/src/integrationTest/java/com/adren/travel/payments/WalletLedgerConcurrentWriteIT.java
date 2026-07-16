@@ -55,6 +55,13 @@ class WalletLedgerConcurrentWriteIT {
         UUID consultantId = UUID.randomUUID();
         Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
         var command = new WalletHoldCommand(bookingId, consultantId, amount);
+        // FIN-08: placeHold now enforces the credit limit — all N writers
+        // race for the SAME hold (idempotent no-op after the first), so one
+        // funded wallet covers every attempt regardless of which succeeds.
+        jdbcTemplate.update(
+            "INSERT INTO wallet (consultant_id, available_balance, credit_limit, pending_holds, currency, updated_at) " +
+                "VALUES (?, 0, 100000, 0, 'INR', now())",
+            consultantId);
 
         ExecutorService executor = Executors.newFixedThreadPool(CONCURRENT_WRITERS);
         CountDownLatch readyLatch = new CountDownLatch(CONCURRENT_WRITERS);

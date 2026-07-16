@@ -18,6 +18,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.modulith.test.Scenario;
 import org.springframework.security.access.AccessDeniedException;
@@ -58,9 +59,23 @@ class PaymentsModuleIntegrationTests {
     @Autowired
     PaymentsApi paymentsApi;
 
+    @Autowired
+    JdbcTemplate jdbcTemplate;
+
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
+    }
+
+    // FIN-08: placeHold now enforces availableBalance + creditLimit >= amount
+    // — every test below that expects a hold to succeed needs a funded
+    // wallet first (a fresh auto-provisioned wallet starts at zero/zero).
+    private void seedSufficientCreditLimit(UUID consultantId) {
+        jdbcTemplate.update(
+            "INSERT INTO wallet (consultant_id, available_balance, credit_limit, pending_holds, currency, updated_at) " +
+                "VALUES (?, 0, 100000, 0, 'INR', now()) " +
+                "ON CONFLICT (consultant_id) DO UPDATE SET credit_limit = EXCLUDED.credit_limit",
+            consultantId);
     }
 
     @Test
@@ -248,6 +263,7 @@ class PaymentsModuleIntegrationTests {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
         Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
 
         scenario.stimulate(() -> paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount)))
@@ -260,6 +276,7 @@ class PaymentsModuleIntegrationTests {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
         Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
         paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
 
@@ -273,6 +290,7 @@ class PaymentsModuleIntegrationTests {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
         Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
         paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
 
@@ -291,6 +309,7 @@ class PaymentsModuleIntegrationTests {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
         Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
 
         paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
@@ -310,6 +329,7 @@ class PaymentsModuleIntegrationTests {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
         Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
         paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
 
@@ -325,6 +345,7 @@ class PaymentsModuleIntegrationTests {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
         Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
 
         paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));

@@ -5,6 +5,7 @@ import com.adren.travel.payments.CalculateCommissionCommand;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.CreatePaymentIntentCommand;
+import com.adren.travel.payments.CreditLimitExceededException;
 import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.HandleStripeWebhookCommand;
 import com.adren.travel.payments.MarkupRuleView;
@@ -517,6 +518,7 @@ class PaymentsServiceImplTest {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        wallet.grantCreditLimit(BigDecimal.valueOf(20_000)); // FIN-08: within credit limit, not a breach case
         when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
         Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
 
@@ -541,13 +543,64 @@ class PaymentsServiceImplTest {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         when(walletRepository.findById(consultantId)).thenReturn(Optional.empty());
-        Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
+        // FIN-08: a freshly auto-provisioned wallet starts at zero balance
+        // AND zero credit limit — a non-zero amount would now correctly
+        // trip the credit-limit check (see placeHoldIsBlockedWhenItWouldExceedAvailableCreditFIN08),
+        // so this test uses a zero amount to isolate what it actually
+        // verifies: that provisioning happens, not the credit check.
+        Money amount = Money.zero(CurrencyCode.INR);
 
         service.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
 
         ArgumentCaptor<Wallet> walletCaptor = ArgumentCaptor.forClass(Wallet.class);
         verify(walletRepository, org.mockito.Mockito.atLeastOnce()).save(walletCaptor.capture());
-        assertThat(walletCaptor.getValue().getPendingHolds()).isEqualByComparingTo("1000");
+        assertThat(walletCaptor.getValue().getPendingHolds()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void placeHoldIsBlockedWhenItWouldExceedAvailableCreditFIN08() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR); // zero balance, zero credit limit
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
+
+        assertThatThrownBy(() -> service.placeHold(new WalletHoldCommand(bookingId, consultantId, amount)))
+            .isInstanceOf(CreditLimitExceededException.class);
+
+        assertThat(wallet.getPendingHolds()).isEqualByComparingTo("0"); // rejected, not partially applied
+        verify(walletRepository, org.mockito.Mockito.never()).save(any());
+        verify(walletLedgerEntryRepository, org.mockito.Mockito.never()).saveAndFlush(any());
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void placeHoldIsBlockedWhenItWouldExceedTheCombinedBalancePlusCreditFIN08() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        wallet.credit(BigDecimal.valueOf(300));
+        wallet.grantCreditLimit(BigDecimal.valueOf(200)); // 500 total available
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        Money amount = new Money(BigDecimal.valueOf(501), CurrencyCode.INR); // 1 over the limit
+
+        assertThatThrownBy(() -> service.placeHold(new WalletHoldCommand(bookingId, consultantId, amount)))
+            .isInstanceOf(CreditLimitExceededException.class);
+    }
+
+    @Test
+    void placeHoldSucceedsWhenExactlyAtTheCombinedBalancePlusCreditBoundaryFIN08() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        wallet.credit(BigDecimal.valueOf(300));
+        wallet.grantCreditLimit(BigDecimal.valueOf(200));
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR); // exactly at the boundary
+
+        service.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        assertThat(wallet.getPendingHolds()).isEqualByComparingTo("500");
     }
 
     @Test
@@ -570,6 +623,7 @@ class PaymentsServiceImplTest {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        wallet.grantCreditLimit(BigDecimal.valueOf(20_000)); // FIN-08: within credit limit, not a breach case
         when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
         when(walletLedgerEntryRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("dup"));
         Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
@@ -588,6 +642,7 @@ class PaymentsServiceImplTest {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        wallet.grantCreditLimit(BigDecimal.valueOf(20_000)); // FIN-08: within credit limit, not a breach case
         wallet.placeHold(BigDecimal.valueOf(11_500));
         when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
         Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
@@ -618,6 +673,7 @@ class PaymentsServiceImplTest {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        wallet.grantCreditLimit(BigDecimal.valueOf(20_000)); // FIN-08: within credit limit, not a breach case
         wallet.placeHold(BigDecimal.valueOf(500));
         when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
         Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);

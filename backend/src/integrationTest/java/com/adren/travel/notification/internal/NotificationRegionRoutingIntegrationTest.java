@@ -158,6 +158,11 @@ class NotificationRegionRoutingIntegrationTest {
     // must insert the post-transition status itself.
     private UUID insertQuotationForANewDraftItinerary(UUID consultantId) {
         UUID itineraryId = UUID.randomUUID();
+        // FIN-08: confirmBooking's wallet path now enforces the credit limit.
+        jdbcTemplate.update(
+            "INSERT INTO wallet (consultant_id, available_balance, credit_limit, pending_holds, currency, updated_at) " +
+                "VALUES (?, 0, 100000, 0, 'INR', now())",
+            consultantId);
         jdbcTemplate.update(
             "INSERT INTO itinerary (itinerary_id, consultant_id, status, ai_generated, created_at, updated_at) " +
                 "VALUES (?, ?, 'QUOTATION', false, now(), now())",
