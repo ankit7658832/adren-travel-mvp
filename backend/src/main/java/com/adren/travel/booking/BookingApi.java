@@ -1,5 +1,6 @@
 package com.adren.travel.booking;
 
+import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.shared.Money;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -54,6 +55,18 @@ public interface BookingApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     UUID confirmBookingOnAccount(UUID quotationOrPackageId, Money totalSellPrice);
+
+    /**
+     * Calculates a cancellation's refund/penalty split against the
+     * supplier's actual cancellation policy (PRD §12.4/§12.5, FIN-13) —
+     * delegates to {@code PaymentsApi.calculateRefund}; exposed here (not
+     * directly off {@code PaymentsApi}) so the REST surface stays
+     * resource-oriented under {@code /api/v1/bookings/{id}/cancellation}
+     * (RULES.md §3.1), matching every other booking-resource endpoint's
+     * shape.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    RefundCalculation calculateCancellationRefund(UUID bookingId, CalculateCancellationRefundCommand command);
 
     /**
      * Paginated per RULES.md §3.4 — never a bare {@code List<UUID>} at a

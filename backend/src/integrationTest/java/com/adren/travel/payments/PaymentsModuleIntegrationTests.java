@@ -4,6 +4,7 @@ import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
+import com.adren.travel.payments.event.RefundCalculatedEvent;
 import com.adren.travel.payments.event.StripePaymentSucceededEvent;
 import com.adren.travel.payments.event.WalletHoldDebitedEvent;
 import com.adren.travel.payments.event.WalletHoldPlacedEvent;
@@ -353,6 +354,33 @@ class PaymentsModuleIntegrationTests {
 
         WalletView wallet = paymentsApi.getWallet(consultantId);
         assertThat(wallet.pendingHolds()).isEqualByComparingTo("500");
+    }
+
+    @Test
+    void calculatingARefundAfterTheDeadlinePublishesRefundCalculatedEventRequiringApprovalFIN13(Scenario scenario) {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        var command = new CalculateRefundCommand(bookingId, consultantId, sellPrice,
+            java.time.Instant.now().minusSeconds(3600), java.time.Instant.now(), BigDecimal.valueOf(25));
+
+        scenario.stimulate(() -> paymentsApi.calculateRefund(command))
+            .andWaitForEventOfType(RefundCalculatedEvent.class)
+            .matchingMappedValue(RefundCalculatedEvent::requiresConsultantApproval, true);
+    }
+
+    @Test
+    void calculatingARefundNeverWritesAWalletLedgerEntryFIN13() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+
+        paymentsApi.calculateRefund(new CalculateRefundCommand(bookingId, consultantId, sellPrice,
+            java.time.Instant.now().minusSeconds(3600), java.time.Instant.now(), BigDecimal.valueOf(25)));
+
+        Long count = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM wallet_ledger_entry WHERE related_booking_id = ?", Long.class, bookingId);
+        assertThat(count).isZero();
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

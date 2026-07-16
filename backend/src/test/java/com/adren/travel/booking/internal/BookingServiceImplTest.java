@@ -507,6 +507,44 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void calculateCancellationRefundDelegatesToPaymentsApiWithTheBookingsConsultantIdFIN13() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Booking booking = new Booking(bookingId, UUID.randomUUID(), consultantId, BigDecimal.valueOf(10_000),
+            CurrencyCode.INR, PaymentMethod.WALLET, "ABCD1234");
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        Instant deadline = Instant.now().plusSeconds(3600);
+        Instant cancelledAt = Instant.now();
+        com.adren.travel.payments.RefundCalculation expected = new com.adren.travel.payments.RefundCalculation(
+            sellPrice, Money.zero(CurrencyCode.INR), false);
+        when(paymentsApi.calculateRefund(any())).thenReturn(expected);
+
+        com.adren.travel.payments.RefundCalculation result = service.calculateCancellationRefund(bookingId,
+            new com.adren.travel.booking.CalculateCancellationRefundCommand(
+                sellPrice, deadline, cancelledAt, BigDecimal.valueOf(30)));
+
+        assertThat(result).isEqualTo(expected);
+        ArgumentCaptor<com.adren.travel.payments.CalculateRefundCommand> captor =
+            ArgumentCaptor.forClass(com.adren.travel.payments.CalculateRefundCommand.class);
+        verify(paymentsApi).calculateRefund(captor.capture());
+        assertThat(captor.getValue().bookingId()).isEqualTo(bookingId);
+        assertThat(captor.getValue().consultantId()).isEqualTo(consultantId);
+    }
+
+    @Test
+    void calculateCancellationRefundFailsForAnUnknownBookingFIN13() {
+        UUID bookingId = UUID.randomUUID();
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.calculateCancellationRefund(bookingId,
+            new com.adren.travel.booking.CalculateCancellationRefundCommand(
+                new Money(BigDecimal.valueOf(1000), CurrencyCode.INR), Instant.now(), Instant.now(), BigDecimal.ZERO)))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void confirmBookingPlacesThenResolvesAWalletHoldForTheDirectPathFIN07() {
         UUID consultantId = UUID.randomUUID();
         UUID quotationId = stubQuotationResolvingTo(consultantId);

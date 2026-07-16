@@ -2,6 +2,7 @@ package com.adren.travel.payments.internal;
 
 import com.adren.travel.payments.ApplyCurrencyBufferCommand;
 import com.adren.travel.payments.CalculateCommissionCommand;
+import com.adren.travel.payments.CalculateRefundCommand;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.CreatePaymentIntentCommand;
@@ -12,6 +13,7 @@ import com.adren.travel.payments.MarkupType;
 import com.adren.travel.payments.PaymentIntentStatus;
 import com.adren.travel.payments.PaymentIntentView;
 import com.adren.travel.payments.PaymentsApi;
+import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.SnapshotFxRateCommand;
 import com.adren.travel.payments.WalletHoldCommand;
@@ -21,6 +23,7 @@ import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
+import com.adren.travel.payments.event.RefundCalculatedEvent;
 import com.adren.travel.payments.event.StripePaymentSucceededEvent;
 import com.adren.travel.payments.event.WalletHoldDebitedEvent;
 import com.adren.travel.payments.event.WalletHoldPlacedEvent;
@@ -33,6 +36,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -246,6 +250,28 @@ class PaymentsServiceImpl implements PaymentsApi {
         }
 
         events.publishEvent(new BookingPaidOnAccountEvent(command.bookingId(), command.consultantId(), command.amount()));
+    }
+
+    @Override
+    @Transactional
+    public RefundCalculation calculateRefund(CalculateRefundCommand command) {
+        boolean cancelledBeforeDeadline = command.cancelledAt().isBefore(command.cancellationDeadline());
+
+        Money refundAmount;
+        Money penaltyAmount;
+        if (cancelledBeforeDeadline) {
+            refundAmount = command.sellPrice();
+            penaltyAmount = Money.zero(command.sellPrice().currency());
+        } else {
+            penaltyAmount = command.sellPrice().percentOf(command.postDeadlinePenaltyPercent());
+            refundAmount = command.sellPrice().percentOf(BigDecimal.valueOf(100).subtract(command.postDeadlinePenaltyPercent()));
+        }
+        boolean requiresConsultantApproval = penaltyAmount.amount().signum() > 0;
+
+        events.publishEvent(new RefundCalculatedEvent(command.bookingId(), command.consultantId(), refundAmount,
+            penaltyAmount, requiresConsultantApproval));
+
+        return new RefundCalculation(refundAmount, penaltyAmount, requiresConsultantApproval);
     }
 
     // FIN-10: the ledger insert is attempted (and, on a unique-constraint

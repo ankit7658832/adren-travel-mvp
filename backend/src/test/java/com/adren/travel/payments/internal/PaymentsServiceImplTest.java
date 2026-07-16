@@ -2,6 +2,7 @@ package com.adren.travel.payments.internal;
 
 import com.adren.travel.payments.ApplyCurrencyBufferCommand;
 import com.adren.travel.payments.CalculateCommissionCommand;
+import com.adren.travel.payments.CalculateRefundCommand;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.CreatePaymentIntentCommand;
@@ -12,6 +13,7 @@ import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
 import com.adren.travel.payments.PaymentIntentStatus;
 import com.adren.travel.payments.PaymentIntentView;
+import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.SnapshotFxRateCommand;
 import com.adren.travel.payments.WalletHoldCommand;
@@ -20,6 +22,7 @@ import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
+import com.adren.travel.payments.event.RefundCalculatedEvent;
 import com.adren.travel.payments.event.StripePaymentSucceededEvent;
 import com.adren.travel.payments.event.WalletHoldDebitedEvent;
 import com.adren.travel.payments.event.WalletHoldPlacedEvent;
@@ -49,6 +52,7 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -741,6 +745,67 @@ class PaymentsServiceImplTest {
         verifyNoInteractions(walletRepository);
         verify(walletLedgerEntryRepository, org.mockito.Mockito.never()).saveAndFlush(any());
         verifyNoInteractions(events);
+    }
+
+    @Test
+    void calculateRefundReturnsAFullRefundWhenCancelledBeforeTheDeadlineFIN13() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        Instant deadline = Instant.now().plusSeconds(3600);
+        Instant cancelledAt = Instant.now();
+
+        RefundCalculation calculation = service.calculateRefund(new CalculateRefundCommand(
+            bookingId, consultantId, sellPrice, deadline, cancelledAt, BigDecimal.valueOf(50)));
+
+        assertThat(calculation.refundAmount()).isEqualTo(sellPrice);
+        assertThat(calculation.penaltyAmount().amount()).isEqualByComparingTo("0");
+        assertThat(calculation.requiresConsultantApproval()).isFalse();
+
+        ArgumentCaptor<RefundCalculatedEvent> captor = ArgumentCaptor.forClass(RefundCalculatedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().requiresConsultantApproval()).isFalse();
+    }
+
+    @Test
+    void calculateRefundAppliesThePenaltyAndRequiresApprovalWhenCancelledAfterTheDeadlineFIN13() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        Instant deadline = Instant.now().minusSeconds(3600); // already past
+        Instant cancelledAt = Instant.now();
+
+        RefundCalculation calculation = service.calculateRefund(new CalculateRefundCommand(
+            bookingId, consultantId, sellPrice, deadline, cancelledAt, BigDecimal.valueOf(30)));
+
+        assertThat(calculation.penaltyAmount().amount()).isEqualByComparingTo("3000.00");
+        assertThat(calculation.refundAmount().amount()).isEqualByComparingTo("7000.00");
+        assertThat(calculation.requiresConsultantApproval()).isTrue();
+
+        ArgumentCaptor<RefundCalculatedEvent> captor = ArgumentCaptor.forClass(RefundCalculatedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().requiresConsultantApproval()).isTrue();
+    }
+
+    @Test
+    void calculateRefundNeverMovesMoneyFIN13() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+
+        service.calculateRefund(new CalculateRefundCommand(
+            bookingId, consultantId, sellPrice, Instant.now().minusSeconds(1), Instant.now(), BigDecimal.valueOf(20)));
+
+        verifyNoInteractions(walletRepository, walletLedgerEntryRepository);
+    }
+
+    @Test
+    void calculateRefundRejectsAnOutOfRangePenaltyPercentFIN13() {
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+
+        assertThatThrownBy(() -> new CalculateRefundCommand(
+            UUID.randomUUID(), UUID.randomUUID(), sellPrice, Instant.now(), Instant.now(), BigDecimal.valueOf(150)))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

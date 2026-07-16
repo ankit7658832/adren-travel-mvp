@@ -1,11 +1,14 @@
 package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.BookingApi;
+import com.adren.travel.booking.CalculateCancellationRefundCommand;
+import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.shared.Money;
 import com.adren.travel.shared.PageResponse;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -49,5 +52,14 @@ class BookingQueryController {
         UUID bookingId = bookingApi.confirmBookingOnAccount(request.quotationOrPackageId(),
             new Money(request.totalSellPrice(), request.currency()));
         return Map.of("bookingId", bookingId);
+    }
+
+    /** PRD §12.4/§12.5 — calculates (does not process) a cancellation's refund/penalty split (FIN-13). */
+    @PostMapping("/{bookingId}/cancellation")
+    RefundCalculation calculateCancellationRefund(@PathVariable UUID bookingId,
+                                                   @Valid @RequestBody CalculateCancellationRefundRequest request) {
+        return bookingApi.calculateCancellationRefund(bookingId, new CalculateCancellationRefundCommand(
+            new Money(request.sellPrice(), request.currency()), request.cancellationDeadline(),
+            request.cancelledAt(), request.postDeadlinePenaltyPercent()));
     }
 }

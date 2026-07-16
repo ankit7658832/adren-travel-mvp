@@ -7,6 +7,7 @@ import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
+import com.adren.travel.booking.CalculateCancellationRefundCommand;
 import com.adren.travel.booking.ConsolidateCheckoutTotalCommand;
 import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
@@ -23,8 +24,10 @@ import com.adren.travel.booking.event.PackageCreatedEvent;
 import com.adren.travel.booking.event.PackagePublishedEvent;
 import com.adren.travel.booking.event.QuotationRecalculatedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
+import com.adren.travel.payments.CalculateRefundCommand;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.PaymentsApi;
+import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.WalletHoldCommand;
 import com.adren.travel.security.CurrentPrincipal;
@@ -491,6 +494,17 @@ class BookingServiceImpl implements BookingApi {
             total = total.plus(amount.convertTo(target, rate));
         }
         return total;
+    }
+
+    @Override
+    public RefundCalculation calculateCancellationRefund(UUID bookingId, CalculateCancellationRefundCommand command) {
+        Booking booking = bookingRepository.findById(bookingId)
+            .orElseThrow(() -> new IllegalArgumentException("No booking: " + bookingId));
+        CurrentPrincipal.resolveTenantScope(booking.getConsultantId());
+        requireActiveUnlessSuperAdmin(booking.getConsultantId());
+
+        return paymentsApi.calculateRefund(new CalculateRefundCommand(bookingId, booking.getConsultantId(),
+            command.sellPrice(), command.cancellationDeadline(), command.cancelledAt(), command.postDeadlinePenaltyPercent()));
     }
 
     @Override

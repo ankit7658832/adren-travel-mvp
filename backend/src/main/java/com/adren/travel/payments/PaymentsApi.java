@@ -147,4 +147,18 @@ public interface PaymentsApi {
      * {@code @PreAuthorize}; invoked from {@code BookingApi.confirmBookingOnAccount}.
      */
     void payOnAccount(WalletHoldCommand command);
+
+    /**
+     * Calculates a cancellation's refund/penalty split against the actual
+     * supplier cancellation policy captured on the line item (PRD §12.4/
+     * §12.5, FIN-13) — a real policy shape (deadline-based), not a flat
+     * percentage. Pure calculation: never moves money (no wallet/Stripe
+     * mutation) — {@link RefundCalculation#requiresConsultantApproval} true
+     * means a penalty applies and this calculation alone is not
+     * authorization to process it (see the record's own Javadoc for why
+     * enforcing that gate is out of this method's scope). Same internal-
+     * pricing-pipeline-step shape as {@link #calculateCommission} — no
+     * {@code @PreAuthorize}; invoked from {@code BookingApi.calculateCancellationRefund}.
+     */
+    RefundCalculation calculateRefund(CalculateRefundCommand command);
 }
