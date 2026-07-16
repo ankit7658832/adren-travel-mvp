@@ -4,7 +4,7 @@ epic: Booking Core
 phase: mock
 status: not-started
 story_points: 5
-dependencies: ["BOK-03"]
+dependencies: ["BOK-03", "BOK-23"]
 labels: ["backend", "booking", "phase1"]
 prd_references: ["§20.4"]
 modules_or_screens: ["booking", "supplier"]
@@ -26,7 +26,7 @@ Consultants can add a ground transfer (e.g., airport pickup) to a trip itinerary
 - **PRD reference(s):** §20.4 Line Item — Transfer (Transferz)
 - **Module(s)/Screen(s):** booking, supplier
 - **Story points:** 5 — Same shape as BOK-03, one product-type variant.
-- **Dependencies:** BOK-03
+- **Dependencies:** BOK-03, BOK-23 (needs `TransferzClient` to source real, if stubbed, results from)
 - **Testing tier(s):** unit, module (@ApplicationModuleTest)
 
 ## Sub-tasks

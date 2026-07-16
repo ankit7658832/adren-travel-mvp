@@ -4,7 +4,7 @@ epic: Booking Core
 phase: mock
 status: not-started
 story_points: 8
-dependencies: ["FND-14"]
+dependencies: ["FND-14", "BOK-21", "BOK-22"]
 labels: ["backend", "booking", "supplier", "phase1"]
 prd_references: ["§9.4", "§22.2"]
 modules_or_screens: ["supplier", "booking"]
@@ -26,7 +26,7 @@ When two different hotel suppliers offer the exact same physical hotel in search
 - **PRD reference(s):** §9.4 Business Rules & Edge Cases; §22.2 (interacts with Default Selection)
 - **Module(s)/Screen(s):** supplier, booking
 - **Story points:** 8 — Property-matching/dedup across heterogeneous supplier content (names, addresses, no shared ID) is inherently fuzzy-matching work — the highest-uncertainty story in this epic.
-- **Dependencies:** FND-14
+- **Dependencies:** FND-14, BOK-21, BOK-22 (needs `StubaClient`/`TboClient` to exist as real dedup targets, not just `HotelbedsClient`)
 - **Testing tier(s):** unit, module (@ApplicationModuleTest)
 
 ## Sub-tasks

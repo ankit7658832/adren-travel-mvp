@@ -4,7 +4,7 @@ epic: Booking Core
 phase: mock
 status: not-started
 story_points: 5
-dependencies: ["BOK-03"]
+dependencies: ["BOK-03", "BOK-25"]
 labels: ["backend", "booking", "phase1"]
 prd_references: ["§20.6", "§10.2.7"]
 modules_or_screens: ["booking", "supplier"]
@@ -27,7 +27,7 @@ Consultants can add a bookable activity (e.g., a tour or excursion) to an itiner
 - **PRD reference(s):** §20.6 Line Item — Activity (HBActivities); §10.2.7 HBActivities
 - **Module(s)/Screen(s):** booking, supplier
 - **Story points:** 5 — Same shape as BOK-03 plus the time-slot/headcount constraint.
-- **Dependencies:** BOK-03
+- **Dependencies:** BOK-03, BOK-25 (needs `HbActivitiesClient` to source real, if stubbed, results from)
 - **Testing tier(s):** unit, module (@ApplicationModuleTest)
 
 ## Sub-tasks

@@ -4,7 +4,7 @@ epic: Booking Core
 phase: mock
 status: not-started
 story_points: 5
-dependencies: ["BOK-03"]
+dependencies: ["BOK-03", "BOK-24"]
 labels: ["backend", "booking", "phase1"]
 prd_references: ["§20.5", "§10.2.6"]
 modules_or_screens: ["booking", "supplier"]
@@ -27,7 +27,7 @@ Consultants can add a cruise to a trip itinerary, including the sailing, cabin c
 - **PRD reference(s):** §20.5 Line Item — Cruise (Widgety); §10.2.6 Widgety
 - **Module(s)/Screen(s):** booking, supplier
 - **Story points:** 5 — Same shape as BOK-03 plus the port-flattening and documentation-flag rules called out in §10.2.6.
-- **Dependencies:** BOK-03
+- **Dependencies:** BOK-03, BOK-24 (needs `WidgetyClient` to source real, if stubbed, results from)
 - **Testing tier(s):** unit, module (@ApplicationModuleTest)
 
 ## Sub-tasks

@@ -1,6 +1,8 @@
 # MVP-Mock Story Progress
 
-Tracks all 142 mock-phase stories across 10 epics. Checked = story fully implemented, tested, acceptance criteria verified, and committed.
+Tracks all 149 mock-phase stories across 10 epics. Checked = story fully implemented, tested, acceptance criteria verified, and committed.
+
+**2026-07-16 (Stage 3, Step B):** added `BOK-21`–`BOK-27` (STUBA/TBO/Transferz/Widgety/HBActivities client stubs, a circuit-breaker story, and a static-content sync/caching story) — a gap identified in Stage 2's report: BOK-20 and HRD-12 already referenced `StubaClient`/`TboClient`/content-sync as if they existed, but no story ever built them. See each file's frontmatter for dependency wiring; `BOK-20` and `HRD-12` were updated to depend on the new stories.
 
 See `doc/phases.md` for the dependency-derived build order and `doc/architecture/RULES.md` for the per-story quality bar.
 
@@ -32,7 +34,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **FND-23** — convert all collection endpoints to paginated responses
 - [x] **FND-24** — adopt structured json logging with mandatory mdc fields
 
-## Booking Core (20)
+## Booking Core (27)
 
 - [x] **BOK-01** — add transactional boundaries to booking state change methods
 - [x] **BOK-02** — fix bookingconfirmedevent to carry money instead of decomposed amount currency
@@ -54,6 +56,13 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **BOK-18** — recalculate price when traveler count changes after quotation but before booking
 - [ ] **BOK-19** — generate a pnr searchable reference on every booking
 - [ ] **BOK-20** — deduplicate the same physical hotel property offered by two suppliers
+- [x] **BOK-21** — integrate a stuba client stub for hotel search
+- [ ] **BOK-22** — integrate a tbo client stub for hotel search
+- [ ] **BOK-23** — integrate a transferz client stub for transfer search
+- [ ] **BOK-24** — integrate a widgety client stub for cruise search
+- [ ] **BOK-25** — integrate an hbactivities client stub for activity search
+- [ ] **BOK-26** — isolate each supplier integration behind a circuit breaker
+- [ ] **BOK-27** — sync and cache static supplier content
 
 ## Financial Layer (18)
 
@@ -178,4 +187,4 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **TST-09** — build an ai governance audit log test harness asserting the 100 logged invariant
 
 ---
-Total: 142 stories.
+Total: 149 stories.
