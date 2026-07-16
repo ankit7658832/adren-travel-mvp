@@ -303,11 +303,16 @@ class BookingServiceImplTest {
         Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
         UUID consultantId = UUID.randomUUID();
         UUID packageId = UUID.randomUUID();
+        UUID sourceItineraryId = UUID.randomUUID();
         when(quotationRepository.findById(packageId)).thenReturn(Optional.empty());
-        TravelPackage travelPackage = new TravelPackage(packageId, UUID.randomUUID(), consultantId, "Goa Getaway",
+        TravelPackage travelPackage = new TravelPackage(packageId, sourceItineraryId, consultantId, "Goa Getaway",
             null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
             BigDecimal.valueOf(11_371.20), BigDecimal.valueOf(500), CurrencyCode.INR, 4);
         when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+        // BOK-16: lockForBooking resolves the package's source itinerary too.
+        Itinerary sourceItinerary = new Itinerary(sourceItineraryId, consultantId, null);
+        sourceItinerary.markAsQuotation();
+        when(itineraryRepository.findById(sourceItineraryId)).thenReturn(Optional.of(sourceItinerary));
         authenticateAs(Role.CONSULTANT, consultantId);
 
         UUID bookingId = service.confirmBooking(packageId, price);
@@ -372,8 +377,12 @@ class BookingServiceImplTest {
         UUID quotationId = UUID.randomUUID();
         when(quotationRepository.findById(quotationId)).thenReturn(
             Optional.of(new Quotation(quotationId, itineraryId, Instant.now().plusSeconds(3600))));
-        when(itineraryRepository.findById(itineraryId)).thenReturn(
-            Optional.of(new Itinerary(itineraryId, consultantId, null)));
+        // BOK-16: confirmBooking's lockForBooking calls markAsBooked(),
+        // which requires QUOTATION (not the constructor's default DRAFT) —
+        // a quotation's source itinerary is always past DRAFT by definition.
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        itinerary.markAsQuotation();
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
         return quotationId;
     }
 
@@ -397,6 +406,21 @@ class BookingServiceImplTest {
         UUID bookingId = service.confirmBookingFromPaymentWebhook(UUID.randomUUID(), consultantId, price);
 
         verify(voucherService).generateFor(bookingId);
+    }
+
+    @Test
+    void confirmBookingMapsALostOptimisticLockRaceToInventoryNoLongerAvailableBOK16() {
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(consultantId);
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(itineraryRepository.saveAndFlush(any()))
+            .thenThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(Itinerary.class, quotationId));
+
+        assertThatThrownBy(() -> service.confirmBooking(quotationId, price))
+            .isInstanceOf(com.adren.travel.booking.InventoryNoLongerAvailableException.class);
+        verify(paymentsApi, org.mockito.Mockito.never()).placeHold(any());
+        verify(events, org.mockito.Mockito.never()).publishEvent(any(BookingConfirmedEvent.class));
     }
 
     @Test

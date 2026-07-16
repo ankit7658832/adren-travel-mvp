@@ -152,11 +152,15 @@ class NotificationRegionRoutingIntegrationTest {
     // SAME consultantId as the just-onboarded Consultant for
     // WhitelabelApi.findConsultantMarket to resolve a real market rather
     // than fall back to the defensive SMS default.
+    // BOK-16: confirmBooking now requires the itinerary to be QUOTATION
+    // (markAsBooked()'s precondition), not DRAFT — this helper bypasses the
+    // real saveAsQuotation transition by inserting rows directly, so it
+    // must insert the post-transition status itself.
     private UUID insertQuotationForANewDraftItinerary(UUID consultantId) {
         UUID itineraryId = UUID.randomUUID();
         jdbcTemplate.update(
             "INSERT INTO itinerary (itinerary_id, consultant_id, status, ai_generated, created_at, updated_at) " +
-                "VALUES (?, ?, 'DRAFT', false, now(), now())",
+                "VALUES (?, ?, 'QUOTATION', false, now(), now())",
             itineraryId, consultantId);
         UUID quotationId = UUID.randomUUID();
         jdbcTemplate.update(

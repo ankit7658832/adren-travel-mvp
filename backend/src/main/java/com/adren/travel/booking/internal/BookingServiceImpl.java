@@ -16,6 +16,7 @@ import com.adren.travel.booking.event.CruiseLineItemAddedEvent;
 import com.adren.travel.booking.event.FlightLineItemAddedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
+import com.adren.travel.booking.InventoryNoLongerAvailableException;
 import com.adren.travel.booking.event.TransferLineItemAddedEvent;
 import com.adren.travel.booking.event.PackageCreatedEvent;
 import com.adren.travel.booking.event.PackagePublishedEvent;
@@ -30,6 +31,7 @@ import com.adren.travel.shared.ProductCategory;
 import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.whitelabel.WhitelabelApi;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -141,9 +143,15 @@ class BookingServiceImpl implements BookingApi {
     @Override
     @Transactional
     public UUID confirmBooking(UUID quotationOrPackageId, Money totalSellPrice) {
-        UUID consultantId = resolveConsultantIdFor(quotationOrPackageId);
-        CurrentPrincipal.resolveTenantScope(consultantId);
-        requireActiveUnlessSuperAdmin(consultantId);
+        ConfirmationTarget target = resolveConfirmationTargetFor(quotationOrPackageId);
+        CurrentPrincipal.resolveTenantScope(target.consultantId());
+        requireActiveUnlessSuperAdmin(target.consultantId());
+
+        // BOK-16, PRD §23.1 Edge Case #1: two concurrent confirmBooking
+        // calls for the SAME itinerary must not both succeed — this
+        // saveAndFlush is where that race is actually decided (see
+        // Itinerary's @Version Javadoc), before any wallet debit happens.
+        lockForBooking(target.itineraryId());
 
         UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
 
@@ -154,21 +162,45 @@ class BookingServiceImpl implements BookingApi {
         // call is a simplification: this scaffold has no separate "reach
         // payment step" moment distinct from confirmation itself, unlike
         // the full booking flow PRD §12.3 describes.
-        paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, totalSellPrice));
-        paymentsApi.resolveHoldAsDebit(new WalletHoldCommand(bookingId, consultantId, totalSellPrice));
+        paymentsApi.placeHold(new WalletHoldCommand(bookingId, target.consultantId(), totalSellPrice));
+        paymentsApi.resolveHoldAsDebit(new WalletHoldCommand(bookingId, target.consultantId(), totalSellPrice));
 
-        return finalizeConfirmedBooking(bookingId, consultantId, totalSellPrice);
+        return finalizeConfirmedBooking(bookingId, target.consultantId(), totalSellPrice);
     }
 
     // BOK-13 — quotationOrPackageId is polymorphic: a booking can be
     // confirmed directly from a Quotation or from a published Package.
-    private UUID resolveConsultantIdFor(UUID quotationOrPackageId) {
+    private record ConfirmationTarget(UUID consultantId, UUID itineraryId) {
+    }
+
+    private ConfirmationTarget resolveConfirmationTargetFor(UUID quotationOrPackageId) {
         return quotationRepository.findById(quotationOrPackageId)
-            .map(quotation -> itineraryRepository.findById(quotation.getItineraryId())
+            .map(quotation -> new ConfirmationTarget(itineraryRepository.findById(quotation.getItineraryId())
                 .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + quotation.getItineraryId()))
-                .getConsultantId())
-            .or(() -> travelPackageRepository.findById(quotationOrPackageId).map(TravelPackage::getConsultantId))
+                .getConsultantId(), quotation.getItineraryId()))
+            .or(() -> travelPackageRepository.findById(quotationOrPackageId)
+                .map(pkg -> new ConfirmationTarget(pkg.getConsultantId(), pkg.getSourceItineraryId())))
             .orElseThrow(() -> new IllegalArgumentException("No quotation or package: " + quotationOrPackageId));
+    }
+
+    // BOK-16 — deliberately scoped to confirmBooking (the direct/wallet
+    // path). confirmBookingFromPaymentWebhook receives the same
+    // quotationOrPackageId shape and could get the identical guard as a
+    // follow-up, but it's invoked from an async, unauthenticated listener
+    // context (no CurrentPrincipal) already covered by its own dedicated
+    // test suite (StripePaymentConfirmationListenerTest,
+    // BookingServiceImplTest's confirmBookingFromPaymentWebhook* tests) —
+    // extending the lock there is a separate, deliberate change, not
+    // bundled into this story.
+    private void lockForBooking(UUID itineraryId) {
+        Itinerary itinerary = itineraryRepository.findById(itineraryId)
+            .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + itineraryId));
+        itinerary.markAsBooked();
+        try {
+            itineraryRepository.saveAndFlush(itinerary);
+        } catch (ObjectOptimisticLockingFailureException e) {
+            throw new InventoryNoLongerAvailableException(itineraryId);
+        }
     }
 
     @Override

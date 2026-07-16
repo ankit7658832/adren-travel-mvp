@@ -70,11 +70,15 @@ class BookingEndToEndIT {
     // BOK-13: confirmBooking now resolves a real consultantId from the
     // quotation/package it's given, so this test needs a genuinely
     // persisted Quotation (+ its Itinerary) rather than a random UUID.
+    // BOK-16: confirmBooking also now requires the itinerary to be
+    // QUOTATION (markAsBooked()'s precondition) — this helper bypasses the
+    // real saveAsQuotation transition by inserting rows directly, so it
+    // must insert the post-transition status itself.
     private UUID insertQuotationForANewDraftItinerary() {
         UUID itineraryId = UUID.randomUUID();
         jdbcTemplate.update(
             "INSERT INTO itinerary (itinerary_id, consultant_id, status, ai_generated, created_at, updated_at) " +
-                "VALUES (?, ?, 'DRAFT', false, now(), now())",
+                "VALUES (?, ?, 'QUOTATION', false, now(), now())",
             itineraryId, UUID.randomUUID());
         UUID quotationId = UUID.randomUUID();
         jdbcTemplate.update(
