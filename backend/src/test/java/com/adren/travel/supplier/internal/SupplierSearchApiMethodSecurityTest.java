@@ -67,6 +67,11 @@ class SupplierSearchApiMethodSecurityTest {
         }
 
         @Bean
+        SupplierContentCacheRepository supplierContentCacheRepository() {
+            return Mockito.mock(SupplierContentCacheRepository.class);
+        }
+
+        @Bean
         SupplierCredentialRepository supplierCredentialRepository() {
             return Mockito.mock(SupplierCredentialRepository.class);
         }
@@ -84,11 +89,12 @@ class SupplierSearchApiMethodSecurityTest {
         @Bean
         SupplierSearchApi supplierSearchApi(HotelbedsClient hotelbedsClient, StubaClient stubaClient,
                                              TboClient tboClient, SupplierCircuitBreakerGateway circuitBreakerGateway,
+                                             SupplierContentCacheRepository contentCacheRepository,
                                              SupplierCredentialRepository repo,
                                              SupplierCredentialAuditLogRepository auditRepo,
                                              SupplierSecretsService supplierSecretsService) {
             return new SupplierAggregationService(hotelbedsClient, stubaClient, tboClient, circuitBreakerGateway,
-                repo, auditRepo, supplierSecretsService);
+                contentCacheRepository, repo, auditRepo, supplierSecretsService);
         }
     }
 

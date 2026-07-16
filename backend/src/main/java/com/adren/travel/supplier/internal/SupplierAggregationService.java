@@ -34,6 +34,7 @@ class SupplierAggregationService implements SupplierSearchApi {
     private final StubaClient stubaClient;
     private final TboClient tboClient;
     private final SupplierCircuitBreakerGateway circuitBreakerGateway;
+    private final SupplierContentCacheRepository contentCacheRepository;
     private final SupplierCredentialRepository credentialRepository;
     private final SupplierCredentialAuditLogRepository auditLogRepository;
     private final SupplierSecretsService supplierSecretsService;
@@ -43,6 +44,7 @@ class SupplierAggregationService implements SupplierSearchApi {
 
     SupplierAggregationService(HotelbedsClient hotelbedsClient, StubaClient stubaClient, TboClient tboClient,
                                SupplierCircuitBreakerGateway circuitBreakerGateway,
+                               SupplierContentCacheRepository contentCacheRepository,
                                SupplierCredentialRepository credentialRepository,
                                SupplierCredentialAuditLogRepository auditLogRepository,
                                SupplierSecretsService supplierSecretsService) {
@@ -50,6 +52,7 @@ class SupplierAggregationService implements SupplierSearchApi {
         this.stubaClient = stubaClient;
         this.tboClient = tboClient;
         this.circuitBreakerGateway = circuitBreakerGateway;
+        this.contentCacheRepository = contentCacheRepository;
         this.credentialRepository = credentialRepository;
         this.auditLogRepository = auditLogRepository;
         this.supplierSecretsService = supplierSecretsService;
@@ -72,7 +75,26 @@ class SupplierAggregationService implements SupplierSearchApi {
         return futures.stream()
             .map(CompletableFuture::join)
             .flatMap(List::stream)
+            .map(this::enrichWithCachedContent)
             .toList();
+    }
+
+    /**
+     * Fills in {@code rating} from BOK-27's content cache instead of leaving
+     * it hard-coded {@code null} — the gap {@code HotelbedsClient}'s stub
+     * comment calls out ("real rating requires supplier content sync — not
+     * wired for any supplier yet"). A cache miss (not yet synced) leaves the
+     * result unchanged; FND-14's Default Selection Algorithm already treats
+     * a missing rating as the lowest tiebreak score rather than failing.
+     */
+    private SupplierSearchResult enrichWithCachedContent(SupplierSearchResult result) {
+        if (result.rating() != null) {
+            return result;
+        }
+        return contentCacheRepository.findBySupplierIdAndSupplierContentId(result.supplierId(), result.supplierRateId())
+            .map(cache -> new SupplierSearchResult(result.supplierId(), result.supplierRateId(), result.propertyName(),
+                result.roomType(), result.netRate(), cache.getRating()))
+            .orElse(result);
     }
 
     private CompletableFuture<List<SupplierSearchResult>> searchAsync(

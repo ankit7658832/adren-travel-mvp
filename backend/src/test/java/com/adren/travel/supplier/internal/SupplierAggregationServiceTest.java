@@ -47,6 +47,9 @@ class SupplierAggregationServiceTest {
     TboClient tboClient;
 
     @Mock
+    SupplierContentCacheRepository contentCacheRepository;
+
+    @Mock
     SupplierCredentialRepository credentialRepository;
 
     @Mock
@@ -60,7 +63,7 @@ class SupplierAggregationServiceTest {
     @BeforeEach
     void setUp() {
         service = new SupplierAggregationService(
-            hotelbedsClient, stubaClient, tboClient, new SupplierCircuitBreakerGateway(),
+            hotelbedsClient, stubaClient, tboClient, new SupplierCircuitBreakerGateway(), contentCacheRepository,
             credentialRepository, auditLogRepository, supplierSecretsService);
     }
 
@@ -161,6 +164,23 @@ class SupplierAggregationServiceTest {
         assertThat(gateway.stateOf(SupplierId.STUBA)).isEqualTo(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.OPEN);
         assertThat(gateway.stateOf(SupplierId.TBO)).isEqualTo(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED);
         assertThat(healthySupplierResult).containsExactly("ok");
+    }
+
+    @Test
+    void searchHotelsEnrichesRatingFromTheContentCacheBOK27() {
+        when(hotelbedsClient.search("BOM", checkIn(), checkOut())).thenReturn(List.of(hotelResult(SupplierId.HOTELBEDS)));
+        when(stubaClient.search("BOM", checkIn(), checkOut())).thenReturn(List.of());
+        when(tboClient.search("BOM", checkIn(), checkOut(), null))
+            .thenReturn(new TboClient.TboSearchResponse(List.of(), "trace-id"));
+        SupplierContentCache cached = new SupplierContentCache(SupplierId.HOTELBEDS, "rate-id-HOTELBEDS");
+        cached.refresh("Cached Hotel Name", 4.3);
+        when(contentCacheRepository.findBySupplierIdAndSupplierContentId(SupplierId.HOTELBEDS, "rate-id-HOTELBEDS"))
+            .thenReturn(Optional.of(cached));
+
+        List<SupplierSearchResult> results = service.searchHotels("BOM", checkIn(), checkOut());
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).rating()).isEqualTo(4.3);
     }
 
     private static LocalDate checkIn() {
