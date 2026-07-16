@@ -8,6 +8,7 @@ import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.CreatePaymentIntentCommand;
 import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.HandleStripeWebhookCommand;
+import com.adren.travel.payments.InitiateWalletTopUpCommand;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
 import com.adren.travel.payments.PaymentIntentStatus;
@@ -25,6 +26,7 @@ import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.RefundCalculatedEvent;
 import com.adren.travel.payments.event.StripePaymentSucceededEvent;
+import com.adren.travel.payments.event.WalletTopUpReconciledEvent;
 import com.adren.travel.payments.event.WalletHoldDebitedEvent;
 import com.adren.travel.payments.event.WalletHoldPlacedEvent;
 import com.adren.travel.payments.event.WalletHoldReleasedEvent;
@@ -151,7 +153,24 @@ class PaymentsServiceImpl implements PaymentsApi {
         StripePaymentIntent intent = stripeClient.createPaymentIntent(command.amount(), command.bookingReferenceId());
 
         paymentIntentRepository.save(new PaymentIntentRecord(intent.paymentIntentId(), command.bookingReferenceId(),
-            scopedConsultantId, intent.amount().amount(), intent.amount().currency(), intent.status()));
+            scopedConsultantId, intent.amount().amount(), intent.amount().currency(), intent.status(),
+            PaymentIntentPurpose.BOOKING));
+
+        return new PaymentIntentView(intent.paymentIntentId(), intent.clientSecret(), intent.amount(), intent.status());
+    }
+
+    @Override
+    @Transactional
+    public PaymentIntentView initiateWalletTopUp(InitiateWalletTopUpCommand command) {
+        UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(command.consultantId());
+        // No real booking to reference — stripeClient's signature still
+        // wants a UUID (it's an opaque pass-through for the stub, see its
+        // own Javadoc), so a synthetic one is fine here.
+        StripePaymentIntent intent = stripeClient.createPaymentIntent(command.amount(), UUID.randomUUID());
+
+        paymentIntentRepository.save(new PaymentIntentRecord(intent.paymentIntentId(), UUID.randomUUID(),
+            scopedConsultantId, intent.amount().amount(), intent.amount().currency(), intent.status(),
+            PaymentIntentPurpose.WALLET_TOP_UP));
 
         return new PaymentIntentView(intent.paymentIntentId(), intent.clientSecret(), intent.amount(), intent.status());
     }
@@ -167,14 +186,44 @@ class PaymentsServiceImpl implements PaymentsApi {
             .orElseThrow(() -> new IllegalArgumentException("No PaymentIntent: " + command.paymentIntentId()));
 
         if ("payment_intent.succeeded".equals(command.type())) {
+            // FIN-15: Stripe retries webhooks on delay/failure (the exact
+            // scenario PRD §23.4 Edge Case #10 names) — without this guard,
+            // a retried "succeeded" webhook for an already-reconciled
+            // top-up would credit the wallet a second time.
+            boolean alreadyReconciled = record.getStatus() == PaymentIntentStatus.SUCCEEDED;
             record.markAs(PaymentIntentStatus.SUCCEEDED);
             paymentIntentRepository.save(record);
-            events.publishEvent(new StripePaymentSucceededEvent(record.getBookingReferenceId(),
-                record.getConsultantId(), new Money(record.getAmount(), record.getCurrency())));
+            if (alreadyReconciled) {
+                return;
+            }
+            if (record.getPurpose() == PaymentIntentPurpose.WALLET_TOP_UP) {
+                reconcileWalletTopUp(record);
+            } else {
+                events.publishEvent(new StripePaymentSucceededEvent(record.getBookingReferenceId(),
+                    record.getConsultantId(), new Money(record.getAmount(), record.getCurrency())));
+            }
         } else {
             record.markAs(PaymentIntentStatus.FAILED);
             paymentIntentRepository.save(record);
         }
+    }
+
+    // FIN-15: the ONLY place availableBalance is credited for a top-up — a
+    // booking attempted against funds from a not-yet-webhooked top-up sees
+    // an availableBalance that simply doesn't include them yet, so FIN-08's
+    // credit-limit check blocks it structurally, not via a special case.
+    private void reconcileWalletTopUp(PaymentIntentRecord record) {
+        Wallet wallet = walletRepository.findById(record.getConsultantId())
+            .orElseGet(() -> provisionWallet(record.getConsultantId()));
+        wallet.credit(record.getAmount());
+        walletRepository.save(wallet);
+
+        WalletLedgerEntry entry = new WalletLedgerEntry(UUID.randomUUID(), record.getConsultantId(),
+            LedgerEntryType.TOP_UP, record.getAmount(), record.getCurrency(), null, wallet.getAvailableBalance());
+        walletLedgerEntryRepository.save(entry);
+
+        events.publishEvent(new WalletTopUpReconciledEvent(record.getConsultantId(),
+            new Money(record.getAmount(), record.getCurrency())));
     }
 
     @Override

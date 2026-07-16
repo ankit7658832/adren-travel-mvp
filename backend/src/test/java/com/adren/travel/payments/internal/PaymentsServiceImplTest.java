@@ -9,6 +9,7 @@ import com.adren.travel.payments.CreatePaymentIntentCommand;
 import com.adren.travel.payments.CreditLimitExceededException;
 import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.HandleStripeWebhookCommand;
+import com.adren.travel.payments.InitiateWalletTopUpCommand;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
 import com.adren.travel.payments.PaymentIntentStatus;
@@ -28,6 +29,7 @@ import com.adren.travel.payments.event.WalletHoldDebitedEvent;
 import com.adren.travel.payments.event.WalletHoldPlacedEvent;
 import com.adren.travel.payments.event.WalletHoldReleasedEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
+import com.adren.travel.payments.event.WalletTopUpReconciledEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
@@ -60,6 +62,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -477,7 +480,8 @@ class PaymentsServiceImplTest {
         UUID bookingReferenceId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         PaymentIntentRecord record = new PaymentIntentRecord("pi_123", bookingReferenceId, consultantId,
-            BigDecimal.valueOf(1_000), CurrencyCode.INR, PaymentIntentStatus.REQUIRES_PAYMENT_METHOD);
+            BigDecimal.valueOf(1_000), CurrencyCode.INR, PaymentIntentStatus.REQUIRES_PAYMENT_METHOD,
+            PaymentIntentPurpose.BOOKING);
         when(paymentIntentRepository.findById("pi_123")).thenReturn(Optional.of(record));
 
         service.handleStripeWebhook(new HandleStripeWebhookCommand("payment_intent.succeeded", "pi_123"));
@@ -492,13 +496,73 @@ class PaymentsServiceImplTest {
     @Test
     void aFailedWebhookMarksTheRecordFailedWithoutPublishingAnEventFIN11() {
         PaymentIntentRecord record = new PaymentIntentRecord("pi_123", UUID.randomUUID(), UUID.randomUUID(),
-            BigDecimal.valueOf(1_000), CurrencyCode.INR, PaymentIntentStatus.REQUIRES_PAYMENT_METHOD);
+            BigDecimal.valueOf(1_000), CurrencyCode.INR, PaymentIntentStatus.REQUIRES_PAYMENT_METHOD,
+            PaymentIntentPurpose.BOOKING);
         when(paymentIntentRepository.findById("pi_123")).thenReturn(Optional.of(record));
 
         service.handleStripeWebhook(new HandleStripeWebhookCommand("payment_intent.payment_failed", "pi_123"));
 
         assertThat(record.getStatus()).isEqualTo(PaymentIntentStatus.FAILED);
         verifyNoInteractions(events);
+    }
+
+    @Test
+    void initiatingAWalletTopUpCreatesAPaymentIntentWithoutCreditingTheWalletFIN15() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money amount = new Money(BigDecimal.valueOf(5_000), CurrencyCode.INR);
+        when(stripeClient.createPaymentIntent(eq(amount), any())).thenReturn(
+            new StripePaymentIntent("pi_topup_1", "pi_topup_1_secret", amount, PaymentIntentStatus.REQUIRES_PAYMENT_METHOD));
+
+        PaymentIntentView intent = service.initiateWalletTopUp(new InitiateWalletTopUpCommand(consultantId, amount));
+
+        assertThat(intent.paymentIntentId()).isNotBlank();
+        // FIN-15: availableBalance is deliberately NOT touched at initiation
+        // — only handleStripeWebhook's reconciliation does that.
+        verifyNoInteractions(walletRepository);
+        ArgumentCaptor<PaymentIntentRecord> captor = ArgumentCaptor.forClass(PaymentIntentRecord.class);
+        verify(paymentIntentRepository).save(captor.capture());
+        assertThat(captor.getValue().getPurpose()).isEqualTo(PaymentIntentPurpose.WALLET_TOP_UP);
+    }
+
+    @Test
+    void aSucceededTopUpWebhookCreditsTheWalletAndPublishesWalletTopUpReconciledEventFIN15() {
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        PaymentIntentRecord record = new PaymentIntentRecord("pi_topup", UUID.randomUUID(), consultantId,
+            BigDecimal.valueOf(5_000), CurrencyCode.INR, PaymentIntentStatus.REQUIRES_PAYMENT_METHOD,
+            PaymentIntentPurpose.WALLET_TOP_UP);
+        when(paymentIntentRepository.findById("pi_topup")).thenReturn(Optional.of(record));
+
+        service.handleStripeWebhook(new HandleStripeWebhookCommand("payment_intent.succeeded", "pi_topup"));
+
+        assertThat(wallet.getAvailableBalance()).isEqualByComparingTo("5000");
+        verify(walletRepository).save(wallet);
+        ArgumentCaptor<WalletLedgerEntry> entryCaptor = ArgumentCaptor.forClass(WalletLedgerEntry.class);
+        verify(walletLedgerEntryRepository).save(entryCaptor.capture());
+        assertThat(entryCaptor.getValue().getType()).isEqualTo(LedgerEntryType.TOP_UP);
+
+        ArgumentCaptor<WalletTopUpReconciledEvent> eventCaptor = ArgumentCaptor.forClass(WalletTopUpReconciledEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().consultantId()).isEqualTo(consultantId);
+        assertThat(eventCaptor.getValue().amount().amount()).isEqualByComparingTo("5000");
+    }
+
+    @Test
+    void aRetriedSucceededWebhookDoesNotCreditTheWalletTwiceFIN15() {
+        UUID consultantId = UUID.randomUUID();
+        PaymentIntentRecord record = new PaymentIntentRecord("pi_topup", UUID.randomUUID(), consultantId,
+            BigDecimal.valueOf(5_000), CurrencyCode.INR, PaymentIntentStatus.SUCCEEDED, // already reconciled
+            PaymentIntentPurpose.WALLET_TOP_UP);
+        when(paymentIntentRepository.findById("pi_topup")).thenReturn(Optional.of(record));
+
+        service.handleStripeWebhook(new HandleStripeWebhookCommand("payment_intent.succeeded", "pi_topup"));
+
+        // FIN-15: the whole point of the guard is that reconcileWalletTopUp
+        // never runs on a retry — no wallet lookup, no ledger write, no event.
+        verifyNoInteractions(walletRepository, events);
+        verify(walletLedgerEntryRepository, org.mockito.Mockito.never()).save(any());
     }
 
     @Test

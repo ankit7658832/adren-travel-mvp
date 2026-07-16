@@ -10,6 +10,7 @@ import com.adren.travel.payments.event.WalletHoldDebitedEvent;
 import com.adren.travel.payments.event.WalletHoldPlacedEvent;
 import com.adren.travel.payments.event.WalletHoldReleasedEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
+import com.adren.travel.payments.event.WalletTopUpReconciledEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
@@ -248,6 +249,34 @@ class PaymentsModuleIntegrationTests {
         scenario.stimulate(() -> paymentsApi.handleStripeWebhook(webhookCommand))
             .andWaitForEventOfType(StripePaymentSucceededEvent.class)
             .matchingMappedValue(StripePaymentSucceededEvent::bookingReferenceId, bookingReferenceId);
+    }
+
+    /**
+     * FIN-15's actual acceptance criterion, PRD §23.4 Edge Case #10: a
+     * top-up succeeds at the gateway (the PaymentIntent is created) but the
+     * confirming webhook is delayed — until it arrives, the Consultant must
+     * not be able to book against those funds. Proven end to end: wallet
+     * balance stays at zero through the "delay" (no webhook call yet), and
+     * only moves once the webhook is simulated arriving.
+     */
+    @Test
+    void aDelayedTopUpWebhookLeavesTheWalletUnreconciledUntilItArrivesFIN15(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money amount = new Money(BigDecimal.valueOf(5_000), CurrencyCode.INR);
+
+        PaymentIntentView intent = paymentsApi.initiateWalletTopUp(new InitiateWalletTopUpCommand(consultantId, amount));
+
+        // The "delay" — no webhook has arrived yet. A booking attempted now
+        // must see these funds as unavailable (FIN-08's credit-limit check
+        // reads availableBalance, which this hasn't touched).
+        WalletView duringDelay = paymentsApi.getWallet(consultantId);
+        assertThat(duringDelay.availableBalance()).isEqualByComparingTo("0");
+
+        var webhookCommand = new HandleStripeWebhookCommand("payment_intent.succeeded", intent.paymentIntentId());
+        scenario.stimulate(() -> paymentsApi.handleStripeWebhook(webhookCommand))
+            .andWaitForEventOfType(WalletTopUpReconciledEvent.class)
+            .matchingMappedValue(WalletTopUpReconciledEvent::consultantId, consultantId);
     }
 
     @Test

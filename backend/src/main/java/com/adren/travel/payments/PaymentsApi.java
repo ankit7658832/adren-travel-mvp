@@ -94,6 +94,20 @@ public interface PaymentsApi {
     PaymentIntentView createPaymentIntent(CreatePaymentIntentCommand command);
 
     /**
+     * Starts a wallet top-up via Stripe (PRD §23.4 Edge Case #10, FIN-15) —
+     * creates a PaymentIntent, exactly like {@link #createPaymentIntent},
+     * but {@code availableBalance} is deliberately NOT credited here. The
+     * credit only happens inside {@link #handleStripeWebhook} once Stripe's
+     * confirming webhook actually arrives — this is what makes "booking
+     * against not-yet-reconciled funds" structurally impossible rather than
+     * a check that has to remember to exclude pending top-ups: the funds
+     * simply aren't in {@code availableBalance} yet. Same tenant-scoping
+     * shape as {@link #createPaymentIntent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT')")
+    PaymentIntentView initiateWalletTopUp(InitiateWalletTopUpCommand command);
+
+    /**
      * Handles a Stripe webhook event (PRD §12.4, FIN-11) — not
      * {@code @PreAuthorize}-gated since the caller is Stripe itself, not
      * an authenticated Adren principal (a real deployment authenticates
