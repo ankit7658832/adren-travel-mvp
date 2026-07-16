@@ -1,5 +1,6 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AddCruiseLineItemCommand;
 import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AddTransferLineItemCommand;
@@ -92,6 +93,18 @@ class ItineraryController {
         UUID lineItemId = bookingApi.addTransferLineItem(itineraryId, new AddTransferLineItemCommand(
             request.supplierId(), request.supplierRateId(), request.vehicleType(), request.pickupPoint(),
             request.dropoffPoint(), new Money(request.netRate(), request.netRateCurrency()), request.sellCurrency(),
+            request.fxRate(), request.bufferPercent(), request.commissionPercent()));
+        return Map.of("lineItemId", lineItemId);
+    }
+
+    /** PRD §20.5, §10.2.6 — adds a Cruise line item to the itinerary (BOK-06). */
+    @PostMapping("/{itineraryId}/line-items/cruise")
+    @ResponseStatus(HttpStatus.CREATED)
+    Map<String, UUID> addCruiseLineItem(@PathVariable UUID itineraryId, @Valid @RequestBody AddCruiseLineItemRequest request) {
+        UUID lineItemId = bookingApi.addCruiseLineItem(itineraryId, new AddCruiseLineItemCommand(
+            request.supplierId(), request.supplierRateId(), request.cruiseLine(), request.cabinCategory(),
+            request.ports(), request.passengerDocumentsRequired(),
+            new Money(request.netRate(), request.netRateCurrency()), request.sellCurrency(),
             request.fxRate(), request.bufferPercent(), request.commissionPercent()));
         return Map.of("lineItemId", lineItemId);
     }

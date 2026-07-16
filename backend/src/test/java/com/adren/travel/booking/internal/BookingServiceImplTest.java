@@ -1,5 +1,6 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AddCruiseLineItemCommand;
 import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AddTransferLineItemCommand;
@@ -9,6 +10,7 @@ import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.MealPlan;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
+import com.adren.travel.booking.event.CruiseLineItemAddedEvent;
 import com.adren.travel.booking.event.FlightLineItemAddedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
@@ -97,6 +99,9 @@ class BookingServiceImplTest {
     TransferLineItemRepository transferLineItemRepository;
 
     @Mock
+    CruiseLineItemRepository cruiseLineItemRepository;
+
+    @Mock
     QuotationRepository quotationRepository;
 
     @Mock
@@ -113,8 +118,8 @@ class BookingServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new BookingServiceImpl(itineraryRepository, travelerProfileRepository, hotelLineItemRepository,
-            flightLineItemRepository, transferLineItemRepository, quotationRepository, travelPackageRepository,
-            voucherService, events, whitelabelApi, supplierSearchApi, paymentsApi);
+            flightLineItemRepository, transferLineItemRepository, cruiseLineItemRepository, quotationRepository,
+            travelPackageRepository, voucherService, events, whitelabelApi, supplierSearchApi, paymentsApi);
     }
 
     // BOK-08: saveAsQuotation now requires at least one line item — stub a
@@ -779,6 +784,84 @@ class BookingServiceImplTest {
         assertThatThrownBy(() -> service.addTransferLineItem(itineraryId, command))
             .isInstanceOf(IllegalStateException.class);
         verify(transferLineItemRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void addingACruiseLineItemPricesItThroughTheSellRatePipelineAndFlattensPortsAsMetadataBOK06() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        Money netRate = new Money(BigDecimal.valueOf(35000), CurrencyCode.INR);
+        Money fxConvertedBase = new Money(BigDecimal.valueOf(35000), CurrencyCode.INR);
+        Money bufferedAmount = new Money(BigDecimal.valueOf(36050), CurrencyCode.INR);
+        Money markupAmount = new Money(BigDecimal.valueOf(5407.50), CurrencyCode.INR);
+        Money sellRate = new Money(BigDecimal.valueOf(41457.50), CurrencyCode.INR);
+        Money commissionAmount = Money.zero(CurrencyCode.INR);
+        FxRateSnapshot snapshot = new FxRateSnapshot(CurrencyCode.INR, CurrencyCode.INR, BigDecimal.ONE, Instant.now());
+        when(paymentsApi.calculateSellRate(any())).thenReturn(new SellRateCalculation(
+            netRate, snapshot, fxConvertedBase, bufferedAmount, markupAmount, sellRate, commissionAmount));
+
+        var command = new AddCruiseLineItemCommand(SupplierId.WIDGETY, "sailing-1", "Stub Cruise Line",
+            "Balcony Cabin", List.of("Port A", "Port B"), true, netRate, CurrencyCode.INR, BigDecimal.ONE,
+            BigDecimal.valueOf(3), BigDecimal.ZERO);
+
+        UUID lineItemId = service.addCruiseLineItem(itineraryId, command);
+
+        ArgumentCaptor<CalculateSellRateCommand> priceCaptor = ArgumentCaptor.forClass(CalculateSellRateCommand.class);
+        verify(paymentsApi).calculateSellRate(priceCaptor.capture());
+        assertThat(priceCaptor.getValue().category()).isEqualTo(ProductCategory.CRUISE);
+
+        ArgumentCaptor<CruiseLineItem> lineItemCaptor = ArgumentCaptor.forClass(CruiseLineItem.class);
+        verify(cruiseLineItemRepository).save(lineItemCaptor.capture());
+        assertThat(lineItemCaptor.getValue().getLineItemId()).isEqualTo(lineItemId);
+        assertThat(lineItemCaptor.getValue().getCruiseLine()).isEqualTo("Stub Cruise Line");
+        // Ports are flattened as metadata on this single line item, not
+        // separate line items (§10.2.6) — one saved entity, multiple ports.
+        assertThat(lineItemCaptor.getValue().getPorts()).containsExactly("Port A", "Port B");
+        assertThat(lineItemCaptor.getValue().isPassengerDocumentsRequired()).isTrue();
+        assertThat(lineItemCaptor.getValue().getSellRate()).isEqualByComparingTo("41457.50");
+
+        ArgumentCaptor<CruiseLineItemAddedEvent> eventCaptor = ArgumentCaptor.forClass(CruiseLineItemAddedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().lineItemId()).isEqualTo(lineItemId);
+    }
+
+    @Test
+    void addingACruiseLineItemFailsForAnItineraryOwnedByAnotherConsultantBOK06() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID ownerConsultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, ownerConsultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        var command = new AddCruiseLineItemCommand(SupplierId.WIDGETY, "sailing-1", "Stub Cruise Line",
+            "Balcony Cabin", List.of("Port A"), false, new Money(BigDecimal.valueOf(35000), CurrencyCode.INR),
+            CurrencyCode.INR, BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> service.addCruiseLineItem(itineraryId, command))
+            .isInstanceOf(AccessDeniedException.class);
+        verify(cruiseLineItemRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void addingACruiseLineItemRejectsAnItineraryThatIsAlreadyAQuotationBOK06() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        itinerary.markAsQuotation();
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        var command = new AddCruiseLineItemCommand(SupplierId.WIDGETY, "sailing-1", "Stub Cruise Line",
+            "Balcony Cabin", List.of("Port A"), false, new Money(BigDecimal.valueOf(35000), CurrencyCode.INR),
+            CurrencyCode.INR, BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        assertThatThrownBy(() -> service.addCruiseLineItem(itineraryId, command))
+            .isInstanceOf(IllegalStateException.class);
+        verify(cruiseLineItemRepository, org.mockito.Mockito.never()).save(any());
     }
 
     @Test

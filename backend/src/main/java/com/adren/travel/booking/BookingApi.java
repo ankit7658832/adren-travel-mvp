@@ -103,6 +103,15 @@ public interface BookingApi {
     UUID addTransferLineItem(UUID itineraryId, AddTransferLineItemCommand command);
 
     /**
+     * Adds a Cruise line item to an itinerary (PRD §20.5, §10.2.6, BOK-06),
+     * priced through the same {@code PaymentsApi.calculateSellRate} pipeline
+     * under {@code ProductCategory.CRUISE}. Publishes {@link
+     * com.adren.travel.booking.event.CruiseLineItemAddedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    UUID addCruiseLineItem(UUID itineraryId, AddCruiseLineItemCommand command);
+
+    /**
      * Confirms a booking once a Stripe webhook (not a direct user request)
      * reports payment succeeded (PRD §12.4, FIN-11) — invoked by this
      * module's own listener on {@code payments.event.StripePaymentSucceededEvent},
