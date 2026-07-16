@@ -55,7 +55,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **BOK-17** — consolidate mixed currency line items to the consultant s sell currency at checkout
 - [x] **BOK-18** — recalculate price when traveler count changes after quotation but before booking
 - [x] **BOK-19** — generate a pnr searchable reference on every booking
-- [ ] **BOK-20** — deduplicate the same physical hotel property offered by two suppliers
+- [x] **BOK-20** — deduplicate the same physical hotel property offered by two suppliers
 - [x] **BOK-21** — integrate a stuba client stub for hotel search
 - [x] **BOK-22** — integrate a tbo client stub for hotel search
 - [x] **BOK-23** — integrate a transferz client stub for transfer search

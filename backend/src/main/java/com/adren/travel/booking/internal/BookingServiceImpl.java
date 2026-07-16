@@ -32,6 +32,7 @@ import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
 import com.adren.travel.shared.ProductCategory;
 import com.adren.travel.supplier.SupplierSearchApi;
+import com.adren.travel.supplier.SupplierSearchResult;
 import com.adren.travel.whitelabel.WhitelabelApi;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -81,13 +82,15 @@ class BookingServiceImpl implements BookingApi {
     private final ApplicationEventPublisher events;
     private final WhitelabelApi whitelabelApi;
     private final SupplierSearchApi supplierSearchApi;
+    private final HotelDedupService hotelDedupService;
     private final PaymentsApi paymentsApi;
 
     // backend-best-practices §4 flags >4-5 constructor dependencies as a
     // decomposition signal — this one is well past that (pre-existing,
     // grew one line-item repo at a time across BOK-03..07). Not refactored
-    // here (BOK-19 is a small addition, not the moment for that separate
-    // change) but worth flagging rather than silently adding a 14th param.
+    // here (BOK-19/BOK-20 are small additions, not the moment for that
+    // separate change) but worth flagging rather than silently adding
+    // another param without comment.
     BookingServiceImpl(ItineraryRepository itineraryRepository, TravelerProfileRepository travelerProfileRepository,
                         HotelLineItemRepository hotelLineItemRepository, FlightLineItemRepository flightLineItemRepository,
                         TransferLineItemRepository transferLineItemRepository,
@@ -97,7 +100,8 @@ class BookingServiceImpl implements BookingApi {
                         TravelPackageRepository travelPackageRepository, BookingRepository bookingRepository,
                         VoucherService voucherService,
                         ApplicationEventPublisher events, WhitelabelApi whitelabelApi,
-                        SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
+                        SupplierSearchApi supplierSearchApi, HotelDedupService hotelDedupService,
+                        PaymentsApi paymentsApi) {
         this.itineraryRepository = itineraryRepository;
         this.travelerProfileRepository = travelerProfileRepository;
         this.hotelLineItemRepository = hotelLineItemRepository;
@@ -111,6 +115,7 @@ class BookingServiceImpl implements BookingApi {
         this.voucherService = voucherService;
         this.events = events;
         this.whitelabelApi = whitelabelApi;
+        this.hotelDedupService = hotelDedupService;
         this.supplierSearchApi = supplierSearchApi;
         this.paymentsApi = paymentsApi;
     }
@@ -267,7 +272,13 @@ class BookingServiceImpl implements BookingApi {
         if (category != null && !category.isBlank() && !category.equalsIgnoreCase("hotel")) {
             return List.of();
         }
-        return supplierSearchApi.searchHotels(locationCode, checkIn, checkOut).stream()
+        // BOK-20: this alternate-selection panel is the actual "browse all
+        // options" surface a Consultant scans for duplicate listings — more
+        // visibly so than GeocodeAndSearchService's single auto-selected
+        // pin, so dedup applies here too, not only ahead of Default
+        // Selection.
+        List<SupplierSearchResult> rawOptions = supplierSearchApi.searchHotels(locationCode, checkIn, checkOut);
+        return hotelDedupService.deduplicate(rawOptions).stream()
             .map(result -> new AlternateOption(result.supplierId().name(), result.supplierRateId(),
                 result.propertyName(), result.roomType(), result.netRate().amount(), result.netRate().currency(),
                 result.rating()))

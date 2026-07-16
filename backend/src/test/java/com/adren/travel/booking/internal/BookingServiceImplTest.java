@@ -111,6 +111,8 @@ class BookingServiceImplTest {
     @Mock
     BookingRepository bookingRepository;
 
+    HotelDedupService hotelDedupService = new HotelDedupService();
+
     @Mock
     QuotationRepository quotationRepository;
 
@@ -130,7 +132,7 @@ class BookingServiceImplTest {
         service = new BookingServiceImpl(itineraryRepository, travelerProfileRepository, hotelLineItemRepository,
             flightLineItemRepository, transferLineItemRepository, cruiseLineItemRepository,
             activityLineItemRepository, quotationRepository, travelPackageRepository, bookingRepository,
-            voucherService, events, whitelabelApi, supplierSearchApi, paymentsApi);
+            voucherService, events, whitelabelApi, supplierSearchApi, hotelDedupService, paymentsApi);
     }
 
     // BOK-08: saveAsQuotation now requires at least one line item — stub a
@@ -533,6 +535,24 @@ class BookingServiceImplTest {
         assertThat(alternates.get(0).netRateAmount()).isEqualByComparingTo("5000.00");
         assertThat(alternates.get(0).netRateCurrency()).isEqualTo(CurrencyCode.INR);
         assertThat(alternates.get(0).rating()).isEqualTo(4.2);
+    }
+
+    @Test
+    void findAlternatesDeduplicatesTheSamePropertyAcrossSuppliersBOK20() {
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        LocalDate checkIn = LocalDate.now().plusDays(30);
+        LocalDate checkOut = checkIn.plusDays(3);
+        when(supplierSearchApi.searchHotels("Goa", checkIn, checkOut)).thenReturn(List.of(
+            new SupplierSearchResult(SupplierId.HOTELBEDS, "hb-1", "Taj Palace", "Deluxe",
+                new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), 4.0),
+            new SupplierSearchResult(SupplierId.STUBA, "st-1", "Taj Palace", "Standard",
+                new Money(BigDecimal.valueOf(4800), CurrencyCode.INR), 4.2)));
+
+        List<AlternateOption> alternates =
+            service.findAlternates(UUID.randomUUID(), "Goa", "hotel", checkIn, checkOut);
+
+        assertThat(alternates).hasSize(1);
+        assertThat(alternates.get(0).supplierId()).isEqualTo("STUBA"); // lower net rate wins the merge
     }
 
     @Test

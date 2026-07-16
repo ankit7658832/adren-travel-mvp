@@ -104,6 +104,11 @@ class BookingApiMethodSecurityTest {
         }
 
         @Bean
+        HotelDedupService hotelDedupService() {
+            return new HotelDedupService();
+        }
+
+        @Bean
         QuotationRepository quotationRepository() {
             return Mockito.mock(QuotationRepository.class);
         }
@@ -138,11 +143,12 @@ class BookingApiMethodSecurityTest {
                                TravelPackageRepository travelPackageRepository, BookingRepository bookingRepository,
                                VoucherService voucherService,
                                ApplicationEventPublisher publisher, WhitelabelApi whitelabelApi,
-                               SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
+                               SupplierSearchApi supplierSearchApi, HotelDedupService hotelDedupService,
+                               PaymentsApi paymentsApi) {
             return new BookingServiceImpl(repository, travelerProfileRepository, hotelLineItemRepository,
                 flightLineItemRepository, transferLineItemRepository, cruiseLineItemRepository,
                 activityLineItemRepository, quotationRepository, travelPackageRepository, bookingRepository,
-                voucherService, publisher, whitelabelApi, supplierSearchApi, paymentsApi);
+                voucherService, publisher, whitelabelApi, supplierSearchApi, hotelDedupService, paymentsApi);
         }
     }
 
