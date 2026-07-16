@@ -76,19 +76,26 @@ class BookingServiceImpl implements BookingApi {
     private final ActivityLineItemRepository activityLineItemRepository;
     private final QuotationRepository quotationRepository;
     private final TravelPackageRepository travelPackageRepository;
+    private final BookingRepository bookingRepository;
     private final VoucherService voucherService;
     private final ApplicationEventPublisher events;
     private final WhitelabelApi whitelabelApi;
     private final SupplierSearchApi supplierSearchApi;
     private final PaymentsApi paymentsApi;
 
+    // backend-best-practices §4 flags >4-5 constructor dependencies as a
+    // decomposition signal — this one is well past that (pre-existing,
+    // grew one line-item repo at a time across BOK-03..07). Not refactored
+    // here (BOK-19 is a small addition, not the moment for that separate
+    // change) but worth flagging rather than silently adding a 14th param.
     BookingServiceImpl(ItineraryRepository itineraryRepository, TravelerProfileRepository travelerProfileRepository,
                         HotelLineItemRepository hotelLineItemRepository, FlightLineItemRepository flightLineItemRepository,
                         TransferLineItemRepository transferLineItemRepository,
                         CruiseLineItemRepository cruiseLineItemRepository,
                         ActivityLineItemRepository activityLineItemRepository,
                         QuotationRepository quotationRepository,
-                        TravelPackageRepository travelPackageRepository, VoucherService voucherService,
+                        TravelPackageRepository travelPackageRepository, BookingRepository bookingRepository,
+                        VoucherService voucherService,
                         ApplicationEventPublisher events, WhitelabelApi whitelabelApi,
                         SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
         this.itineraryRepository = itineraryRepository;
@@ -100,6 +107,7 @@ class BookingServiceImpl implements BookingApi {
         this.activityLineItemRepository = activityLineItemRepository;
         this.quotationRepository = quotationRepository;
         this.travelPackageRepository = travelPackageRepository;
+        this.bookingRepository = bookingRepository;
         this.voucherService = voucherService;
         this.events = events;
         this.whitelabelApi = whitelabelApi;
@@ -157,7 +165,7 @@ class BookingServiceImpl implements BookingApi {
         // Itinerary's @Version Javadoc), before any wallet debit happens.
         lockForBooking(target.itineraryId());
 
-        UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
+        UUID bookingId = UUID.randomUUID();
 
         // FIN-07: this direct (non-Stripe) confirmBooking path is the
         // wallet/on-account payment method — Stripe payments instead go
@@ -169,7 +177,8 @@ class BookingServiceImpl implements BookingApi {
         paymentsApi.placeHold(new WalletHoldCommand(bookingId, target.consultantId(), totalSellPrice));
         paymentsApi.resolveHoldAsDebit(new WalletHoldCommand(bookingId, target.consultantId(), totalSellPrice));
 
-        return finalizeConfirmedBooking(bookingId, target.consultantId(), totalSellPrice);
+        return finalizeConfirmedBooking(
+            bookingId, target.itineraryId(), target.consultantId(), totalSellPrice, PaymentMethod.WALLET);
     }
 
     // BOK-13 — quotationOrPackageId is polymorphic: a booking can be
@@ -212,11 +221,27 @@ class BookingServiceImpl implements BookingApi {
     public UUID confirmBookingFromPaymentWebhook(UUID quotationOrPackageId, UUID consultantId, Money totalSellPrice) {
         // FIN-07: this Stripe path never touches the wallet — the customer
         // already paid by card, not wallet/credit.
-        UUID bookingId = UUID.randomUUID(); // simplified — a real Booking entity would be created/persisted here
-        return finalizeConfirmedBooking(bookingId, consultantId, totalSellPrice);
+        // BOK-16/BOK-19 scoping note: this path deliberately does not
+        // resolve quotationOrPackageId to a real itineraryId (see
+        // lockForBooking's Javadoc on why extending the concurrency guard
+        // here is a separate change) — the persisted Booking row's
+        // itineraryId is left null for bookings confirmed this way.
+        UUID bookingId = UUID.randomUUID();
+        return finalizeConfirmedBooking(bookingId, null, consultantId, totalSellPrice, PaymentMethod.STRIPE);
     }
 
-    private UUID finalizeConfirmedBooking(UUID bookingId, UUID consultantId, Money totalSellPrice) {
+    private UUID finalizeConfirmedBooking(UUID bookingId, UUID itineraryId, UUID consultantId, Money totalSellPrice,
+                                           PaymentMethod paymentMethod) {
+        // BOK-19: a fresh PNR is vanishingly unlikely to collide (32^8
+        // possibilities), but the unique constraint means a collision is
+        // detected, not silently overwritten — retry rather than trust luck.
+        String pnrSearchableRef = PnrGenerator.generate();
+        while (bookingRepository.existsByPnrSearchableRef(pnrSearchableRef)) {
+            pnrSearchableRef = PnrGenerator.generate();
+        }
+        bookingRepository.save(new Booking(bookingId, itineraryId, consultantId, totalSellPrice.amount(),
+            totalSellPrice.currency(), paymentMethod, pnrSearchableRef));
+
         // BOK-15: voucher generation happens synchronously, in the SAME
         // transactional scope as the booking confirmation itself — unlike
         // notification (deliberately async/fire-and-forget), a voucher is

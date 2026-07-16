@@ -109,6 +109,9 @@ class BookingServiceImplTest {
     ActivityLineItemRepository activityLineItemRepository;
 
     @Mock
+    BookingRepository bookingRepository;
+
+    @Mock
     QuotationRepository quotationRepository;
 
     @Mock
@@ -126,8 +129,8 @@ class BookingServiceImplTest {
     void setUp() {
         service = new BookingServiceImpl(itineraryRepository, travelerProfileRepository, hotelLineItemRepository,
             flightLineItemRepository, transferLineItemRepository, cruiseLineItemRepository,
-            activityLineItemRepository, quotationRepository, travelPackageRepository, voucherService, events,
-            whitelabelApi, supplierSearchApi, paymentsApi);
+            activityLineItemRepository, quotationRepository, travelPackageRepository, bookingRepository,
+            voucherService, events, whitelabelApi, supplierSearchApi, paymentsApi);
     }
 
     // BOK-08: saveAsQuotation now requires at least one line item — stub a
@@ -423,6 +426,53 @@ class BookingServiceImplTest {
             .isInstanceOf(com.adren.travel.booking.InventoryNoLongerAvailableException.class);
         verify(paymentsApi, org.mockito.Mockito.never()).placeHold(any());
         verify(events, org.mockito.Mockito.never()).publishEvent(any(BookingConfirmedEvent.class));
+    }
+
+    @Test
+    void confirmBookingPersistsABookingRowWithAPnrSearchableRefBOK19() {
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(consultantId);
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        UUID bookingId = service.confirmBooking(quotationId, price);
+
+        ArgumentCaptor<Booking> captor = ArgumentCaptor.forClass(Booking.class);
+        verify(bookingRepository).save(captor.capture());
+        assertThat(captor.getValue().getBookingId()).isEqualTo(bookingId);
+        assertThat(captor.getValue().getConsultantId()).isEqualTo(consultantId);
+        assertThat(captor.getValue().getPaymentMethod()).isEqualTo(PaymentMethod.WALLET);
+        assertThat(captor.getValue().getPnrSearchableRef()).isNotBlank();
+        assertThat(captor.getValue().getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+    }
+
+    @Test
+    void confirmBookingFromPaymentWebhookPersistsAStripePaymentMethodBookingBOK19() {
+        UUID consultantId = UUID.randomUUID();
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+
+        service.confirmBookingFromPaymentWebhook(UUID.randomUUID(), consultantId, price);
+
+        ArgumentCaptor<Booking> captor = ArgumentCaptor.forClass(Booking.class);
+        verify(bookingRepository).save(captor.capture());
+        assertThat(captor.getValue().getPaymentMethod()).isEqualTo(PaymentMethod.STRIPE);
+        assertThat(captor.getValue().getItineraryId()).isNull();
+    }
+
+    @Test
+    void confirmBookingRetriesPnrGenerationOnACollisionBOK19() {
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(consultantId);
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAs(Role.CONSULTANT, consultantId);
+        // First-generated PNR "collides"; retry must produce a save with a
+        // still-unique ref rather than giving up or overwriting silently.
+        when(bookingRepository.existsByPnrSearchableRef(any())).thenReturn(true, false);
+
+        service.confirmBooking(quotationId, price);
+
+        verify(bookingRepository, org.mockito.Mockito.times(2)).existsByPnrSearchableRef(any());
+        verify(bookingRepository).save(any());
     }
 
     @Test
