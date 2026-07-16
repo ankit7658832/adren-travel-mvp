@@ -1,8 +1,10 @@
 # ADREN TRAVEL — Phases: Where We Are, What's Next
 
-**Purpose:** the practical scheduling/sequencing reference — consolidates what's currently scattered across the PRD and the two story catalogues. For *why* the system is shaped the way it is, see `doc/architecture.md`. For the story catalogues themselves, see `doc/user-stories/mvp-mock-stories.md` (142 stories) and `doc/user-stories/production-stories.md` (83 stories), or their per-file split under `doc/user-stories/mvp-mock/` and `doc/user-stories/production/`.
+**Purpose:** the practical scheduling/sequencing reference — consolidates what's currently scattered across the PRD and the two story catalogues. For *why* the system is shaped the way it is, see `doc/architecture.md`. For the story catalogues themselves, see `doc/user-stories/mvp-mock-stories.md` and `doc/user-stories/production-stories.md` (83 stories), or their per-file split under `doc/user-stories/mvp-mock/` (149 stories, see below) and `doc/user-stories/production/`.
 
 **Methodology note:** the epic-by-epic ordering below was not previously worked out anywhere in the repo — it's derived here from every story's `dependencies:` frontmatter field via topological sort (225 stories, both phases combined, since production stories frequently depend on mock-phase stories — see §3). One genuine cycle was found in the process, in the `BOK-13`/`BOK-14`/`FIN-07`/`FIN-08` cluster — it has since been fixed at the source (the story files' `dependencies:` frontmatter), not worked around here; see §4 for what changed and why. The full 225-story graph is now confirmed acyclic (re-verified after the fix, not assumed).
+
+**Update (Stage 3, Step B, 2026-07-16):** 7 new mock-phase stories (`BOK-21`–`BOK-27`) were added after this graph was verified — a supplier-integration gap surfaced during Stage 3 scoping: `BOK-20` (hotel dedup) and `HRD-12` (sync cadence tuning) already referenced `StubaClient`/`TboClient`/a content-sync mechanism in their own text as if built, but no story ever built the STUBA/TBO/Transferz/Widgety/HBActivities client stubs, a circuit-breaker story (PRD §24.2), or a static-content sync/caching story. `BOK-20` and `HRD-12`'s `dependencies:` were updated accordingly (see their files). The new stories were checked by hand for cycles (none — `BOK-21`–`BOK-25` are leaves, `BOK-26`/`BOK-27` depend only on them) but **the full 232-story graph has not been mechanically re-verified** with Kahn's algorithm the way the original 225 were — flagged here rather than silently asserted. Mock-phase totals below (149 stories / 748 points) include these 7 additions; the "225 stories" / "142 mock stories" figures elsewhere in this section predate them.
 
 ---
 
@@ -10,7 +12,7 @@
 
 Two phases, per PRD Part 8 (Release Plan) and the two story catalogues' own framing:
 
-- **Mock (MVP / Phase 1)** — 142 stories, 725 story points, across 10 epics. Builds the full functional platform (PRD §4's 18 in-scope areas) against sandboxed/mocked externals: LocalStack instead of real AWS, illustrative tax rates pending counsel sign-off, a mocked Meta ad account connection instead of the real Marketing API, Groq without a production failover path. PRD §8 gives the high-level release order (Foundation → Booking core → Financial layer → AI layer → Local DMC+BYOS → Ads/Campaign → Hardening); §3 below derives the actual per-story build order underneath that high-level shape.
+- **Mock (MVP / Phase 1)** — 149 stories, 748 story points, across 10 epics (originally 142/725; +7 stories/+23 points added in Stage 3, Step B — see the methodology note above). Builds the full functional platform (PRD §4's 18 in-scope areas) against sandboxed/mocked externals: LocalStack instead of real AWS, illustrative tax rates pending counsel sign-off, a mocked Meta ad account connection instead of the real Marketing API, Groq without a production failover path. PRD §8 gives the high-level release order (Foundation → Booking core → Financial layer → AI layer → Local DMC+BYOS → Ads/Campaign → Hardening); §3 below derives the actual per-story build order underneath that high-level shape.
 - **Production** — 83 stories, 476 story points, across 8 epics. Not new features — it's cutting every mocked/illustrative/sandboxed piece over to the real thing: real supplier sandbox→production integrations (`SUP-*`), a real swappable/failover LLM provider (`LLM-*`), the real Meta Marketing API (`MADS-*`), real AWS infra (`PINF-*`), security hardening and an external pentest (`SEC-*`), finalized tax/legal compliance (`CMP-*`), load testing (`PERF-*`), and production observability (`OBS-*`).
 
 ## 2. Mock-phase epic order
@@ -57,7 +59,7 @@ No `PROGRESS.md` or equivalent tracker currently exists anywhere in the repo (`d
 
 Until that exists, mock-complete should be checked against:
 
-- [ ] All 142 mock-phase stories' `status:` frontmatter is `done` (or an explicitly justified `wont-do` with reasoning, not silently dropped) — see §7's progress table, currently seeded at 0%.
+- [ ] All 149 mock-phase stories' `status:` frontmatter is `done` (or an explicitly justified `wont-do` with reasoning, not silently dropped) — see §7's progress table, currently seeded at 0%.
 - [ ] Every module listed in `backend/README.md`'s table (plus `security`, per `doc/architecture.md` §8's discrepancy note) has moved off "package-info stub" — i.e., `ai`, `payments`, `whitelabel`, `ads`, `compliance` each have a real `Api` implementation, not just a module boundary declaration.
 - [ ] `./gradlew check` passes, including `ModularityTests.verify()` — module boundaries hold under the fully-built system, not just the current two-module reference implementation.
 - [ ] Flow A (search → itinerary → quotation, PRD §9.1), Flow B (quotation → package → publish, PRD §9.1), and Flow C (direct booking → payment → voucher, PRD §9.1) are each verified manually end-to-end at least once against the mocked/sandboxed externals — not just unit-tested in isolation.
@@ -88,23 +90,48 @@ Every `⚠️ NEEDS CLARIFICATION` flag in the story catalogues, consolidated in
 
 ## 7. Living progress-summary table
 
-Seeded at 0% — this is the ongoing tracker. Update the Status column as stories close; once `doc/user-stories/mvp-mock/PROGRESS.md` (§5) exists, link to it here instead of maintaining counts by hand in both places.
+This is the ongoing tracker, now backed by `doc/user-stories/mvp-mock/PROGRESS.md` (created in Stage 1; §5's "gap" note above predates it and is left as historical record). Update as stories close.
 
-### Mock phase (142 stories / 725 points)
+### Mock phase (149 stories / 748 points, updated Stage 3 Step A — 2026-07-16)
 
 | Epic | Stories | Points | Status |
 |---|---|---|---|
-| Foundation | 24 | 124 | 0% (0/24) |
-| Booking Core | 20 | 98 | 0% (0/20) |
-| Financial Layer | 18 | 95 | 0% (0/18) |
+| Foundation | 24 | 124 | 100% (24/24) |
+| Booking Core | 27 | 121 | 37% (10/27, 47 pts) — +7 stories/+23 pts added Stage 3 Step B (`BOK-21`–`BOK-27`) |
+| Financial Layer | 18 | 95 | 50% (9/18, 46 pts) |
 | AI Layer | 13 | 72 | 0% (0/13) |
 | Local DMC + BYOS | 11 | 57 | 0% (0/11) |
 | Ads/Campaign Management | 15 | 80 | 0% (0/15) |
-| Hardening | 13 | 76 | 0% (0/13) |
-| Frontend Shell | 10 | 55 | 0% (0/10) |
+| Hardening | 13 | 76 | 8% (1/13, 8 pts) |
+| Frontend Shell | 10 | 55 | 20% (2/10, 10 pts) |
 | DevOps/Infra | 9 | 30 | 0% (0/9) |
 | Test Infrastructure | 9 | 38 | 0% (0/9) |
-| **Total** | **142** | **725** | **0%** |
+| **Total** | **149** | **748** | **31% (46/149 stories, 235/748 pts)** |
+
+## 7a. Stage 1 & Stage 2 actual velocity, and a revised remaining-timeline estimate (Stage 3, Step A)
+
+**Source:** git commit history, not estimates — `git log --pretty=format:"%h %ai %s"` across the `main`, `AD-stage2-hotel-verticle-slice`, and `AD-booking-stage` branches.
+
+**Stage 1 (Foundation epic build-out):**
+- Commits: `658640f` (2026-07-14 23:15) — seeding `PROGRESS.md` — through `a7a8e40` (2026-07-15 09:32), the last Foundation-epic story commit.
+- Delivered **26 stories / 134 points** — all 24 Foundation stories (124 pts) **plus 2 Frontend Shell stories** (`FES-01`, `FES-03`, 10 pts) that `doc/phases.md` §2 already flags as genuinely interleaved with Foundation, not a separate later push. The "Foundation's 124" figure undercounts what Stage 1 actually shipped by 10 points.
+- Calendar-day span: 2026-07-14 → 2026-07-15 (2 distinct dates). Wall-clock elapsed: ~10h17m.
+
+**Stage 2 (`AD-stage2-hotel-verticle-slice` + `AD-booking-stage`, ending at the "Stage 2 checkpoint" commit):**
+- Commits: `93e5172` (2026-07-15 10:22) through `e2f78b8` (2026-07-16 01:16, "Stage 2 checkpoint: full vertical-slice e2e test over real HTTP").
+- Delivered **20 stories / 101 points**: `BOK-01,02,03,08,09,10,12,13,14,15` (10 stories, 47 pts), `FIN-01,02,03,04,05,06,07,10,11` (9 stories, 46 pts), `HRD-01` (1 story, 8 pts).
+- Calendar-day span: 2026-07-15 → 2026-07-16 (2 distinct dates). Wall-clock elapsed: ~14h54m.
+
+**Combined actual delivery:** 46 stories / **235 points**, wall-clock span 2026-07-14 23:15 → 2026-07-16 01:16 = **~26h (≈1.08 days), across 3 calendar dates**.
+
+**⚠️ Caveat before using this as a velocity figure:** both stages were built as continuous, compressed AI-assisted implementation sessions (evenings/overnight, no multi-day gaps, no team-of-humans sprint cadence). A literal points/week extrapolation from ~26 hours of wall-clock time is **not a credible planning number for the remaining 513 points** — it would predict finishing the rest of the mock phase in about a day, which contradicts the whole premise of "sprint velocity." Reporting it anyway, as requested, with both a wall-clock and a calendar-day-count reading so the distortion is visible rather than hidden:
+
+| Basis | Elapsed | Points | Velocity |
+|---|---|---|---|
+| Wall-clock hours | ~26.0h (1.08 days) | 235 | 216.8 pts/day → **~1,518 pts/week** |
+| Calendar-date count (crude) | 3 distinct dates | 235 | 78.3 pts/day → **~548 pts/week** |
+
+**Revised remaining-timeline estimate:** Total mock scope is now 748 points (149 stories, including Stage 3 Step B's +23 pts). Completed: 235 points. **Remaining: 513 points** (not the ~546 cited going into Stage 3 — that figure predates both the exact Stage 2 tally and Step B's 7 new stories). At the literal wall-clock rate above, 513 points ≈ **8.6 more hours** (calendar-date-count basis: ≈6.5 more calendar days) to finish the entire remaining mock phase — a number that should be read as "this project is being built at AI-agent implementation speed, not staffed-team speed," not as a real staffing commitment. If a human-team-comparable planning number is wanted instead, that requires a policy input (assumed sprint length, team size, etc.) this document can't derive from commit timestamps alone — flagging rather than guessing at one.
 
 ### Production phase (83 stories / 476 points)
 
@@ -120,4 +147,4 @@ Seeded at 0% — this is the ongoing tracker. Update the Status column as storie
 | Production Observability | 8 | 38 | 0% (0/8) |
 | **Total** | **83** | **476** | **0%** |
 
-Per-epic story counts/points independently cross-checked against the Summary tables in `mvp-mock-stories.md` and `production-stories.md` — they match exactly, no discrepancy found there.
+Per-epic story counts/points independently cross-checked against the Summary tables in `mvp-mock-stories.md` and `production-stories.md` as of Stage 1 — they matched exactly then. **Known gap as of Stage 3, Step B:** `mvp-mock-stories.md` and `mvp-mock-stories.csv` (the consolidated single-file rollups) were **not** updated with `BOK-21`–`BOK-27` — only the canonical per-file stories under `doc/user-stories/mvp-mock/` and this document were. The per-file stories are the source of truth `PROGRESS.md` tracks against; the consolidated rollups are now stale by 7 stories/23 points until someone syncs them.

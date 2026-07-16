@@ -4,6 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.modulith.Modulithic;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * ADREN TRAVEL — B2B Travel Booking Platform.
@@ -25,6 +26,7 @@ import org.springframework.modulith.Modulithic;
 @SpringBootApplication
 @Modulithic(systemName = "ADREN TRAVEL")
 @ConfigurationPropertiesScan
+@EnableScheduling
 public class AdrenTravelApplication {
 
     public static void main(String[] args) {

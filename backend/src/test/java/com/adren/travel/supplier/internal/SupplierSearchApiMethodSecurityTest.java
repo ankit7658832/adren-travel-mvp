@@ -6,6 +6,8 @@ import com.adren.travel.supplier.SupplierId;
 import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.supplier.UpdateSupplierCredentialCommand;
 import com.adren.travel.supplier.internal.hotelbeds.HotelbedsClient;
+import com.adren.travel.supplier.internal.stuba.StubaClient;
+import com.adren.travel.supplier.internal.tbo.TboClient;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -50,6 +52,26 @@ class SupplierSearchApiMethodSecurityTest {
         }
 
         @Bean
+        StubaClient stubaClient(WebClient.Builder builder) {
+            return new StubaClient(builder);
+        }
+
+        @Bean
+        TboClient tboClient(WebClient.Builder builder) {
+            return new TboClient(builder);
+        }
+
+        @Bean
+        SupplierCircuitBreakerGateway supplierCircuitBreakerGateway() {
+            return new SupplierCircuitBreakerGateway();
+        }
+
+        @Bean
+        SupplierContentCacheRepository supplierContentCacheRepository() {
+            return Mockito.mock(SupplierContentCacheRepository.class);
+        }
+
+        @Bean
         SupplierCredentialRepository supplierCredentialRepository() {
             return Mockito.mock(SupplierCredentialRepository.class);
         }
@@ -65,10 +87,14 @@ class SupplierSearchApiMethodSecurityTest {
         }
 
         @Bean
-        SupplierSearchApi supplierSearchApi(HotelbedsClient hotelbedsClient, SupplierCredentialRepository repo,
+        SupplierSearchApi supplierSearchApi(HotelbedsClient hotelbedsClient, StubaClient stubaClient,
+                                             TboClient tboClient, SupplierCircuitBreakerGateway circuitBreakerGateway,
+                                             SupplierContentCacheRepository contentCacheRepository,
+                                             SupplierCredentialRepository repo,
                                              SupplierCredentialAuditLogRepository auditRepo,
                                              SupplierSecretsService supplierSecretsService) {
-            return new SupplierAggregationService(hotelbedsClient, repo, auditRepo, supplierSecretsService);
+            return new SupplierAggregationService(hotelbedsClient, stubaClient, tboClient, circuitBreakerGateway,
+                contentCacheRepository, repo, auditRepo, supplierSecretsService);
         }
     }
 
