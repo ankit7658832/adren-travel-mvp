@@ -7,6 +7,7 @@ import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
+import com.adren.travel.booking.ConsolidateCheckoutTotalCommand;
 import com.adren.travel.shared.Money;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -130,5 +131,16 @@ class ItineraryController {
     void updateActivityHeadcount(@PathVariable UUID itineraryId, @PathVariable UUID lineItemId,
                                   @RequestBody UpdateActivityHeadcountRequest request) {
         bookingApi.updateActivityHeadcount(itineraryId, lineItemId, request.headcount());
+    }
+
+    /**
+     * PRD §23.1 Edge Case #2 — consolidates the itinerary's line items into
+     * one total in the requested sell currency (BOK-17), for the checkout
+     * screen to call before {@code POST .../bookings}.
+     */
+    @PostMapping("/{itineraryId}/checkout-total")
+    Money consolidateCheckoutTotal(@PathVariable UUID itineraryId, @Valid @RequestBody ConsolidateCheckoutTotalRequest request) {
+        return bookingApi.consolidateCheckoutTotal(new ConsolidateCheckoutTotalCommand(
+            itineraryId, request.targetSellCurrency(), request.ratesToTargetCurrency()));
     }
 }

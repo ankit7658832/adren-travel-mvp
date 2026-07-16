@@ -7,6 +7,7 @@ import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
+import com.adren.travel.booking.ConsolidateCheckoutTotalCommand;
 import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.PackageView;
@@ -26,6 +27,7 @@ import com.adren.travel.payments.PaymentsApi;
 import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.WalletHoldCommand;
 import com.adren.travel.security.CurrentPrincipal;
+import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
 import com.adren.travel.shared.ProductCategory;
 import com.adren.travel.supplier.SupplierSearchApi;
@@ -37,6 +39,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -387,6 +390,44 @@ class BookingServiceImpl implements BookingApi {
         }
         lineItem.updateHeadcount(newHeadcount);
         activityLineItemRepository.save(lineItem);
+    }
+
+    @Override
+    public Money consolidateCheckoutTotal(ConsolidateCheckoutTotalCommand command) {
+        UUID itineraryId = command.itineraryId();
+        CurrencyCode target = command.targetSellCurrency();
+
+        List<Money> lineItemSellAmounts = new java.util.ArrayList<>();
+        hotelLineItemRepository.findByItineraryId(itineraryId)
+            .forEach(li -> lineItemSellAmounts.add(new Money(li.getSellRate(), li.getSellCurrency())));
+        flightLineItemRepository.findByItineraryId(itineraryId)
+            .forEach(li -> lineItemSellAmounts.add(new Money(li.getSellRate(), li.getSellCurrency())));
+        transferLineItemRepository.findByItineraryId(itineraryId)
+            .forEach(li -> lineItemSellAmounts.add(new Money(li.getSellRate(), li.getSellCurrency())));
+        cruiseLineItemRepository.findByItineraryId(itineraryId)
+            .forEach(li -> lineItemSellAmounts.add(new Money(li.getSellRate(), li.getSellCurrency())));
+        activityLineItemRepository.findByItineraryId(itineraryId)
+            .forEach(li -> lineItemSellAmounts.add(new Money(li.getSellRate(), li.getSellCurrency())));
+
+        Money total = Money.zero(target);
+        for (Money amount : lineItemSellAmounts) {
+            if (amount.currency() == target) {
+                total = total.plus(amount);
+                continue;
+            }
+            // PRD §23.1 Edge Case #2: a line item in a currency other than
+            // the target must never be silently added as-is (that's
+            // exactly the mixed-currency total this story exists to
+            // prevent) — a missing rate is a hard failure, not a fallback.
+            BigDecimal rate = command.ratesToTargetCurrency().get(amount.currency());
+            if (rate == null) {
+                throw new IllegalArgumentException(
+                    "No conversion rate supplied for " + amount.currency() + " -> " + target
+                        + "; cannot consolidate itinerary " + itineraryId + " to a single-currency total");
+            }
+            total = total.plus(amount.convertTo(target, rate));
+        }
+        return total;
     }
 
     // PRD §22.3 T4 / BOK-08: once saved as a Quotation, an itinerary is

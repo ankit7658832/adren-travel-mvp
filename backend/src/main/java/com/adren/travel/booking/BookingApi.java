@@ -131,6 +131,18 @@ public interface BookingApi {
     void updateActivityHeadcount(UUID itineraryId, UUID lineItemId, int newHeadcount);
 
     /**
+     * Consolidates an itinerary's (possibly mixed-sell-currency) line items
+     * into one total in the Consultant's sell currency (PRD §23.1 Edge Case
+     * #2, BOK-17) — the checkout screen calls this to compute the value it
+     * then passes as {@link #confirmBooking}'s {@code totalSellPrice},
+     * rather than {@code confirmBooking} itself performing conversion
+     * inline (its signature is an existing, already-exercised public
+     * contract; this stays a separate, composable step upstream of it).
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    Money consolidateCheckoutTotal(ConsolidateCheckoutTotalCommand command);
+
+    /**
      * Confirms a booking once a Stripe webhook (not a direct user request)
      * reports payment succeeded (PRD §12.4, FIN-11) — invoked by this
      * module's own listener on {@code payments.event.StripePaymentSucceededEvent},

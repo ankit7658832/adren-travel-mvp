@@ -7,6 +7,7 @@ import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.CabinClass;
+import com.adren.travel.booking.ConsolidateCheckoutTotalCommand;
 import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.MealPlan;
@@ -1000,6 +1001,58 @@ class BookingServiceImplTest {
         assertThatThrownBy(() -> service.updateActivityHeadcount(itineraryId, lineItemId, 6))
             .isInstanceOf(IllegalStateException.class);
         verify(activityLineItemRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void consolidateCheckoutTotalSumsSameCurrencyLineItemsWithoutConversionBOK17() {
+        UUID itineraryId = UUID.randomUUID();
+        HotelLineItem hotel = new HotelLineItem(UUID.randomUUID(), itineraryId, SupplierId.HOTELBEDS, "r1",
+            "Taj", "Deluxe", MealPlan.BB, Instant.now(), BigDecimal.valueOf(100), CurrencyCode.INR,
+            BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.valueOf(1000), CurrencyCode.INR, BigDecimal.ONE);
+        FlightLineItem flight = new FlightLineItem(UUID.randomUUID(), itineraryId, SupplierId.MYSTIFLY, "f1",
+            "AI", "AI101", CabinClass.ECONOMY, "23kg", BigDecimal.valueOf(100), CurrencyCode.INR,
+            BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.valueOf(500), CurrencyCode.INR, BigDecimal.ONE);
+        when(hotelLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of(hotel));
+        when(flightLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of(flight));
+
+        Money total = service.consolidateCheckoutTotal(
+            new ConsolidateCheckoutTotalCommand(itineraryId, CurrencyCode.INR, Map.of()));
+
+        assertThat(total).isEqualTo(new Money(BigDecimal.valueOf(1500), CurrencyCode.INR));
+    }
+
+    @Test
+    void consolidateCheckoutTotalConvertsAMixedCurrencyLineItemUsingTheSuppliedRateBOK17() {
+        UUID itineraryId = UUID.randomUUID();
+        HotelLineItem inrHotel = new HotelLineItem(UUID.randomUUID(), itineraryId, SupplierId.HOTELBEDS, "r1",
+            "Taj", "Deluxe", MealPlan.BB, Instant.now(), BigDecimal.valueOf(100), CurrencyCode.INR,
+            BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.valueOf(1000), CurrencyCode.INR, BigDecimal.ONE);
+        // A BYOS supplier's line item priced (sold) in AED, not INR — the
+        // exact PRD §23.1 Edge Case #2 scenario.
+        HotelLineItem aedHotel = new HotelLineItem(UUID.randomUUID(), itineraryId, SupplierId.BYOS, "r2",
+            "Burj Suite", "Suite", MealPlan.BB, Instant.now(), BigDecimal.valueOf(100), CurrencyCode.AED,
+            BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.valueOf(100), CurrencyCode.AED, BigDecimal.ONE);
+        when(hotelLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of(inrHotel, aedHotel));
+
+        Money total = service.consolidateCheckoutTotal(new ConsolidateCheckoutTotalCommand(
+            itineraryId, CurrencyCode.INR, Map.of(CurrencyCode.AED, BigDecimal.valueOf(23))));
+
+        // 1000 INR + (100 AED * 23) = 1000 + 2300 = 3300 INR — one
+        // consolidated total, never a mixed-currency figure.
+        assertThat(total).isEqualTo(new Money(BigDecimal.valueOf(3300), CurrencyCode.INR));
+    }
+
+    @Test
+    void consolidateCheckoutTotalFailsLoudlyWhenARequiredConversionRateIsMissingBOK17() {
+        UUID itineraryId = UUID.randomUUID();
+        HotelLineItem aedHotel = new HotelLineItem(UUID.randomUUID(), itineraryId, SupplierId.BYOS, "r2",
+            "Burj Suite", "Suite", MealPlan.BB, Instant.now(), BigDecimal.valueOf(100), CurrencyCode.AED,
+            BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.valueOf(100), CurrencyCode.AED, BigDecimal.ONE);
+        when(hotelLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of(aedHotel));
+
+        assertThatThrownBy(() -> service.consolidateCheckoutTotal(
+            new ConsolidateCheckoutTotalCommand(itineraryId, CurrencyCode.INR, Map.of())))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
