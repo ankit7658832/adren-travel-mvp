@@ -143,6 +143,17 @@ public interface BookingApi {
     Money consolidateCheckoutTotal(ConsolidateCheckoutTotalCommand command);
 
     /**
+     * Records a traveler-count change on an existing Quotation (PRD §23.1
+     * Edge Case #3, BOK-18) — blocked once the underlying itinerary has
+     * reached BOOKED (the "before booking" boundary the story's AC names).
+     * Resets the Quotation's FX/price validity window to a fresh one from
+     * now, so a stale window can never silently carry over past this
+     * change. Publishes {@link com.adren.travel.booking.event.QuotationRecalculatedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    void recalculateQuotation(UUID quotationId, int newTravelerCount);
+
+    /**
      * Confirms a booking once a Stripe webhook (not a direct user request)
      * reports payment succeeded (PRD §12.4, FIN-11) — invoked by this
      * module's own listener on {@code payments.event.StripePaymentSucceededEvent},

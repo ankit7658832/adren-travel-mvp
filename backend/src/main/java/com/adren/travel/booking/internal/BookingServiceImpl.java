@@ -21,6 +21,7 @@ import com.adren.travel.booking.InventoryNoLongerAvailableException;
 import com.adren.travel.booking.event.TransferLineItemAddedEvent;
 import com.adren.travel.booking.event.PackageCreatedEvent;
 import com.adren.travel.booking.event.PackagePublishedEvent;
+import com.adren.travel.booking.event.QuotationRecalculatedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.PaymentsApi;
@@ -428,6 +429,32 @@ class BookingServiceImpl implements BookingApi {
             total = total.plus(amount.convertTo(target, rate));
         }
         return total;
+    }
+
+    @Override
+    @Transactional
+    public void recalculateQuotation(UUID quotationId, int newTravelerCount) {
+        Quotation quotation = quotationRepository.findById(quotationId)
+            .orElseThrow(() -> new IllegalArgumentException("No quotation: " + quotationId));
+        Itinerary itinerary = itineraryRepository.findById(quotation.getItineraryId())
+            .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + quotation.getItineraryId()));
+        CurrentPrincipal.resolveTenantScope(itinerary.getConsultantId());
+        requireActiveUnlessSuperAdmin(itinerary.getConsultantId());
+
+        // PRD §23.1 Edge Case #3's "after Quotation but before booking"
+        // boundary — BOK-16's real Itinerary.status transition to BOOKED
+        // is the authoritative signal here, not Quotation's own
+        // convertedToBookingId field (nothing in this codebase sets it).
+        if (itinerary.getStatus() == ItineraryStatus.BOOKED) {
+            throw new IllegalStateException(
+                "Cannot recalculate quotation " + quotationId + ": itinerary is already BOOKED");
+        }
+
+        quotation.recalculate(newTravelerCount, Instant.now().plus(QUOTATION_VALIDITY_WINDOW));
+        quotationRepository.save(quotation);
+
+        events.publishEvent(new QuotationRecalculatedEvent(
+            quotationId, quotation.getItineraryId(), itinerary.getConsultantId(), newTravelerCount));
     }
 
     // PRD §22.3 T4 / BOK-08: once saved as a Quotation, an itinerary is

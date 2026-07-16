@@ -20,6 +20,7 @@ import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
 import com.adren.travel.booking.event.TransferLineItemAddedEvent;
 import com.adren.travel.booking.event.PackageCreatedEvent;
 import com.adren.travel.booking.event.PackagePublishedEvent;
+import com.adren.travel.booking.event.QuotationRecalculatedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.FxRateSnapshot;
@@ -1053,6 +1054,49 @@ class BookingServiceImplTest {
         assertThatThrownBy(() -> service.consolidateCheckoutTotal(
             new ConsolidateCheckoutTotalCommand(itineraryId, CurrencyCode.INR, Map.of())))
             .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void recalculateQuotationUpdatesTravelerCountAndPublishesTheEventBOK18() {
+        UUID consultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(consultantId);
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        service.recalculateQuotation(quotationId, 5);
+
+        ArgumentCaptor<QuotationRecalculatedEvent> captor = ArgumentCaptor.forClass(QuotationRecalculatedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().quotationId()).isEqualTo(quotationId);
+        assertThat(captor.getValue().newTravelerCount()).isEqualTo(5);
+    }
+
+    @Test
+    void recalculateQuotationIsBlockedOnceTheItineraryIsBookedBOK18() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID quotationId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary bookedItinerary = new Itinerary(itineraryId, consultantId, null);
+        bookedItinerary.markAsQuotation();
+        bookedItinerary.markAsBooked();
+        when(quotationRepository.findById(quotationId)).thenReturn(
+            Optional.of(new Quotation(quotationId, itineraryId, Instant.now().plusSeconds(3600))));
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(bookedItinerary));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        assertThatThrownBy(() -> service.recalculateQuotation(quotationId, 5))
+            .isInstanceOf(IllegalStateException.class);
+        verify(events, org.mockito.Mockito.never()).publishEvent(any(QuotationRecalculatedEvent.class));
+    }
+
+    @Test
+    void recalculateQuotationFailsForAnItineraryOwnedByAnotherConsultantBOK18() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID quotationId = stubQuotationResolvingTo(ownerConsultantId);
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> service.recalculateQuotation(quotationId, 5))
+            .isInstanceOf(AccessDeniedException.class);
+        verify(events, org.mockito.Mockito.never()).publishEvent(any(QuotationRecalculatedEvent.class));
     }
 
     @Test
