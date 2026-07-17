@@ -18,7 +18,14 @@ import java.util.UUID;
  * preference framing in the prompt ("family-friendly", "budget-conscious")
  * — it is never the source of which candidates are eligible, only how the
  * model is asked to rank/describe them. {@code budgetLimit} is nullable —
- * no budget constraint if absent.
+ * no budget constraint if absent. {@code hasExistingHotelSelection}
+ * (AI-03, PRD §9.1 Flow A step 7/§21.2) is caller-computed by the Booking
+ * module (the only module that can see the itinerary's existing line
+ * items — {@code ai} never reaches into {@code booking}'s data) — when
+ * {@code true}, this is a "Complete with AI" call on an itinerary that
+ * already has a hotel selection: the hotel category is not a gap, so
+ * {@link AiApi#generateItinerary} must not call Groq or propose a
+ * replacement, only record that the existing selection was respected.
  */
 public record GenerateItineraryCommand(
     UUID consultantId,
@@ -27,7 +34,8 @@ public record GenerateItineraryCommand(
     LocalDate checkIn,
     LocalDate checkOut,
     String naturalLanguageRequest,
-    Money budgetLimit
+    Money budgetLimit,
+    boolean hasExistingHotelSelection
 ) {
 
     public GenerateItineraryCommand {

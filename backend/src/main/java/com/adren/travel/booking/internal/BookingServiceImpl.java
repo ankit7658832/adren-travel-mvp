@@ -185,12 +185,33 @@ class BookingServiceImpl implements BookingApi {
 
         AiItineraryGenerationResult result = aiApi.generateItinerary(new com.adren.travel.ai.GenerateItineraryCommand(
             itinerary.getConsultantId(), itineraryId, command.locationCode(), command.checkIn(), command.checkOut(),
-            command.naturalLanguageRequest(), command.budgetLimit()));
+            command.naturalLanguageRequest(), command.budgetLimit(), false));
 
         // AI-06's approval gate (Itinerary.markAsQuotation) checks
         // aiGenerated/aiApproved — only record aiGenerated on an actual
         // suggestion, never on a NoViableSuggestion outcome (nothing was
         // suggested, so nothing needs approval before Quotation).
+        if (result instanceof AiItinerarySuggestion suggestion) {
+            itinerary.markAiGenerated(suggestion.auditLogId());
+            itineraryRepository.save(itinerary);
+        }
+        return result;
+    }
+
+    @Override
+    @Transactional
+    public AiItineraryGenerationResult completeItineraryWithAi(UUID itineraryId, GenerateAiSuggestionCommand command) {
+        Itinerary itinerary = requireOwnedDraftItinerary(itineraryId);
+
+        // AI-03: the only signal the ai module needs to respect an
+        // existing selection — computed here since booking is the only
+        // module that can see the itinerary's line items.
+        boolean hasExistingHotelSelection = !hotelLineItemRepository.findByItineraryId(itineraryId).isEmpty();
+
+        AiItineraryGenerationResult result = aiApi.generateItinerary(new com.adren.travel.ai.GenerateItineraryCommand(
+            itinerary.getConsultantId(), itineraryId, command.locationCode(), command.checkIn(), command.checkOut(),
+            command.naturalLanguageRequest(), command.budgetLimit(), hasExistingHotelSelection));
+
         if (result instanceof AiItinerarySuggestion suggestion) {
             itinerary.markAiGenerated(suggestion.auditLogId());
             itineraryRepository.save(itinerary);

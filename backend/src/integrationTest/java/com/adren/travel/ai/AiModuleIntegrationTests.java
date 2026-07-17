@@ -79,7 +79,7 @@ class AiModuleIntegrationTests {
         UUID itineraryId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
         var command = new GenerateItineraryCommand(consultantId, itineraryId, "GOA",
-            LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "Anything at all", null);
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "Anything at all", null, false);
 
         scenario.stimulate(() -> {
                 try {
@@ -102,7 +102,7 @@ class AiModuleIntegrationTests {
         UUID itineraryId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
         var command = new GenerateItineraryCommand(consultantId, itineraryId, "GOA",
-            LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "Anything at all", null);
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "Anything at all", null, false);
 
         org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
             () -> aiApi.generateItinerary(command));
@@ -119,12 +119,34 @@ class AiModuleIntegrationTests {
     }
 
     @Test
+    void aCompleteWithAiCallOnAnItineraryWithAnExistingHotelSelectionNeverReachesGroqAI03() {
+        UUID consultantId = UUID.randomUUID();
+        UUID itineraryId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        var command = new GenerateItineraryCommand(consultantId, itineraryId, "GOA",
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "Anything at all", null, true);
+
+        // Unlike the GROQ_ERROR tests above, this genuinely does NOT throw
+        // — hasExistingHotelSelection=true short-circuits before any real
+        // Groq HTTP call, so there is nothing here to fail authentication.
+        AiItineraryGenerationResult result = aiApi.generateItinerary(command);
+
+        assertThat(result).isInstanceOf(NoViableSuggestion.class);
+        var row = jdbcTemplate.queryForMap(
+            "SELECT disposition, ai_output_json FROM ai_suggestion_audit_log "
+                + "WHERE itinerary_id = ? ORDER BY created_at DESC LIMIT 1",
+            itineraryId);
+        assertThat(row.get("disposition")).isEqualTo("NO_VIABLE_SUGGESTION");
+        assertThat(row.get("ai_output_json")).isNull();
+    }
+
+    @Test
     void aConsultantCannotGenerateASuggestionForAnotherConsultantFND03() {
         UUID ownConsultantId = UUID.randomUUID();
         UUID otherConsultantId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, ownConsultantId);
         var command = new GenerateItineraryCommand(otherConsultantId, UUID.randomUUID(), "GOA",
-            LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "Anything", null);
+            LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "Anything", null, false);
 
         org.junit.jupiter.api.Assertions.assertThrows(
             org.springframework.security.access.AccessDeniedException.class,

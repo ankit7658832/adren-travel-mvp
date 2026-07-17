@@ -49,6 +49,21 @@ public interface BookingApi {
     AiItineraryGenerationResult generateAiItinerarySuggestion(UUID itineraryId, GenerateAiSuggestionCommand command);
 
     /**
+     * The persistent "Complete with AI" entry point on an
+     * ALREADY-STARTED itinerary (PRD §9.1 Flow A step 7/§21.2, AI-03) —
+     * same delegation shape as {@link #generateAiItinerarySuggestion},
+     * except this method itself computes whether the itinerary already
+     * has a hotel line item and passes that as {@code
+     * GenerateItineraryCommand.hasExistingHotelSelection}, so the AI
+     * module never proposes a replacement for a category the Consultant
+     * already filled in — only the remaining gaps. Same role shape as
+     * {@link #generateAiItinerarySuggestion}, since "complete" is the same
+     * "build an itinerary" access, not a separate capability.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    AiItineraryGenerationResult completeItineraryWithAi(UUID itineraryId, GenerateAiSuggestionCommand command);
+
+    /**
      * A Consultant/permitted User explicitly approves the itinerary's
      * current AI suggestion (AI-06/AI-08, PRD §11.2 principle 3, §23.3
      * Edge Case #8) — the only way {@link #saveAsQuotation}'s AI gate

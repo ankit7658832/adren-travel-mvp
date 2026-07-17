@@ -112,7 +112,7 @@ class AiServiceImplTest {
 
         AiItineraryGenerationResult result = service.generateItinerary(new GenerateItineraryCommand(
             consultantId, itineraryId, "GOA", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 5),
-            "A relaxing beach trip", null));
+            "A relaxing beach trip", null, false));
 
         assertThat(result).isInstanceOf(AiItinerarySuggestion.class);
         AiItinerarySuggestion suggestion = (AiItinerarySuggestion) result;
@@ -136,7 +136,7 @@ class AiServiceImplTest {
 
         AiItineraryGenerationResult result = service.generateItinerary(new GenerateItineraryCommand(
             consultantId, UUID.randomUUID(), "NOWHERE", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
-            "Anything goes", null));
+            "Anything goes", null, false));
 
         assertThat(result).isInstanceOf(NoViableSuggestion.class);
         assertThat(((NoViableSuggestion) result).reason()).contains("No inventory available");
@@ -157,7 +157,7 @@ class AiServiceImplTest {
 
         AiItineraryGenerationResult result = service.generateItinerary(new GenerateItineraryCommand(
             consultantId, UUID.randomUUID(), "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
-            "Something under 1000 INR", new Money(BigDecimal.valueOf(1000), CurrencyCode.INR)));
+            "Something under 1000 INR", new Money(BigDecimal.valueOf(1000), CurrencyCode.INR), false));
 
         assertThat(result).isInstanceOf(NoViableSuggestion.class);
         assertThat(((NoViableSuggestion) result).reason()).isEqualTo("No option fits a budget of 1000 INR");
@@ -176,7 +176,7 @@ class AiServiceImplTest {
 
         AiItineraryGenerationResult result = service.generateItinerary(new GenerateItineraryCommand(
             consultantId, UUID.randomUUID(), "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
-            "Anything", null));
+            "Anything", null, false));
 
         assertThat(result).isInstanceOf(NoViableSuggestion.class);
         assertThat(((NoViableSuggestion) result).reason()).contains("not present in the live candidate list");
@@ -194,7 +194,7 @@ class AiServiceImplTest {
 
         AiItineraryGenerationResult result = service.generateItinerary(new GenerateItineraryCommand(
             consultantId, UUID.randomUUID(), "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
-            "Something cheap", new Money(BigDecimal.valueOf(1000), CurrencyCode.INR)));
+            "Something cheap", new Money(BigDecimal.valueOf(1000), CurrencyCode.INR), false));
 
         assertThat(result).isInstanceOf(NoViableSuggestion.class);
         assertThat(((NoViableSuggestion) result).reason()).contains("exceeds the stated budget");
@@ -210,7 +210,7 @@ class AiServiceImplTest {
 
         assertThatThrownBy(() -> service.generateItinerary(new GenerateItineraryCommand(
             consultantId, UUID.randomUUID(), "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
-            "Anything", null)))
+            "Anything", null, false)))
             .isSameAs(groqFailure);
 
         ArgumentCaptor<AiSuggestionAuditLog> captor = ArgumentCaptor.forClass(AiSuggestionAuditLog.class);
@@ -230,7 +230,7 @@ class AiServiceImplTest {
         // total attempts (1 original + 2 retries) before giving up.
         assertThatThrownBy(() -> service.generateItinerary(new GenerateItineraryCommand(
             consultantId, UUID.randomUUID(), "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
-            "Anything", null)))
+            "Anything", null, false)))
             .isSameAs(timeout);
 
         verify(groqClient, times(3)).chatCompletion(any(), any(), anyBoolean());
@@ -261,7 +261,7 @@ class AiServiceImplTest {
 
         AiItineraryGenerationResult result = service.generateItinerary(new GenerateItineraryCommand(
             consultantId, UUID.randomUUID(), "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
-            "Anything", null));
+            "Anything", null, false));
 
         assertThat(result).isInstanceOf(AiItinerarySuggestion.class);
         verify(groqClient, times(2)).chatCompletion(any(), any(), anyBoolean());
@@ -285,7 +285,7 @@ class AiServiceImplTest {
 
         assertThatThrownBy(() -> service.generateItinerary(new GenerateItineraryCommand(
             consultantId, UUID.randomUUID(), "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
-            "Anything", null)))
+            "Anything", null, false)))
             .isSameAs(authFailure);
 
         // Rate limit (attempt 1) is retryable, so a 2nd attempt happens;
@@ -332,7 +332,7 @@ class AiServiceImplTest {
                     ready.countDown();
                     start.await();
                     service.generateItinerary(new GenerateItineraryCommand(consultantId, itineraryId, "GOA",
-                        LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "Anything", null));
+                        LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "Anything", null, false));
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 } finally {
@@ -357,6 +357,30 @@ class AiServiceImplTest {
     }
 
     @Test
+    void respectsAnExistingHotelSelectionAndNeverCallsGroqOrSearchHotelsAI03() {
+        UUID consultantId = UUID.randomUUID();
+        UUID itineraryId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        AiItineraryGenerationResult result = service.generateItinerary(new GenerateItineraryCommand(
+            consultantId, itineraryId, "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
+            "Anything", null, true));
+
+        assertThat(result).isInstanceOf(NoViableSuggestion.class);
+        assertThat(((NoViableSuggestion) result).reason()).contains("already selected");
+        verify(supplierSearchApi, org.mockito.Mockito.never()).searchHotels(any(), any(), any());
+        verify(groqClient, org.mockito.Mockito.never()).chatCompletion(any(), any(), anyBoolean());
+
+        // Still 100% audit-logged (backend-best-practices §7) — a
+        // "Complete with AI" click that respects an existing selection is
+        // still an AI-workflow touchpoint the governance trail must show.
+        ArgumentCaptor<AiSuggestionAuditLog> captor = ArgumentCaptor.forClass(AiSuggestionAuditLog.class);
+        verify(auditLogRecorder).record(captor.capture());
+        assertThat(captor.getValue().getDisposition()).isEqualTo(AiSuggestionDisposition.NO_VIABLE_SUGGESTION);
+        assertThat(captor.getValue().getItineraryId()).isEqualTo(itineraryId);
+    }
+
+    @Test
     void aConsultantCannotGenerateASuggestionForAnotherConsultantFND03() {
         UUID ownConsultantId = UUID.randomUUID();
         UUID otherConsultantId = UUID.randomUUID();
@@ -364,7 +388,7 @@ class AiServiceImplTest {
 
         assertThatThrownBy(() -> service.generateItinerary(new GenerateItineraryCommand(
             otherConsultantId, UUID.randomUUID(), "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
-            "Anything", null)))
+            "Anything", null, false)))
             .isInstanceOf(AccessDeniedException.class);
     }
 

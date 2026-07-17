@@ -108,10 +108,25 @@ class AiServiceImpl implements AiApi {
         UUID correlationId = UUID.randomUUID();
         Instant availabilityAsOf = Instant.now();
 
+        String requestInputJson = objectMapper.writeValueAsString(command);
+
+        // AI-03, PRD §9.1 Flow A step 7: "Complete with AI" on a
+        // partially-built itinerary must respect what the Consultant
+        // already selected — the hotel category isn't a gap, so this never
+        // even calls searchHotels/Groq (nothing to ground a replacement
+        // against, and proposing one would contradict "respects existing
+        // selections"). Still audit-logged: a "Complete with AI" click is
+        // an AI-workflow touchpoint the governance trail must show, even
+        // when the outcome is "nothing to add."
+        if (command.hasExistingHotelSelection()) {
+            return recordNoViableSuggestion(correlationId, scopedConsultantId, command.itineraryId(),
+                requestInputJson, "[]", null,
+                "Hotel already selected for this itinerary — existing selection respected, no replacement proposed");
+        }
+
         List<SupplierSearchResult> candidates =
             supplierSearchApi.searchHotels(command.locationCode(), command.checkIn(), command.checkOut());
         String candidateSnapshotJson = objectMapper.writeValueAsString(candidates);
-        String requestInputJson = objectMapper.writeValueAsString(command);
 
         // AI-05, PRD §11.3: zero inventory is stated explicitly — never
         // even reaches the model, since there is nothing to ground against.

@@ -59,6 +59,21 @@ class ItineraryController {
             request.locationCode(), request.checkIn(), request.checkOut(), request.naturalLanguageRequest(), budgetLimit));
     }
 
+    /**
+     * PRD §9.1 Flow A step 7/§21.2, AI-03 — the "Complete with AI" entry
+     * point on an already-started itinerary: respects whatever the
+     * Consultant already selected and only proposes for the remaining
+     * gaps. Distinct from {@link #generateAiItinerarySuggestion} (AI-02's
+     * "generate fresh" endpoint), which never checks existing selections.
+     */
+    @PostMapping("/{itineraryId}/ai-completion")
+    AiItineraryGenerationResult completeItineraryWithAi(@PathVariable UUID itineraryId,
+                                                          @Valid @RequestBody GenerateAiSuggestionRequest request) {
+        Money budgetLimit = request.budgetAmount() != null ? new Money(request.budgetAmount(), request.budgetCurrency()) : null;
+        return bookingApi.completeItineraryWithAi(itineraryId, new GenerateAiSuggestionCommand(
+            request.locationCode(), request.checkIn(), request.checkOut(), request.naturalLanguageRequest(), budgetLimit));
+    }
+
     /** PRD §11.2 principle 3/§23.3 Edge Case #8, AI-06/AI-08 — the only way to clear the AI-approval gate on {@link #saveAsQuotation}, also capturing what was actually approved. */
     @PostMapping("/{itineraryId}/ai-suggestion/approval")
     void approveAiSuggestion(@PathVariable UUID itineraryId, @Valid @RequestBody ApproveAiSuggestionRequest request) {

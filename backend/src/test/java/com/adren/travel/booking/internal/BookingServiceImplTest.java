@@ -232,6 +232,71 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void completeItineraryWithAiPassesHasExistingHotelSelectionTrueWhenAHotelIsAlreadyOnTheItineraryAI03() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(aiApi.generateItinerary(any()))
+            .thenReturn(new com.adren.travel.ai.NoViableSuggestion(UUID.randomUUID(), "already selected"));
+
+        service.completeItineraryWithAi(itineraryId, new GenerateAiSuggestionCommand(
+            "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "Fill in the rest", null));
+
+        ArgumentCaptor<com.adren.travel.ai.GenerateItineraryCommand> captor =
+            ArgumentCaptor.forClass(com.adren.travel.ai.GenerateItineraryCommand.class);
+        verify(aiApi).generateItinerary(captor.capture());
+        assertThat(captor.getValue().hasExistingHotelSelection()).isTrue();
+    }
+
+    @Test
+    void completeItineraryWithAiPassesHasExistingHotelSelectionFalseWhenNoHotelExistsYetAI03() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        when(hotelLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of());
+        authenticateAs(Role.CONSULTANT, consultantId);
+        UUID auditLogId = UUID.randomUUID();
+        com.adren.travel.ai.AiItinerarySuggestion suggestion =
+            new com.adren.travel.ai.AiItinerarySuggestion(auditLogId, List.of());
+        when(aiApi.generateItinerary(any())).thenReturn(suggestion);
+
+        var result = service.completeItineraryWithAi(itineraryId, new GenerateAiSuggestionCommand(
+            "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "Fill in the rest", null));
+
+        ArgumentCaptor<com.adren.travel.ai.GenerateItineraryCommand> captor =
+            ArgumentCaptor.forClass(com.adren.travel.ai.GenerateItineraryCommand.class);
+        verify(aiApi).generateItinerary(captor.capture());
+        assertThat(captor.getValue().hasExistingHotelSelection()).isFalse();
+        assertThat(result).isSameAs(suggestion);
+        assertThat(draft.isAiGenerated()).isTrue();
+    }
+
+    @Test
+    void generateAiItinerarySuggestionAlwaysPassesHasExistingHotelSelectionFalseUnlikeCompleteAI03() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        // AI-02's "generate fresh" endpoint never even queries
+        // hotelLineItemRepository — only completeItineraryWithAi does.
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(aiApi.generateItinerary(any()))
+            .thenReturn(new com.adren.travel.ai.NoViableSuggestion(UUID.randomUUID(), "no viable option"));
+
+        service.generateAiItinerarySuggestion(itineraryId, new GenerateAiSuggestionCommand(
+            "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "A relaxing trip", null));
+
+        ArgumentCaptor<com.adren.travel.ai.GenerateItineraryCommand> captor =
+            ArgumentCaptor.forClass(com.adren.travel.ai.GenerateItineraryCommand.class);
+        verify(aiApi).generateItinerary(captor.capture());
+        assertThat(captor.getValue().hasExistingHotelSelection()).isFalse();
+    }
+
+    @Test
     void savingAsQuotationBlocksAnUnapprovedAiGeneratedItineraryFIN06() {
         UUID itineraryId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
