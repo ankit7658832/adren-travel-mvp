@@ -87,7 +87,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 
 ## AI Layer (13)
 
-- [ ] **AI-01** — integrate a groq client wrapper for the ai module
+- [x] **AI-01** — integrate a groq client wrapper for the ai module
 - [ ] **AI-02** — generate an itinerary from natural language or structured input
 - [ ] **AI-03** — complete a partially built itinerary with ai
 - [ ] **AI-04** — include supplier source and live availability status on every ai suggestion

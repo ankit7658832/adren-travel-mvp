@@ -30,6 +30,10 @@ adren:
       base-url: https://api.groq.com/openai/v1
       api-key: ${GROQ_API_KEY:}
       model: llama-3.3-70b-versatile
+      # AI-13, PRD S24.3/S9.6 — bounded per-segment timeout so a slow/hung
+      # Groq call can't blow the 10-minute itinerary-build target.
+      timeout-seconds: ${GROQ_TIMEOUT_SECONDS:15}
+      max-retries: ${GROQ_MAX_RETRIES:2}
   security:
     jwt:
       # Local/dev only default — every non-local environment MUST override this
