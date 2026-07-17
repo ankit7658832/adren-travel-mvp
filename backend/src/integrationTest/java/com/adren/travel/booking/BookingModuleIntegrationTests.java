@@ -12,6 +12,9 @@ import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.MarkupType;
 import com.adren.travel.payments.PaymentsApi;
+import com.adren.travel.whitelabel.Market;
+import com.adren.travel.whitelabel.OnboardConsultantCommand;
+import com.adren.travel.whitelabel.WhitelabelApi;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
@@ -95,12 +98,16 @@ class BookingModuleIntegrationTests {
     // but Spring Modulith's own architecture check flags field injection of
     // ANOTHER application module's type from outside it — constructor
     // injection makes this test's real cross-module dependency (on
-    // payments, exercised by BOK-03's tests below) visible up front.
+    // payments, exercised by BOK-03's tests below, and whitelabel, needed
+    // for BOK-11's ATOL gate to resolve a real Consultant's home market)
+    // visible up front.
     final PaymentsApi paymentsApi;
+    final WhitelabelApi whitelabelApi;
 
     @Autowired
-    BookingModuleIntegrationTests(PaymentsApi paymentsApi) {
+    BookingModuleIntegrationTests(PaymentsApi paymentsApi, WhitelabelApi whitelabelApi) {
         this.paymentsApi = paymentsApi;
+        this.whitelabelApi = whitelabelApi;
     }
 
     @Autowired
@@ -163,8 +170,20 @@ class BookingModuleIntegrationTests {
         assertThat(pendingHoldsCount).isEqualTo(1);
     }
 
+    /**
+     * {@code Scenario.stimulate()} only guarantees the event was captured,
+     * not that the surrounding {@code @Transactional} call has committed
+     * and is visible to a SEPARATE {@code jdbcTemplate} connection yet
+     * (unlike a direct, synchronous {@code bookingApi.submitCancellation(...)}
+     * call, where the method not returning until its transactional proxy
+     * commits is what makes an immediate jdbcTemplate read after it safe —
+     * see every other DB-assertion test in this file). So this test only
+     * proves the event; {@link
+     * #submitCancellationProcessesTheRefundImmediatelyForAPenaltyFreeCancellationFIN16}
+     * below proves the DB state, via a direct call.
+     */
     @Test
-    void submitCancellationProcessesTheRefundImmediatelyForAPenaltyFreeCancellationFIN16(Scenario scenario) {
+    void submitCancellationPublishesBookingCancelledEventForAPenaltyFreeCancellationFIN16(Scenario scenario) {
         Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
         authenticateAsSuperAdmin();
         UUID quotationId = savedQuotationWithOneLineItem(UUID.randomUUID());
@@ -177,6 +196,21 @@ class BookingModuleIntegrationTests {
         scenario.stimulate(() -> bookingApi.submitCancellation(bookingId, command))
             .andWaitForEventOfType(BookingCancelledEvent.class)
             .matchingMappedValue(BookingCancelledEvent::bookingId, bookingId);
+    }
+
+    @Test
+    void submitCancellationProcessesTheRefundImmediatelyForAPenaltyFreeCancellationFIN16() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(UUID.randomUUID());
+        UUID bookingId = bookingApi.confirmBooking(quotationId, price);
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
+        var command = new CalculateCancellationRefundCommand(price, Instant.now().plusSeconds(3600), Instant.now(),
+            BigDecimal.valueOf(30), originalFxRateSnapshot);
+
+        CancellationRequestView result = bookingApi.submitCancellation(bookingId, command);
+        assertThat(result.status()).isEqualTo("REFUNDED");
 
         String bookingStatus = jdbcTemplate.queryForObject(
             "SELECT status FROM booking WHERE booking_id = ?", String.class, bookingId);
@@ -227,8 +261,9 @@ class BookingModuleIntegrationTests {
         assertThat(refundLedgerEntryCountAfterApproval).isEqualTo(1);
     }
 
+    /** Only proves the event — see the comment on the cancellation event-only test above for why a direct call is needed to also assert DB state. */
     @Test
-    void flaggingADisputeCreatesATrackedTicketAndMarksTheBookingDisputedFIN16(Scenario scenario) {
+    void flaggingADisputePublishesDisputeTicketCreatedEventFIN16(Scenario scenario) {
         Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
         authenticateAsSuperAdmin();
         UUID quotationId = savedQuotationWithOneLineItem(UUID.randomUUID());
@@ -237,6 +272,16 @@ class BookingModuleIntegrationTests {
         scenario.stimulate(() -> bookingApi.flagDispute(bookingId, new FlagDisputeCommand("Wrong room type delivered")))
             .andWaitForEventOfType(DisputeTicketCreatedEvent.class)
             .matchingMappedValue(DisputeTicketCreatedEvent::bookingId, bookingId);
+    }
+
+    @Test
+    void flaggingADisputeCreatesATrackedTicketAndMarksTheBookingDisputedFIN16() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(UUID.randomUUID());
+        UUID bookingId = bookingApi.confirmBooking(quotationId, price);
+
+        bookingApi.flagDispute(bookingId, new FlagDisputeCommand("Wrong room type delivered"));
 
         String bookingStatus = jdbcTemplate.queryForObject(
             "SELECT status FROM booking WHERE booking_id = ?", String.class, bookingId);
@@ -453,8 +498,12 @@ class BookingModuleIntegrationTests {
 
     @Test
     void aPublishedPackageBecomesVisibleToTheConsultantsUsersBOK12() {
-        UUID consultantId = UUID.randomUUID();
         authenticateAsSuperAdmin();
+        // BOK-11's ATOL gate resolves a real Consultant's home market via
+        // whitelabelApi.findConsultantMarket — a never-onboarded random
+        // consultantId (every other test in this class that never reaches
+        // publishPackage still uses) 400s here.
+        UUID consultantId = onboardIndiaConsultant();
         UUID quotationId = savedQuotationWithOneLineItem(consultantId);
         var createCommand = new ConvertQuotationToPackageCommand("Goa Getaway", "A relaxing beach trip",
             LocalDate.now().plusDays(30), LocalDate.now().plusDays(90), BigDecimal.valueOf(500), 4);
@@ -467,6 +516,12 @@ class BookingModuleIntegrationTests {
 
         Page<PackageView> afterPublish = bookingApi.findPublishedPackagesByConsultant(consultantId, PageRequest.of(0, 20));
         assertThat(afterPublish.getContent()).extracting(PackageView::packageId).containsExactly(packageId);
+    }
+
+    /** INDIA's required KYC fields (gstRegistration/businessPan/bankDetails per MarketKycRuleProvider) must all be present. */
+    private UUID onboardIndiaConsultant() {
+        return whitelabelApi.onboardConsultant(new OnboardConsultantCommand("Goa Getaways", Market.INDIA,
+            Map.of("gstRegistration", "GST123", "businessPan", "PAN123", "bankDetails", "IFSC0001/12345")));
     }
 
     private UUID savedQuotationWithOneLineItem(UUID consultantId) {

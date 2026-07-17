@@ -2,6 +2,7 @@ package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.AtolDisclosureRequiredException;
 import com.adren.travel.booking.InventoryNoLongerAvailableException;
+import com.adren.travel.payments.CreditLimitExceededException;
 import com.adren.travel.shared.ProblemDetailFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
@@ -54,6 +55,29 @@ class BookingControllerAdvice {
     ProblemDetail handleAtolDisclosureRequired(AtolDisclosureRequiredException ex, HttpServletRequest request) {
         return ProblemDetailFactory.create(HttpStatus.CONFLICT,
             "https://docs.adren.travel/errors/atol-disclosure-required", "ATOL disclosure required",
+            ex.getMessage(), request.getRequestURI());
+    }
+
+    /**
+     * FIN-08's {@code payments}-package exception, thrown from {@code
+     * paymentsApi.placeHold}/{@code payOnAccount} deep inside {@code
+     * confirmBooking}/{@code confirmBookingOnAccount} — those are {@code
+     * booking}-package controller methods, so {@code
+     * PaymentsControllerAdvice}'s {@code basePackages = "com.adren.travel.payments"}
+     * scoping does NOT catch it here (a {@code @RestControllerAdvice}'s
+     * {@code basePackages} scopes by the HANDLING controller's package, not
+     * the exception's origin). Without this handler the real HTTP
+     * confirmation path 401s via Spring's generic {@code /error} fallback
+     * instead of the intended 409 — a gap {@code CreditLimitBreachIT}
+     * (which calls {@code paymentsApi.placeHold} directly, never through
+     * this controller) never exercised. Same mapping {@code
+     * PaymentsControllerAdvice.handleCreditLimitExceeded} uses.
+     */
+    @ExceptionHandler(CreditLimitExceededException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ProblemDetail handleCreditLimitExceeded(CreditLimitExceededException ex, HttpServletRequest request) {
+        return ProblemDetailFactory.create(HttpStatus.CONFLICT,
+            "https://docs.adren.travel/errors/credit-limit-exceeded", "Top up required",
             ex.getMessage(), request.getRequestURI());
     }
 
