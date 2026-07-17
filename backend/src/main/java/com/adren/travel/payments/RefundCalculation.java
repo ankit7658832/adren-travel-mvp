@@ -10,6 +10,12 @@ import com.adren.travel.shared.Money;
  * this calculation; this record's job is the calculation, not enforcing
  * the approval gate itself (a full approval-then-execute workflow is
  * HRD-05's "full cancellation workflow" scope, not this story's).
+ * {@code refundAmountInSupplierCurrency} is {@code refundAmount} converted
+ * back into the original supplier currency using the booking's original
+ * {@code FxRateSnapshot} (FIN-14, PRD §23.4 Edge Case #9/T15) — never a
+ * freshly looked-up rate, even if the market rate moved between booking
+ * and cancellation.
  */
-public record RefundCalculation(Money refundAmount, Money penaltyAmount, boolean requiresConsultantApproval) {
+public record RefundCalculation(Money refundAmount, Money penaltyAmount, boolean requiresConsultantApproval,
+    Money refundAmountInSupplierCurrency) {
 }

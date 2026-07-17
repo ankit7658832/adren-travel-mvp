@@ -390,8 +390,11 @@ class PaymentsModuleIntegrationTests {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), java.time.Instant.now().minusSeconds(7200));
         var command = new CalculateRefundCommand(bookingId, consultantId, sellPrice,
-            java.time.Instant.now().minusSeconds(3600), java.time.Instant.now(), BigDecimal.valueOf(25));
+            java.time.Instant.now().minusSeconds(3600), java.time.Instant.now(), BigDecimal.valueOf(25),
+            originalFxRateSnapshot);
 
         scenario.stimulate(() -> paymentsApi.calculateRefund(command))
             .andWaitForEventOfType(RefundCalculatedEvent.class)
@@ -403,9 +406,12 @@ class PaymentsModuleIntegrationTests {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), java.time.Instant.now().minusSeconds(7200));
 
         paymentsApi.calculateRefund(new CalculateRefundCommand(bookingId, consultantId, sellPrice,
-            java.time.Instant.now().minusSeconds(3600), java.time.Instant.now(), BigDecimal.valueOf(25)));
+            java.time.Instant.now().minusSeconds(3600), java.time.Instant.now(), BigDecimal.valueOf(25),
+            originalFxRateSnapshot));
 
         Long count = jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM wallet_ledger_entry WHERE related_booking_id = ?", Long.class, bookingId);

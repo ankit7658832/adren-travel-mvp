@@ -21,6 +21,13 @@ import java.util.UUID;
  * penalty-percentage table exists anywhere in this codebase (real supplier
  * cancellation-fee schedules are production-tier data this mock phase
  * doesn't model), mirroring FIN-04's "rate supplied by caller" scoping.
+ * {@code originalFxRateSnapshot} is the immutable snapshot FIN-04 captured
+ * at booking time — FIN-14/PRD §23.4 Edge Case #9 requires the refund's
+ * supplier-currency conversion to reuse THIS rate, never a freshly looked
+ * up one, even if the market rate has moved since booking. There is
+ * deliberately no separate "current rate" parameter anywhere on this
+ * command — that is what makes reusing a stale rate structurally
+ * impossible rather than a check that has to remember not to re-fetch.
  */
 public record CalculateRefundCommand(
     UUID bookingId,
@@ -28,7 +35,8 @@ public record CalculateRefundCommand(
     Money sellPrice,
     Instant cancellationDeadline,
     Instant cancelledAt,
-    BigDecimal postDeadlinePenaltyPercent
+    BigDecimal postDeadlinePenaltyPercent,
+    FxRateSnapshot originalFxRateSnapshot
 ) {
 
     public CalculateRefundCommand {
@@ -38,8 +46,14 @@ public record CalculateRefundCommand(
         Objects.requireNonNull(cancellationDeadline, "cancellationDeadline must not be null");
         Objects.requireNonNull(cancelledAt, "cancelledAt must not be null");
         Objects.requireNonNull(postDeadlinePenaltyPercent, "postDeadlinePenaltyPercent must not be null");
+        Objects.requireNonNull(originalFxRateSnapshot, "originalFxRateSnapshot must not be null");
         if (postDeadlinePenaltyPercent.signum() < 0 || postDeadlinePenaltyPercent.compareTo(BigDecimal.valueOf(100)) > 0) {
             throw new IllegalArgumentException("postDeadlinePenaltyPercent must be between 0 and 100");
+        }
+        if (originalFxRateSnapshot.sellCurrency() != sellPrice.currency()) {
+            throw new IllegalArgumentException(
+                "originalFxRateSnapshot.sellCurrency() must match sellPrice's currency: %s vs %s".formatted(
+                    originalFxRateSnapshot.sellCurrency(), sellPrice.currency()));
         }
     }
 }

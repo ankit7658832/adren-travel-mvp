@@ -504,7 +504,8 @@ class BookingServiceImpl implements BookingApi {
         requireActiveUnlessSuperAdmin(booking.getConsultantId());
 
         return paymentsApi.calculateRefund(new CalculateRefundCommand(bookingId, booking.getConsultantId(),
-            command.sellPrice(), command.cancellationDeadline(), command.cancelledAt(), command.postDeadlinePenaltyPercent()));
+            command.sellPrice(), command.cancellationDeadline(), command.cancelledAt(),
+            command.postDeadlinePenaltyPercent(), command.originalFxRateSnapshot()));
     }
 
     @Override

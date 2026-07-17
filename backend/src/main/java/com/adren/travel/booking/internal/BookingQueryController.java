@@ -2,6 +2,7 @@ package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.CalculateCancellationRefundCommand;
+import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.shared.Money;
 import com.adren.travel.shared.PageResponse;
@@ -58,8 +59,10 @@ class BookingQueryController {
     @PostMapping("/{bookingId}/cancellation")
     RefundCalculation calculateCancellationRefund(@PathVariable UUID bookingId,
                                                    @Valid @RequestBody CalculateCancellationRefundRequest request) {
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(request.originalSupplierCurrency(),
+            request.currency(), request.originalFxRate(), request.originalFxSnapshotAt());
         return bookingApi.calculateCancellationRefund(bookingId, new CalculateCancellationRefundCommand(
             new Money(request.sellPrice(), request.currency()), request.cancellationDeadline(),
-            request.cancelledAt(), request.postDeadlinePenaltyPercent()));
+            request.cancelledAt(), request.postDeadlinePenaltyPercent(), originalFxRateSnapshot));
     }
 }

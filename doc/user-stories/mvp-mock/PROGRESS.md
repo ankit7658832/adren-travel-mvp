@@ -79,7 +79,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **FIN-11** — integrate stripe for payment collection across six settlement currencies
 - [x] **FIN-12** — support on account billing as a payment method
 - [x] **FIN-13** — process refunds and credit notes tied to supplier cancellation policy
-- [ ] **FIN-14** — reuse the original fx snapshot when calculating a refund
+- [x] **FIN-14** — reuse the original fx snapshot when calculating a refund
 - [x] **FIN-15** — reconcile wallet top up when the payment gateway webhook is delayed or fails
 - [ ] **FIN-16** — build the cancellation dispute handling workflow
 - [x] **FIN-17** — implement india gst tcs calculation layer for outbound packages

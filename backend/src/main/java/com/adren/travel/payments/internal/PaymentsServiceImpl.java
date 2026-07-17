@@ -45,6 +45,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -331,7 +332,16 @@ class PaymentsServiceImpl implements PaymentsApi {
         events.publishEvent(new RefundCalculatedEvent(command.bookingId(), command.consultantId(), refundAmount,
             penaltyAmount, requiresConsultantApproval));
 
-        return new RefundCalculation(refundAmount, penaltyAmount, requiresConsultantApproval);
+        // FIN-14/PRD §23.4 Edge Case #9: converted using the booking's
+        // ORIGINAL FxRateSnapshot (FIN-04), inverted, never a fresh rate —
+        // command.originalFxRateSnapshot() is the only rate this method
+        // has access to, so reusing it is structural, not a discipline.
+        FxRateSnapshot originalSnapshot = command.originalFxRateSnapshot();
+        BigDecimal inverseRate = BigDecimal.ONE.divide(originalSnapshot.rate(), 10, RoundingMode.HALF_UP);
+        Money refundAmountInSupplierCurrency = refundAmount.convertTo(originalSnapshot.supplierCurrency(), inverseRate);
+
+        return new RefundCalculation(refundAmount, penaltyAmount, requiresConsultantApproval,
+            refundAmountInSupplierCurrency);
     }
 
     @Override

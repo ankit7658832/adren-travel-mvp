@@ -170,7 +170,10 @@ public interface PaymentsApi {
      * mutation) — {@link RefundCalculation#requiresConsultantApproval} true
      * means a penalty applies and this calculation alone is not
      * authorization to process it (see the record's own Javadoc for why
-     * enforcing that gate is out of this method's scope). Same internal-
+     * enforcing that gate is out of this method's scope). Also converts
+     * the refund back into the original supplier currency using the
+     * booking's original {@code FxRateSnapshot} (FIN-14, PRD §23.4 Edge
+     * Case #9/T15) — never a freshly looked-up rate. Same internal-
      * pricing-pipeline-step shape as {@link #calculateCommission} — no
      * {@code @PreAuthorize}; invoked from {@code BookingApi.calculateCancellationRefund}.
      */

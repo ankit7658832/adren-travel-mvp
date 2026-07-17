@@ -830,9 +830,11 @@ class PaymentsServiceImplTest {
         Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
         Instant deadline = Instant.now().plusSeconds(3600);
         Instant cancelledAt = Instant.now();
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
 
         RefundCalculation calculation = service.calculateRefund(new CalculateRefundCommand(
-            bookingId, consultantId, sellPrice, deadline, cancelledAt, BigDecimal.valueOf(50)));
+            bookingId, consultantId, sellPrice, deadline, cancelledAt, BigDecimal.valueOf(50), originalFxRateSnapshot));
 
         assertThat(calculation.refundAmount()).isEqualTo(sellPrice);
         assertThat(calculation.penaltyAmount().amount()).isEqualByComparingTo("0");
@@ -850,9 +852,11 @@ class PaymentsServiceImplTest {
         Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
         Instant deadline = Instant.now().minusSeconds(3600); // already past
         Instant cancelledAt = Instant.now();
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
 
         RefundCalculation calculation = service.calculateRefund(new CalculateRefundCommand(
-            bookingId, consultantId, sellPrice, deadline, cancelledAt, BigDecimal.valueOf(30)));
+            bookingId, consultantId, sellPrice, deadline, cancelledAt, BigDecimal.valueOf(30), originalFxRateSnapshot));
 
         assertThat(calculation.penaltyAmount().amount()).isEqualByComparingTo("3000.00");
         assertThat(calculation.refundAmount().amount()).isEqualByComparingTo("7000.00");
@@ -868,9 +872,12 @@ class PaymentsServiceImplTest {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
 
         service.calculateRefund(new CalculateRefundCommand(
-            bookingId, consultantId, sellPrice, Instant.now().minusSeconds(1), Instant.now(), BigDecimal.valueOf(20)));
+            bookingId, consultantId, sellPrice, Instant.now().minusSeconds(1), Instant.now(), BigDecimal.valueOf(20),
+            originalFxRateSnapshot));
 
         verifyNoInteractions(walletRepository, walletLedgerEntryRepository);
     }
@@ -878,9 +885,44 @@ class PaymentsServiceImplTest {
     @Test
     void calculateRefundRejectsAnOutOfRangePenaltyPercentFIN13() {
         Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
 
         assertThatThrownBy(() -> new CalculateRefundCommand(
-            UUID.randomUUID(), UUID.randomUUID(), sellPrice, Instant.now(), Instant.now(), BigDecimal.valueOf(150)))
+            UUID.randomUUID(), UUID.randomUUID(), sellPrice, Instant.now(), Instant.now(), BigDecimal.valueOf(150),
+            originalFxRateSnapshot))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void calculateRefundConvertsUsingTheOriginalFxSnapshotRateNotAFreshOneFIN14() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        // Original rate locked at booking time: 1 USD = 80 INR.
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
+
+        RefundCalculation calculation = service.calculateRefund(new CalculateRefundCommand(
+            bookingId, consultantId, sellPrice, Instant.now().plusSeconds(3600), Instant.now(),
+            BigDecimal.valueOf(50), originalFxRateSnapshot));
+
+        // Full refund (10,000 INR) converted back at the ORIGINAL 80 rate = 125.00 USD,
+        // regardless of whatever the market rate might be today — there is no
+        // "current rate" input anywhere on this command for it to have used instead.
+        assertThat(calculation.refundAmountInSupplierCurrency().currency()).isEqualTo(CurrencyCode.USD);
+        assertThat(calculation.refundAmountInSupplierCurrency().amount()).isEqualByComparingTo("125.00");
+    }
+
+    @Test
+    void calculateRefundRejectsASnapshotWhoseSellCurrencyDoesNotMatchTheRefundFIN14() {
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        FxRateSnapshot mismatchedSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.GBP,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
+
+        assertThatThrownBy(() -> new CalculateRefundCommand(
+            UUID.randomUUID(), UUID.randomUUID(), sellPrice, Instant.now(), Instant.now(), BigDecimal.valueOf(20),
+            mismatchedSnapshot))
             .isInstanceOf(IllegalArgumentException.class);
     }
 

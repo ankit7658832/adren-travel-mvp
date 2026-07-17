@@ -517,13 +517,15 @@ class BookingServiceImplTest {
         Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
         Instant deadline = Instant.now().plusSeconds(3600);
         Instant cancelledAt = Instant.now();
+        com.adren.travel.payments.FxRateSnapshot originalFxRateSnapshot = new com.adren.travel.payments.FxRateSnapshot(
+            CurrencyCode.USD, CurrencyCode.INR, BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
         com.adren.travel.payments.RefundCalculation expected = new com.adren.travel.payments.RefundCalculation(
-            sellPrice, Money.zero(CurrencyCode.INR), false);
+            sellPrice, Money.zero(CurrencyCode.INR), false, new Money(BigDecimal.valueOf(125), CurrencyCode.USD));
         when(paymentsApi.calculateRefund(any())).thenReturn(expected);
 
         com.adren.travel.payments.RefundCalculation result = service.calculateCancellationRefund(bookingId,
             new com.adren.travel.booking.CalculateCancellationRefundCommand(
-                sellPrice, deadline, cancelledAt, BigDecimal.valueOf(30)));
+                sellPrice, deadline, cancelledAt, BigDecimal.valueOf(30), originalFxRateSnapshot));
 
         assertThat(result).isEqualTo(expected);
         ArgumentCaptor<com.adren.travel.payments.CalculateRefundCommand> captor =
@@ -537,10 +539,13 @@ class BookingServiceImplTest {
     void calculateCancellationRefundFailsForAnUnknownBookingFIN13() {
         UUID bookingId = UUID.randomUUID();
         when(bookingRepository.findById(bookingId)).thenReturn(Optional.empty());
+        com.adren.travel.payments.FxRateSnapshot originalFxRateSnapshot = new com.adren.travel.payments.FxRateSnapshot(
+            CurrencyCode.USD, CurrencyCode.INR, BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
 
         assertThatThrownBy(() -> service.calculateCancellationRefund(bookingId,
             new com.adren.travel.booking.CalculateCancellationRefundCommand(
-                new Money(BigDecimal.valueOf(1000), CurrencyCode.INR), Instant.now(), Instant.now(), BigDecimal.ZERO)))
+                new Money(BigDecimal.valueOf(1000), CurrencyCode.INR), Instant.now(), Instant.now(), BigDecimal.ZERO,
+                originalFxRateSnapshot)))
             .isInstanceOf(IllegalArgumentException.class);
     }
 
