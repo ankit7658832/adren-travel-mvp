@@ -7,6 +7,7 @@ import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
+import com.adren.travel.booking.ApproveAiSuggestionCommand;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.ConsolidateCheckoutTotalCommand;
 import com.adren.travel.booking.GenerateAiSuggestionCommand;
@@ -58,10 +59,11 @@ class ItineraryController {
             request.locationCode(), request.checkIn(), request.checkOut(), request.naturalLanguageRequest(), budgetLimit));
     }
 
-    /** PRD §11.2 principle 3, AI-06 — the only way to clear the AI-approval gate on {@link #saveAsQuotation}. */
+    /** PRD §11.2 principle 3/§23.3 Edge Case #8, AI-06/AI-08 — the only way to clear the AI-approval gate on {@link #saveAsQuotation}, also capturing what was actually approved. */
     @PostMapping("/{itineraryId}/ai-suggestion/approval")
-    void approveAiSuggestion(@PathVariable UUID itineraryId) {
-        bookingApi.approveAiSuggestion(itineraryId);
+    void approveAiSuggestion(@PathVariable UUID itineraryId, @Valid @RequestBody ApproveAiSuggestionRequest request) {
+        bookingApi.approveAiSuggestion(itineraryId,
+            new ApproveAiSuggestionCommand(request.auditLogId(), request.finalLineItems()));
     }
 
     /**

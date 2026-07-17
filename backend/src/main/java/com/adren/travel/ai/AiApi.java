@@ -25,4 +25,21 @@ public interface AiApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     AiItineraryGenerationResult generateItinerary(GenerateItineraryCommand command);
+
+    /**
+     * Records a Consultant's approval of one AI suggestion, capturing
+     * BOTH the original AI output (already permanently in the referenced
+     * {@code AiSuggestionAuditLog} row, untouched) and whatever the
+     * Consultant is actually approving — edited or not (PRD §23.3 Edge
+     * Case #8, §25 T14, AI-08). Invoked from {@code
+     * BookingApi.approveAiSuggestion}, alongside that call's own {@code
+     * Itinerary.markAiApproved()} — this method only writes the audit
+     * trail, it does not itself gate {@code markAsQuotation} (AI-06
+     * already does that on the {@code booking}-owned entity). Same
+     * tenant-scoping shape as {@link #generateItinerary} — the audit log
+     * row's own {@code consultantId} is checked against the caller's
+     * tenant.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    void approveAiSuggestion(ApproveAiSuggestionCommand command);
 }

@@ -44,6 +44,13 @@ class AiSuggestionAuditLog {
     private String sourceDataSnapshotJson;
     private String aiOutputJson;
 
+    // AI-08: the exact, GROUNDED AiSuggestedLineItem list actually
+    // returned to the caller — null unless disposition is SUGGESTED.
+    // Distinct from aiOutputJson (the model's raw response) so AI-08's
+    // "was it edited" comparison is apples-to-apples against what the
+    // Consultant actually saw, not the model's raw text.
+    private String suggestedLineItemsJson;
+
     @Enumerated(EnumType.STRING)
     private AiSuggestionDisposition disposition;
 
@@ -55,7 +62,7 @@ class AiSuggestionAuditLog {
 
     AiSuggestionAuditLog(UUID auditLogId, UUID correlationId, int attemptNumber, UUID consultantId, UUID itineraryId,
                           String requestInputJson, String sourceDataSnapshotJson, String aiOutputJson,
-                          AiSuggestionDisposition disposition) {
+                          String suggestedLineItemsJson, AiSuggestionDisposition disposition) {
         this.auditLogId = auditLogId;
         this.correlationId = correlationId;
         this.attemptNumber = attemptNumber;
@@ -64,6 +71,7 @@ class AiSuggestionAuditLog {
         this.requestInputJson = requestInputJson;
         this.sourceDataSnapshotJson = sourceDataSnapshotJson;
         this.aiOutputJson = aiOutputJson;
+        this.suggestedLineItemsJson = suggestedLineItemsJson;
         this.disposition = disposition;
         this.createdAt = Instant.now();
     }
@@ -98,6 +106,10 @@ class AiSuggestionAuditLog {
 
     String getAiOutputJson() {
         return aiOutputJson;
+    }
+
+    String getSuggestedLineItemsJson() {
+        return suggestedLineItemsJson;
     }
 
     AiSuggestionDisposition getDisposition() {

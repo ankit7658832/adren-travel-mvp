@@ -3,6 +3,7 @@ package com.adren.travel.ai.internal;
 import com.adren.travel.ai.AiApi;
 import com.adren.travel.ai.AiItineraryGenerationResult;
 import com.adren.travel.ai.AiItinerarySuggestion;
+import com.adren.travel.ai.ApproveAiSuggestionCommand;
 import com.adren.travel.ai.AiSuggestedLineItem;
 import com.adren.travel.ai.GenerateItineraryCommand;
 import com.adren.travel.ai.NoViableSuggestion;
@@ -79,16 +80,21 @@ class AiServiceImpl implements AiApi {
 
     private final GroqClient groqClient;
     private final SupplierSearchApi supplierSearchApi;
+    private final AiSuggestionAuditLogRepository auditLogRepository;
     private final AiSuggestionAuditLogRecorder auditLogRecorder;
+    private final AiSuggestionApprovalRepository approvalRepository;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher events;
 
     AiServiceImpl(GroqClient groqClient, SupplierSearchApi supplierSearchApi,
-                  AiSuggestionAuditLogRecorder auditLogRecorder, ObjectMapper objectMapper,
+                  AiSuggestionAuditLogRepository auditLogRepository, AiSuggestionAuditLogRecorder auditLogRecorder,
+                  AiSuggestionApprovalRepository approvalRepository, ObjectMapper objectMapper,
                   ApplicationEventPublisher events) {
         this.groqClient = groqClient;
         this.supplierSearchApi = supplierSearchApi;
+        this.auditLogRepository = auditLogRepository;
         this.auditLogRecorder = auditLogRecorder;
+        this.approvalRepository = approvalRepository;
         this.objectMapper = objectMapper;
         this.events = events;
     }
@@ -128,18 +134,36 @@ class AiServiceImpl implements AiApi {
                 requestInputJson, candidateSnapshotJson, rawOutput, selection.reason());
         }
 
-        UUID auditLogId = UUID.randomUUID();
-        auditLogRecorder.record(new AiSuggestionAuditLog(auditLogId, correlationId, 1, scopedConsultantId,
-            command.itineraryId(), requestInputJson, candidateSnapshotJson, rawOutput,
-            AiSuggestionDisposition.SUGGESTED));
-        events.publishEvent(new AiSuggestionGeneratedEvent(auditLogId, command.itineraryId(), scopedConsultantId,
-            AiSuggestionDisposition.SUGGESTED.name()));
-
         List<AiSuggestedLineItem> lineItems = selection.lineItems().stream()
             .map(c -> new AiSuggestedLineItem(c.supplierId(), c.supplierRateId(), c.propertyName(), c.roomType(),
                 c.netRate(), availabilityAsOf))
             .toList();
+
+        UUID auditLogId = UUID.randomUUID();
+        auditLogRecorder.record(new AiSuggestionAuditLog(auditLogId, correlationId, 1, scopedConsultantId,
+            command.itineraryId(), requestInputJson, candidateSnapshotJson, rawOutput,
+            objectMapper.writeValueAsString(lineItems), AiSuggestionDisposition.SUGGESTED));
+        events.publishEvent(new AiSuggestionGeneratedEvent(auditLogId, command.itineraryId(), scopedConsultantId,
+            AiSuggestionDisposition.SUGGESTED.name()));
+
         return new AiItinerarySuggestion(auditLogId, lineItems);
+    }
+
+    @Override
+    @Transactional
+    public void approveAiSuggestion(ApproveAiSuggestionCommand command) {
+        AiSuggestionAuditLog auditLog = auditLogRepository.findById(command.auditLogId())
+            .orElseThrow(() -> new IllegalArgumentException("No AI suggestion audit log: " + command.auditLogId()));
+        CurrentPrincipal.resolveTenantScope(auditLog.getConsultantId());
+
+        String finalVersionJson = objectMapper.writeValueAsString(command.finalLineItems());
+        // AI-08: never trust a caller-supplied "was this edited" flag —
+        // compare the actual final version against what was actually
+        // suggested, both serialized the same way.
+        boolean wasEdited = !finalVersionJson.equals(auditLog.getSuggestedLineItemsJson());
+
+        approvalRepository.saveAndFlush(new AiSuggestionApproval(UUID.randomUUID(), command.auditLogId(),
+            command.approvedByUserId(), finalVersionJson, wasEdited));
     }
 
     /**
@@ -204,7 +228,7 @@ class AiServiceImpl implements AiApi {
                                                           String rawOutput, String reason) {
         UUID auditLogId = UUID.randomUUID();
         auditLogRecorder.record(new AiSuggestionAuditLog(auditLogId, correlationId, 1, consultantId,
-            itineraryId, requestInputJson, candidateSnapshotJson, rawOutput,
+            itineraryId, requestInputJson, candidateSnapshotJson, rawOutput, null,
             AiSuggestionDisposition.NO_VIABLE_SUGGESTION));
         events.publishEvent(new AiSuggestionGeneratedEvent(auditLogId, itineraryId, consultantId,
             AiSuggestionDisposition.NO_VIABLE_SUGGESTION.name()));
@@ -215,7 +239,8 @@ class AiServiceImpl implements AiApi {
                                   String candidateSnapshotJson, GroqClient.GroqClientException e) {
         UUID auditLogId = UUID.randomUUID();
         auditLogRecorder.record(new AiSuggestionAuditLog(auditLogId, correlationId, 1, consultantId,
-            itineraryId, requestInputJson, candidateSnapshotJson, e.getMessage(), AiSuggestionDisposition.GROQ_ERROR));
+            itineraryId, requestInputJson, candidateSnapshotJson, e.getMessage(), null,
+            AiSuggestionDisposition.GROQ_ERROR));
         events.publishEvent(new AiSuggestionGeneratedEvent(auditLogId, itineraryId, consultantId,
             AiSuggestionDisposition.GROQ_ERROR.name()));
     }

@@ -4,6 +4,7 @@ import com.adren.travel.ai.AiApi;
 import com.adren.travel.ai.AiItineraryGenerationResult;
 import com.adren.travel.ai.AiItinerarySuggestion;
 import com.adren.travel.booking.AddActivityLineItemCommand;
+import com.adren.travel.booking.ApproveAiSuggestionCommand;
 import com.adren.travel.booking.AddCruiseLineItemCommand;
 import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
@@ -199,8 +200,11 @@ class BookingServiceImpl implements BookingApi {
 
     @Override
     @Transactional
-    public void approveAiSuggestion(UUID itineraryId) {
+    public void approveAiSuggestion(UUID itineraryId, ApproveAiSuggestionCommand command) {
         Itinerary itinerary = requireOwnedDraftItinerary(itineraryId);
+        UUID approvedByUserId = CurrentPrincipal.get().userId();
+        aiApi.approveAiSuggestion(new com.adren.travel.ai.ApproveAiSuggestionCommand(
+            command.auditLogId(), approvedByUserId, command.finalLineItems()));
         itinerary.markAiApproved();
         itineraryRepository.save(itinerary);
     }

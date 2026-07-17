@@ -50,13 +50,17 @@ public interface BookingApi {
 
     /**
      * A Consultant/permitted User explicitly approves the itinerary's
-     * current AI suggestion (AI-06, PRD §11.2 principle 3) — the only way
-     * {@link #saveAsQuotation}'s AI gate ({@code Itinerary.markAsQuotation})
-     * can ever be satisfied for an AI-generated itinerary. Same role shape
-     * as {@link #generateAiItinerarySuggestion}.
+     * current AI suggestion (AI-06/AI-08, PRD §11.2 principle 3, §23.3
+     * Edge Case #8) — the only way {@link #saveAsQuotation}'s AI gate
+     * ({@code Itinerary.markAsQuotation}) can ever be satisfied for an
+     * AI-generated itinerary. Also delegates to {@code
+     * AiApi.approveAiSuggestion} so the audit trail captures whatever the
+     * Consultant is actually approving (edited or not) alongside the
+     * original, never overwriting it. Same role shape as {@link
+     * #generateAiItinerarySuggestion}.
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
-    void approveAiSuggestion(UUID itineraryId);
+    void approveAiSuggestion(UUID itineraryId, ApproveAiSuggestionCommand command);
 
     /**
      * Confirms a booking from a Quotation or Package after payment succeeds.

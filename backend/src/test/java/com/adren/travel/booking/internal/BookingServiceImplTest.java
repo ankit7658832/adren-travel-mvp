@@ -6,6 +6,7 @@ import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
+import com.adren.travel.booking.ApproveAiSuggestionCommand;
 import com.adren.travel.booking.CabinClass;
 import com.adren.travel.booking.CalculateCancellationRefundCommand;
 import com.adren.travel.booking.CancellationRequestView;
@@ -265,15 +266,20 @@ class BookingServiceImplTest {
     void approveAiSuggestionMarksTheItineraryApprovedFIN06() {
         UUID itineraryId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
         Itinerary draft = new Itinerary(itineraryId, consultantId, null);
-        draft.markAiGenerated(UUID.randomUUID());
+        draft.markAiGenerated(auditLogId);
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
         authenticateAs(Role.CONSULTANT, consultantId);
+        List<com.adren.travel.ai.AiSuggestedLineItem> finalLineItems = List.of(new com.adren.travel.ai.AiSuggestedLineItem(
+            com.adren.travel.supplier.SupplierId.HOTELBEDS, "rate-1", "Taj Palace", "Deluxe Room",
+            new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), Instant.now()));
 
-        service.approveAiSuggestion(itineraryId);
+        service.approveAiSuggestion(itineraryId, new ApproveAiSuggestionCommand(auditLogId, finalLineItems));
 
         assertThat(draft.isAiApproved()).isTrue();
         verify(itineraryRepository).save(draft);
+        verify(aiApi).approveAiSuggestion(any());
     }
 
     @Test
@@ -283,8 +289,12 @@ class BookingServiceImplTest {
         Itinerary draft = new Itinerary(itineraryId, consultantId, null);
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
         authenticateAs(Role.CONSULTANT, consultantId);
+        List<com.adren.travel.ai.AiSuggestedLineItem> finalLineItems = List.of(new com.adren.travel.ai.AiSuggestedLineItem(
+            com.adren.travel.supplier.SupplierId.HOTELBEDS, "rate-1", "Taj Palace", "Deluxe Room",
+            new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), Instant.now()));
 
-        assertThatThrownBy(() -> service.approveAiSuggestion(itineraryId))
+        assertThatThrownBy(() -> service.approveAiSuggestion(itineraryId,
+            new ApproveAiSuggestionCommand(UUID.randomUUID(), finalLineItems)))
             .isInstanceOf(IllegalStateException.class);
     }
 

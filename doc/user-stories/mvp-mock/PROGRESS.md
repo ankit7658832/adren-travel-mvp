@@ -94,7 +94,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **AI-05** — model ai failure no viable suggestion as an explicit response state
 - [x] **AI-06** — enforce mandatory human in the loop approval before an ai itinerary reaches the traveler
 - [x] **AI-07** — write a 100 logged insert only ai suggestion audit trail
-- [ ] **AI-08** — capture both the original ai suggestion and the consultant s edited final version in the audit trail
+- [x] **AI-08** — capture both the original ai suggestion and the consultant s edited final version in the audit trail
 - [ ] **AI-09** — re validate ai suggested pricing at booking time if it has gone stale
 - [ ] **AI-10** — build the complete with ai entry point with source availability badges
 - [ ] **AI-11** — build the ai governance audit log viewer in the super admin console

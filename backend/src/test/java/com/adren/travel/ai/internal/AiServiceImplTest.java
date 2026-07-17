@@ -2,6 +2,8 @@ package com.adren.travel.ai.internal;
 
 import com.adren.travel.ai.AiItineraryGenerationResult;
 import com.adren.travel.ai.AiItinerarySuggestion;
+import com.adren.travel.ai.AiSuggestedLineItem;
+import com.adren.travel.ai.ApproveAiSuggestionCommand;
 import com.adren.travel.ai.GenerateItineraryCommand;
 import com.adren.travel.ai.NoViableSuggestion;
 import com.adren.travel.security.AdrenPrincipal;
@@ -27,6 +29,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
@@ -64,7 +67,13 @@ class AiServiceImplTest {
     SupplierSearchApi supplierSearchApi;
 
     @Mock
+    AiSuggestionAuditLogRepository auditLogRepository;
+
+    @Mock
     AiSuggestionAuditLogRecorder auditLogRecorder;
+
+    @Mock
+    AiSuggestionApprovalRepository approvalRepository;
 
     @Mock
     org.springframework.context.ApplicationEventPublisher events;
@@ -80,7 +89,8 @@ class AiServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new AiServiceImpl(groqClient, supplierSearchApi, auditLogRecorder, new ObjectMapper(), events);
+        service = new AiServiceImpl(groqClient, supplierSearchApi, auditLogRepository, auditLogRecorder,
+            approvalRepository, new ObjectMapper(), events);
     }
 
     @AfterEach
@@ -278,6 +288,70 @@ class AiServiceImplTest {
             otherConsultantId, UUID.randomUUID(), "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
             "Anything", null)))
             .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void approvingAnUneditedSuggestionRecordsWasEditedFalseFIN08() {
+        UUID consultantId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AiSuggestedLineItem lineItem = new AiSuggestedLineItem(SupplierId.HOTELBEDS, "rate-taj-1", "Taj Palace",
+            "Deluxe Room", new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), Instant.now());
+        String suggestedJson = new ObjectMapper().writeValueAsString(List.of(lineItem));
+        AiSuggestionAuditLog originalLog = new AiSuggestionAuditLog(auditLogId, UUID.randomUUID(), 1, consultantId,
+            UUID.randomUUID(), "{}", "[]", "{}", suggestedJson, AiSuggestionDisposition.SUGGESTED);
+        when(auditLogRepository.findById(auditLogId)).thenReturn(java.util.Optional.of(originalLog));
+        UUID approvedByUserId = UUID.randomUUID();
+
+        service.approveAiSuggestion(new ApproveAiSuggestionCommand(auditLogId, approvedByUserId, List.of(lineItem)));
+
+        ArgumentCaptor<AiSuggestionApproval> captor = ArgumentCaptor.forClass(AiSuggestionApproval.class);
+        verify(approvalRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().isWasEdited()).isFalse();
+        assertThat(captor.getValue().getAuditLogId()).isEqualTo(auditLogId);
+        assertThat(captor.getValue().getApprovedByUserId()).isEqualTo(approvedByUserId);
+        // The original row itself is never touched — no update method
+        // exists on AiSuggestionAuditLog/its repository to even attempt it.
+        assertThat(originalLog.getSuggestedLineItemsJson()).isEqualTo(suggestedJson);
+    }
+
+    @Test
+    void approvingAnEditedSuggestionRecordsWasEditedTrueAndPreservesTheOriginalFIN08() {
+        UUID consultantId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AiSuggestedLineItem original = new AiSuggestedLineItem(SupplierId.HOTELBEDS, "rate-taj-1", "Taj Palace",
+            "Deluxe Room", new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), Instant.now());
+        String originalSuggestedJson = new ObjectMapper().writeValueAsString(List.of(original));
+        AiSuggestionAuditLog originalLog = new AiSuggestionAuditLog(auditLogId, UUID.randomUUID(), 1, consultantId,
+            UUID.randomUUID(), "{}", "[]", "{}", originalSuggestedJson, AiSuggestionDisposition.SUGGESTED);
+        when(auditLogRepository.findById(auditLogId)).thenReturn(java.util.Optional.of(originalLog));
+        // The Consultant edited the room type before approving.
+        AiSuggestedLineItem edited = new AiSuggestedLineItem(SupplierId.HOTELBEDS, "rate-taj-1", "Taj Palace",
+            "Ocean View Suite", new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), original.availabilityAsOf());
+
+        service.approveAiSuggestion(new ApproveAiSuggestionCommand(auditLogId, UUID.randomUUID(), List.of(edited)));
+
+        ArgumentCaptor<AiSuggestionApproval> captor = ArgumentCaptor.forClass(AiSuggestionApproval.class);
+        verify(approvalRepository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().isWasEdited()).isTrue();
+        assertThat(captor.getValue().getEditedFinalVersionJson()).contains("Ocean View Suite");
+        // T14: both versions are independently present afterward — the
+        // original (unedited) row, untouched, plus this new edited one.
+        assertThat(originalLog.getSuggestedLineItemsJson()).contains("Deluxe Room").doesNotContain("Ocean View Suite");
+    }
+
+    @Test
+    void approvingAnUnknownAuditLogIdThrows() {
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        UUID unknownAuditLogId = UUID.randomUUID();
+        when(auditLogRepository.findById(unknownAuditLogId)).thenReturn(java.util.Optional.empty());
+        AiSuggestedLineItem lineItem = new AiSuggestedLineItem(SupplierId.HOTELBEDS, "rate-1", "Taj Palace",
+            "Deluxe Room", new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), Instant.now());
+
+        assertThatThrownBy(() -> service.approveAiSuggestion(
+            new ApproveAiSuggestionCommand(unknownAuditLogId, UUID.randomUUID(), List.of(lineItem))))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {
