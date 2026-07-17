@@ -74,7 +74,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **FIN-06** — model the wallet with balance credit limit and pending holds
 - [x] **FIN-07** — place a hold on booking confirmation release or debit on final confirmation
 - [x] **FIN-08** — block booking confirmation on credit limit breach with an actionable message
-- [ ] **FIN-09** — build the wallet billing screen with pre payment breach warning
+- [x] **FIN-09** — build the wallet billing screen with pre payment breach warning
 - [x] **FIN-10** — guarantee atomic idempotent wallet ledger writes
 - [x] **FIN-11** — integrate stripe for payment collection across six settlement currencies
 - [x] **FIN-12** — support on account billing as a payment method

@@ -22,6 +22,7 @@ import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.SnapshotFxRateCommand;
 import com.adren.travel.payments.UkTomsVatCalculation;
 import com.adren.travel.payments.WalletHoldCommand;
+import com.adren.travel.payments.WalletLedgerEntryView;
 import com.adren.travel.payments.WalletView;
 import com.adren.travel.payments.event.BookingPaidOnAccountEvent;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
@@ -42,6 +43,8 @@ import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -117,6 +120,30 @@ class PaymentsServiceImpl implements PaymentsApi {
         Wallet wallet = walletRepository.findById(scopedConsultantId)
             .orElseGet(() -> provisionWallet(scopedConsultantId));
         return toView(wallet);
+    }
+
+    @Override
+    public Page<WalletLedgerEntryView> findWalletLedger(UUID consultantId, String type, Pageable pageable) {
+        UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(consultantId);
+        Page<WalletLedgerEntry> entries;
+        if (type == null) {
+            entries = walletLedgerEntryRepository.findByConsultantId(scopedConsultantId, pageable);
+        } else {
+            LedgerEntryType parsedType;
+            try {
+                parsedType = LedgerEntryType.valueOf(type);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Unknown wallet ledger entry type: " + type);
+            }
+            entries = walletLedgerEntryRepository.findByConsultantIdAndType(scopedConsultantId, parsedType, pageable);
+        }
+        return entries.map(PaymentsServiceImpl::toLedgerEntryView);
+    }
+
+    private static WalletLedgerEntryView toLedgerEntryView(WalletLedgerEntry entry) {
+        return new WalletLedgerEntryView(entry.getLedgerEntryId(), entry.getConsultantId(), entry.getType().name(),
+            entry.getAmount(), entry.getCurrency(), entry.getRelatedBookingId(), entry.getBalanceAfter(),
+            entry.getCreatedAt());
     }
 
     private Wallet provisionWallet(UUID consultantId) {

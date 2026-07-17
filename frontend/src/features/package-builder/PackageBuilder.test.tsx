@@ -6,7 +6,7 @@ import { PackageBuilder } from "./PackageBuilder";
 import { apiClient } from "@/shared/api/apiClient";
 
 vi.mock("@/shared/api/apiClient", () => ({
-  apiClient: { post: vi.fn() },
+  apiClient: { post: vi.fn(), get: vi.fn() },
 }));
 
 function renderWithQuotationId(quotationId = "quotation-1") {
@@ -31,6 +31,10 @@ function fillRequiredFields() {
 describe("PackageBuilder", () => {
   beforeEach(() => {
     vi.mocked(apiClient.post).mockReset();
+    // CreditLimitBreachWarning (FIN-09) queries the wallet on the publish
+    // step; renders nothing on a fetch error, so this keeps every existing
+    // assertion below unaffected unless a test opts into a real response.
+    vi.mocked(apiClient.get).mockReset().mockRejectedValue(new Error("not stubbed"));
   });
 
   it("shows the empty state when no quotation is selected", () => {
@@ -110,5 +114,25 @@ describe("PackageBuilder", () => {
     fireEvent.click(screen.getByRole("button", { name: /^publish$/i }));
 
     await waitFor(() => expect(screen.getByText(/package published/i)).toBeInTheDocument());
+  });
+
+  it("shows the pre-payment credit-limit breach warning before Publish when the package would breach it (FIN-09)", async () => {
+    vi.mocked(apiClient.post).mockImplementation((url: string) => {
+      if (url.endsWith("/package")) {
+        return Promise.resolve({ data: { packageId: "package-1" } });
+      }
+      return Promise.reject(new Error(`unexpected call: ${url}`));
+    });
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: { consultantId: "c1", availableBalance: "0", creditLimit: "100", pendingHolds: "0", currency: "INR", updatedAt: "2026-01-01T00:00:00Z" },
+    });
+    renderWithQuotationId();
+    fillRequiredFields(); // markup price 500 > 100 headroom
+
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/would exceed your credit limit/i)).toBeInTheDocument();
+    });
   });
 });

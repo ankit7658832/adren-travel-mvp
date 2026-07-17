@@ -2,6 +2,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { usePackageBuilder, type PackageDetailsInput } from "./usePackageBuilder";
 import { Button } from "@/shared/design-system/Button";
+import { CreditLimitBreachWarning } from "@/features/wallet-billing/CreditLimitBreachWarning";
 
 const EMPTY_DETAILS: PackageDetailsInput = {
   name: "",
@@ -163,6 +164,11 @@ function PackageBuilderForQuotation({ quotationId }: { quotationId: string }) {
             <p className="text-sm text-neutral-700">Package summary</p>
             <p className="mt-1 text-base font-medium text-neutral-900">{details.name}</p>
           </div>
+          {/* PRD §21.7, FIN-09: the pre-payment credit-limit breach warning must
+              appear here, before Publish/payment — not after. */}
+          {Number(details.markupPrice) > 0 && (
+            <CreditLimitBreachWarning pendingAmount={Number(details.markupPrice)} />
+          )}
           <label className="flex items-center gap-2 text-sm text-neutral-700">
             <input
               type="checkbox"

@@ -265,6 +265,63 @@ class PaymentsServiceImplTest {
     }
 
     @Test
+    void findWalletLedgerReturnsEveryEntryWhenNoTypeFilterIsSuppliedFIN09() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        WalletLedgerEntry entry = new WalletLedgerEntry(UUID.randomUUID(), consultantId, LedgerEntryType.TOP_UP,
+            BigDecimal.valueOf(1_000), CurrencyCode.INR, null, BigDecimal.valueOf(1_000));
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        when(walletLedgerEntryRepository.findByConsultantId(consultantId, pageable))
+            .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entry)));
+
+        org.springframework.data.domain.Page<com.adren.travel.payments.WalletLedgerEntryView> page =
+            service.findWalletLedger(consultantId, null, pageable);
+
+        assertThat(page.getContent()).hasSize(1);
+        assertThat(page.getContent().get(0).type()).isEqualTo("TOP_UP");
+        verify(walletLedgerEntryRepository, org.mockito.Mockito.never())
+            .findByConsultantIdAndType(any(), any(), any());
+    }
+
+    @Test
+    void findWalletLedgerFiltersByTypeWhenSuppliedFIN09() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        WalletLedgerEntry entry = new WalletLedgerEntry(UUID.randomUUID(), consultantId, LedgerEntryType.REFUND,
+            BigDecimal.valueOf(500), CurrencyCode.INR, UUID.randomUUID(), BigDecimal.valueOf(500));
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        when(walletLedgerEntryRepository.findByConsultantIdAndType(consultantId, LedgerEntryType.REFUND, pageable))
+            .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entry)));
+
+        org.springframework.data.domain.Page<com.adren.travel.payments.WalletLedgerEntryView> page =
+            service.findWalletLedger(consultantId, "REFUND", pageable);
+
+        assertThat(page.getContent()).hasSize(1);
+        assertThat(page.getContent().get(0).type()).isEqualTo("REFUND");
+    }
+
+    @Test
+    void findWalletLedgerRejectsAnUnknownTypeFIN09() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+
+        assertThatThrownBy(() -> service.findWalletLedger(consultantId, "NOT_A_REAL_TYPE", pageable))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void aConsultantCannotQueryAnotherConsultantsLedgerFIN09() {
+        UUID ownConsultantId = UUID.randomUUID();
+        UUID otherConsultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, ownConsultantId);
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+
+        assertThatThrownBy(() -> service.findWalletLedger(otherConsultantId, null, pageable))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
     void calculatesCommissionAsAPercentageOfNetRateAndPublishesTheEventFIN02() {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();

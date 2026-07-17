@@ -1,6 +1,8 @@
 package com.adren.travel.payments;
 
 import com.adren.travel.shared.Money;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
@@ -42,6 +44,20 @@ public interface PaymentsApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     WalletView getWallet(UUID consultantId);
+
+    /**
+     * A Consultant's wallet transaction ledger, optionally filtered by
+     * {@code type} (PRD §21.7, FIN-09) — {@code type} matches one of
+     * {@code WalletLedgerEntryView.type}'s values (TopUp/Hold/Debit/
+     * Refund/CommissionDeduction/Release/OnAccount) case-sensitively, or
+     * {@code null} for no filter; an unrecognized value throws {@code
+     * IllegalArgumentException}, mapped to a 4xx same as any other bad
+     * request. Same tenant-scoping/role shape as {@link #getWallet} — a
+     * read with no financial side effect, so {@code USER} is included.
+     * Paginated per RULES.md §3.4.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    Page<WalletLedgerEntryView> findWalletLedger(UUID consultantId, String type, Pageable pageable);
 
     /**
      * Calculates Adren's commission on a booking's supplier net rate,

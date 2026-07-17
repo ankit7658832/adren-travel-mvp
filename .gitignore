@@ -4,6 +4,7 @@ dist/
 dist-ssr/
 *.tsbuildinfo
 .vite/
+coverage/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

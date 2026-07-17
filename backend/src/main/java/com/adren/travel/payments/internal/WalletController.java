@@ -3,10 +3,13 @@ package com.adren.travel.payments.internal;
 import com.adren.travel.payments.InitiateWalletTopUpCommand;
 import com.adren.travel.payments.PaymentIntentView;
 import com.adren.travel.payments.PaymentsApi;
+import com.adren.travel.payments.WalletLedgerEntryView;
 import com.adren.travel.payments.WalletView;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.Money;
+import com.adren.travel.shared.PageResponse;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -39,6 +42,14 @@ class WalletController {
     WalletView get(@RequestParam(required = false) UUID consultantId) {
         UUID target = consultantId != null ? consultantId : CurrentPrincipal.get().consultantId();
         return paymentsApi.getWallet(target);
+    }
+
+    /** PRD §21.7, FIN-09 — a Consultant's transaction ledger, optionally filtered by {@code type}. */
+    @GetMapping("/ledger")
+    PageResponse<WalletLedgerEntryView> ledger(@RequestParam(required = false) UUID consultantId,
+                                                @RequestParam(required = false) String type, Pageable pageable) {
+        UUID target = consultantId != null ? consultantId : CurrentPrincipal.get().consultantId();
+        return PageResponse.of(paymentsApi.findWalletLedger(target, type, pageable));
     }
 
     /** PRD §23.4 Edge Case #10 — starts a wallet top-up; availableBalance credits only once the Stripe webhook confirms it (FIN-15). */

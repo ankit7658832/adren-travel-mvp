@@ -355,6 +355,36 @@ class PaymentsModuleIntegrationTests {
     }
 
     @Test
+    void findWalletLedgerReturnsEveryEntryForTheConsultantWhenUnfilteredFIN09() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
+        Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
+        paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+        paymentsApi.resolveHoldAsDebit(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        var page = paymentsApi.findWalletLedger(consultantId, null, org.springframework.data.domain.PageRequest.of(0, 20));
+
+        assertThat(page.getContent()).extracting(WalletLedgerEntryView::type).containsExactlyInAnyOrder("HOLD", "DEBIT");
+    }
+
+    @Test
+    void findWalletLedgerFiltersByTypeFIN09() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
+        Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
+        paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+        paymentsApi.resolveHoldAsDebit(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        var page = paymentsApi.findWalletLedger(consultantId, "DEBIT", org.springframework.data.domain.PageRequest.of(0, 20));
+
+        assertThat(page.getContent()).extracting(WalletLedgerEntryView::type).containsExactly("DEBIT");
+    }
+
+    @Test
     void resolvingAHoldAsAReleaseLeavesAvailableBalanceUntouchedFIN07() {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
