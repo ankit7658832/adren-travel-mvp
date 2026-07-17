@@ -79,6 +79,36 @@ class BookingApiMethodSecurityTest {
         }
 
         @Bean
+        FlightLineItemRepository flightLineItemRepository() {
+            return Mockito.mock(FlightLineItemRepository.class);
+        }
+
+        @Bean
+        TransferLineItemRepository transferLineItemRepository() {
+            return Mockito.mock(TransferLineItemRepository.class);
+        }
+
+        @Bean
+        CruiseLineItemRepository cruiseLineItemRepository() {
+            return Mockito.mock(CruiseLineItemRepository.class);
+        }
+
+        @Bean
+        ActivityLineItemRepository activityLineItemRepository() {
+            return Mockito.mock(ActivityLineItemRepository.class);
+        }
+
+        @Bean
+        BookingRepository bookingRepository() {
+            return Mockito.mock(BookingRepository.class);
+        }
+
+        @Bean
+        HotelDedupService hotelDedupService() {
+            return new HotelDedupService();
+        }
+
+        @Bean
         QuotationRepository quotationRepository() {
             return Mockito.mock(QuotationRepository.class);
         }
@@ -104,14 +134,33 @@ class BookingApiMethodSecurityTest {
         }
 
         @Bean
+        CancellationRequestRepository cancellationRequestRepository() {
+            return Mockito.mock(CancellationRequestRepository.class);
+        }
+
+        @Bean
+        DisputeTicketRepository disputeTicketRepository() {
+            return Mockito.mock(DisputeTicketRepository.class);
+        }
+
+        @Bean
         BookingApi bookingApi(ItineraryRepository repository, TravelerProfileRepository travelerProfileRepository,
-                               HotelLineItemRepository hotelLineItemRepository, QuotationRepository quotationRepository,
-                               TravelPackageRepository travelPackageRepository, VoucherService voucherService,
+                               HotelLineItemRepository hotelLineItemRepository, FlightLineItemRepository flightLineItemRepository,
+                               TransferLineItemRepository transferLineItemRepository,
+                               CruiseLineItemRepository cruiseLineItemRepository,
+                               ActivityLineItemRepository activityLineItemRepository,
+                               QuotationRepository quotationRepository,
+                               TravelPackageRepository travelPackageRepository, BookingRepository bookingRepository,
+                               VoucherService voucherService,
                                ApplicationEventPublisher publisher, WhitelabelApi whitelabelApi,
-                               SupplierSearchApi supplierSearchApi, PaymentsApi paymentsApi) {
+                               SupplierSearchApi supplierSearchApi, HotelDedupService hotelDedupService,
+                               PaymentsApi paymentsApi, CancellationRequestRepository cancellationRequestRepository,
+                               DisputeTicketRepository disputeTicketRepository) {
             return new BookingServiceImpl(repository, travelerProfileRepository, hotelLineItemRepository,
-                quotationRepository, travelPackageRepository, voucherService, publisher, whitelabelApi,
-                supplierSearchApi, paymentsApi);
+                flightLineItemRepository, transferLineItemRepository, cruiseLineItemRepository,
+                activityLineItemRepository, quotationRepository, travelPackageRepository, bookingRepository,
+                voucherService, publisher, whitelabelApi, supplierSearchApi, hotelDedupService, paymentsApi,
+                cancellationRequestRepository, disputeTicketRepository);
         }
     }
 

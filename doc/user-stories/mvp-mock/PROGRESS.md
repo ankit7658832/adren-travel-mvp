@@ -39,23 +39,23 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **BOK-01** — add transactional boundaries to booking state change methods
 - [x] **BOK-02** — fix bookingconfirmedevent to carry money instead of decomposed amount currency
 - [x] **BOK-03** — add hotel line items to an itinerary
-- [ ] **BOK-04** — add flight line items to an itinerary mystifly
-- [ ] **BOK-05** — add transfer line items to an itinerary transferz
-- [ ] **BOK-06** — add cruise line items to an itinerary widgety
-- [ ] **BOK-07** — add activity line items to an itinerary hbactivities
+- [x] **BOK-04** — add flight line items to an itinerary mystifly
+- [x] **BOK-05** — add transfer line items to an itinerary transferz
+- [x] **BOK-06** — add cruise line items to an itinerary widgety
+- [x] **BOK-07** — add activity line items to an itinerary hbactivities
 - [x] **BOK-08** — save an itinerary as a quotation
 - [x] **BOK-09** — create quotation entity with fx rate validity window
 - [x] **BOK-10** — convert a quotation to a package
-- [ ] **BOK-11** — build the package builder screen with uk atol disclosure gate
+- [x] **BOK-11** — build the package builder screen with uk atol disclosure gate
 - [x] **BOK-12** — publish a package making it visible to users (ATOL gate deferred to BOK-11/BOK-04 — see backend README)
 - [x] **BOK-13** — build the direct booking payment flow user facing (backend confirmBooking scaffold only — frontend screen deferred, see backend README)
 - [x] **BOK-14** — capture traveler profile details including passport document vault
 - [x] **BOK-15** — generate a voucher on booking confirmation including atol certificate for uk dynamic packages (ATOL cert always null in this slice — see backend README)
-- [ ] **BOK-16** — prevent double booking of the last available inventory unit under concurrent requests
-- [ ] **BOK-17** — consolidate mixed currency line items to the consultant s sell currency at checkout
-- [ ] **BOK-18** — recalculate price when traveler count changes after quotation but before booking
-- [ ] **BOK-19** — generate a pnr searchable reference on every booking
-- [ ] **BOK-20** — deduplicate the same physical hotel property offered by two suppliers
+- [x] **BOK-16** — prevent double booking of the last available inventory unit under concurrent requests
+- [x] **BOK-17** — consolidate mixed currency line items to the consultant s sell currency at checkout
+- [x] **BOK-18** — recalculate price when traveler count changes after quotation but before booking
+- [x] **BOK-19** — generate a pnr searchable reference on every booking
+- [x] **BOK-20** — deduplicate the same physical hotel property offered by two suppliers
 - [x] **BOK-21** — integrate a stuba client stub for hotel search
 - [x] **BOK-22** — integrate a tbo client stub for hotel search
 - [x] **BOK-23** — integrate a transferz client stub for transfer search
@@ -73,17 +73,17 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **FIN-05** — calculate sell rate through the full net buffer markup commission pipeline
 - [x] **FIN-06** — model the wallet with balance credit limit and pending holds
 - [x] **FIN-07** — place a hold on booking confirmation release or debit on final confirmation
-- [ ] **FIN-08** — block booking confirmation on credit limit breach with an actionable message
-- [ ] **FIN-09** — build the wallet billing screen with pre payment breach warning
+- [x] **FIN-08** — block booking confirmation on credit limit breach with an actionable message
+- [x] **FIN-09** — build the wallet billing screen with pre payment breach warning
 - [x] **FIN-10** — guarantee atomic idempotent wallet ledger writes
 - [x] **FIN-11** — integrate stripe for payment collection across six settlement currencies
-- [ ] **FIN-12** — support on account billing as a payment method
-- [ ] **FIN-13** — process refunds and credit notes tied to supplier cancellation policy
-- [ ] **FIN-14** — reuse the original fx snapshot when calculating a refund
-- [ ] **FIN-15** — reconcile wallet top up when the payment gateway webhook is delayed or fails
-- [ ] **FIN-16** — build the cancellation dispute handling workflow
-- [ ] **FIN-17** — implement india gst tcs calculation layer for outbound packages
-- [ ] **FIN-18** — implement uk toms vat calculation layer
+- [x] **FIN-12** — support on account billing as a payment method
+- [x] **FIN-13** — process refunds and credit notes tied to supplier cancellation policy
+- [x] **FIN-14** — reuse the original fx snapshot when calculating a refund
+- [x] **FIN-15** — reconcile wallet top up when the payment gateway webhook is delayed or fails
+- [x] **FIN-16** — build the cancellation dispute handling workflow
+- [x] **FIN-17** — implement india gst tcs calculation layer for outbound packages
+- [x] **FIN-18** — implement uk toms vat calculation layer
 
 ## AI Layer (13)
 

@@ -2,25 +2,39 @@ package com.adren.travel.payments.internal;
 
 import com.adren.travel.payments.ApplyCurrencyBufferCommand;
 import com.adren.travel.payments.CalculateCommissionCommand;
+import com.adren.travel.payments.CalculateIndiaGstTcsCommand;
+import com.adren.travel.payments.CalculateRefundCommand;
 import com.adren.travel.payments.CalculateSellRateCommand;
+import com.adren.travel.payments.CalculateUkTomsVatCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.CreatePaymentIntentCommand;
 import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.HandleStripeWebhookCommand;
+import com.adren.travel.payments.IndiaGstTcsCalculation;
+import com.adren.travel.payments.InitiateWalletTopUpCommand;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
 import com.adren.travel.payments.PaymentIntentStatus;
 import com.adren.travel.payments.PaymentIntentView;
 import com.adren.travel.payments.PaymentsApi;
+import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.SnapshotFxRateCommand;
+import com.adren.travel.payments.UkTomsVatCalculation;
 import com.adren.travel.payments.WalletHoldCommand;
+import com.adren.travel.payments.WalletLedgerEntryView;
 import com.adren.travel.payments.WalletView;
+import com.adren.travel.payments.event.BookingPaidOnAccountEvent;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
+import com.adren.travel.payments.event.IndiaGstTcsCalculatedEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
+import com.adren.travel.payments.event.RefundCalculatedEvent;
+import com.adren.travel.payments.event.RefundProcessedEvent;
 import com.adren.travel.payments.event.StripePaymentSucceededEvent;
+import com.adren.travel.payments.event.UkTomsVatCalculatedEvent;
+import com.adren.travel.payments.event.WalletTopUpReconciledEvent;
 import com.adren.travel.payments.event.WalletHoldDebitedEvent;
 import com.adren.travel.payments.event.WalletHoldPlacedEvent;
 import com.adren.travel.payments.event.WalletHoldReleasedEvent;
@@ -29,9 +43,13 @@ import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -47,12 +65,15 @@ class PaymentsServiceImpl implements PaymentsApi {
     private final ApplicationEventPublisher events;
     private final PricingPipeline pricingPipeline;
     private final StripeClient stripeClient;
+    private final IndiaTaxProperties indiaTaxProperties;
+    private final UkTomsVatProperties ukTomsVatProperties;
 
     PaymentsServiceImpl(MarkupRuleRepository markupRuleRepository, WalletRepository walletRepository,
                          PaymentIntentRepository paymentIntentRepository,
                          WalletLedgerEntryRepository walletLedgerEntryRepository,
                          WalletLedgerEntryRecorder walletLedgerEntryRecorder, ApplicationEventPublisher events,
-                         PricingPipeline pricingPipeline, StripeClient stripeClient) {
+                         PricingPipeline pricingPipeline, StripeClient stripeClient,
+                         IndiaTaxProperties indiaTaxProperties, UkTomsVatProperties ukTomsVatProperties) {
         this.markupRuleRepository = markupRuleRepository;
         this.walletRepository = walletRepository;
         this.paymentIntentRepository = paymentIntentRepository;
@@ -61,6 +82,8 @@ class PaymentsServiceImpl implements PaymentsApi {
         this.events = events;
         this.pricingPipeline = pricingPipeline;
         this.stripeClient = stripeClient;
+        this.indiaTaxProperties = indiaTaxProperties;
+        this.ukTomsVatProperties = ukTomsVatProperties;
     }
 
     @Override
@@ -97,6 +120,30 @@ class PaymentsServiceImpl implements PaymentsApi {
         Wallet wallet = walletRepository.findById(scopedConsultantId)
             .orElseGet(() -> provisionWallet(scopedConsultantId));
         return toView(wallet);
+    }
+
+    @Override
+    public Page<WalletLedgerEntryView> findWalletLedger(UUID consultantId, String type, Pageable pageable) {
+        UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(consultantId);
+        Page<WalletLedgerEntry> entries;
+        if (type == null) {
+            entries = walletLedgerEntryRepository.findByConsultantId(scopedConsultantId, pageable);
+        } else {
+            LedgerEntryType parsedType;
+            try {
+                parsedType = LedgerEntryType.valueOf(type);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Unknown wallet ledger entry type: " + type);
+            }
+            entries = walletLedgerEntryRepository.findByConsultantIdAndType(scopedConsultantId, parsedType, pageable);
+        }
+        return entries.map(PaymentsServiceImpl::toLedgerEntryView);
+    }
+
+    private static WalletLedgerEntryView toLedgerEntryView(WalletLedgerEntry entry) {
+        return new WalletLedgerEntryView(entry.getLedgerEntryId(), entry.getConsultantId(), entry.getType().name(),
+            entry.getAmount(), entry.getCurrency(), entry.getRelatedBookingId(), entry.getBalanceAfter(),
+            entry.getCreatedAt());
     }
 
     private Wallet provisionWallet(UUID consultantId) {
@@ -146,7 +193,24 @@ class PaymentsServiceImpl implements PaymentsApi {
         StripePaymentIntent intent = stripeClient.createPaymentIntent(command.amount(), command.bookingReferenceId());
 
         paymentIntentRepository.save(new PaymentIntentRecord(intent.paymentIntentId(), command.bookingReferenceId(),
-            scopedConsultantId, intent.amount().amount(), intent.amount().currency(), intent.status()));
+            scopedConsultantId, intent.amount().amount(), intent.amount().currency(), intent.status(),
+            PaymentIntentPurpose.BOOKING));
+
+        return new PaymentIntentView(intent.paymentIntentId(), intent.clientSecret(), intent.amount(), intent.status());
+    }
+
+    @Override
+    @Transactional
+    public PaymentIntentView initiateWalletTopUp(InitiateWalletTopUpCommand command) {
+        UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(command.consultantId());
+        // No real booking to reference — stripeClient's signature still
+        // wants a UUID (it's an opaque pass-through for the stub, see its
+        // own Javadoc), so a synthetic one is fine here.
+        StripePaymentIntent intent = stripeClient.createPaymentIntent(command.amount(), UUID.randomUUID());
+
+        paymentIntentRepository.save(new PaymentIntentRecord(intent.paymentIntentId(), UUID.randomUUID(),
+            scopedConsultantId, intent.amount().amount(), intent.amount().currency(), intent.status(),
+            PaymentIntentPurpose.WALLET_TOP_UP));
 
         return new PaymentIntentView(intent.paymentIntentId(), intent.clientSecret(), intent.amount(), intent.status());
     }
@@ -162,14 +226,44 @@ class PaymentsServiceImpl implements PaymentsApi {
             .orElseThrow(() -> new IllegalArgumentException("No PaymentIntent: " + command.paymentIntentId()));
 
         if ("payment_intent.succeeded".equals(command.type())) {
+            // FIN-15: Stripe retries webhooks on delay/failure (the exact
+            // scenario PRD §23.4 Edge Case #10 names) — without this guard,
+            // a retried "succeeded" webhook for an already-reconciled
+            // top-up would credit the wallet a second time.
+            boolean alreadyReconciled = record.getStatus() == PaymentIntentStatus.SUCCEEDED;
             record.markAs(PaymentIntentStatus.SUCCEEDED);
             paymentIntentRepository.save(record);
-            events.publishEvent(new StripePaymentSucceededEvent(record.getBookingReferenceId(),
-                record.getConsultantId(), new Money(record.getAmount(), record.getCurrency())));
+            if (alreadyReconciled) {
+                return;
+            }
+            if (record.getPurpose() == PaymentIntentPurpose.WALLET_TOP_UP) {
+                reconcileWalletTopUp(record);
+            } else {
+                events.publishEvent(new StripePaymentSucceededEvent(record.getBookingReferenceId(),
+                    record.getConsultantId(), new Money(record.getAmount(), record.getCurrency())));
+            }
         } else {
             record.markAs(PaymentIntentStatus.FAILED);
             paymentIntentRepository.save(record);
         }
+    }
+
+    // FIN-15: the ONLY place availableBalance is credited for a top-up — a
+    // booking attempted against funds from a not-yet-webhooked top-up sees
+    // an availableBalance that simply doesn't include them yet, so FIN-08's
+    // credit-limit check blocks it structurally, not via a special case.
+    private void reconcileWalletTopUp(PaymentIntentRecord record) {
+        Wallet wallet = walletRepository.findById(record.getConsultantId())
+            .orElseGet(() -> provisionWallet(record.getConsultantId()));
+        wallet.credit(record.getAmount());
+        walletRepository.save(wallet);
+
+        WalletLedgerEntry entry = new WalletLedgerEntry(UUID.randomUUID(), record.getConsultantId(),
+            LedgerEntryType.TOP_UP, record.getAmount(), record.getCurrency(), null, wallet.getAvailableBalance());
+        walletLedgerEntryRepository.save(entry);
+
+        events.publishEvent(new WalletTopUpReconciledEvent(record.getConsultantId(),
+            new Money(record.getAmount(), record.getCurrency())));
     }
 
     @Override
@@ -224,6 +318,118 @@ class PaymentsServiceImpl implements PaymentsApi {
         }
 
         events.publishEvent(new WalletHoldReleasedEvent(command.bookingId(), command.consultantId(), command.amount()));
+    }
+
+    @Override
+    @Transactional
+    public void payOnAccount(WalletHoldCommand command) {
+        if (walletLedgerEntryRepository.existsByRelatedBookingIdAndType(command.bookingId(), LedgerEntryType.ON_ACCOUNT)) {
+            return; // FIN-10: already recorded — idempotent no-op on a sequential retry.
+        }
+
+        Wallet wallet = walletRepository.findById(command.consultantId())
+            .orElseGet(() -> provisionWallet(command.consultantId()));
+        // FIN-12: deliberately no wallet.placeHold/resolveHoldAsDebit call
+        // here — On-Account billing is settled later, not against wallet
+        // balance/credit/pendingHolds, so tryRecordAndApply's save() below
+        // just re-persists the wallet unchanged.
+
+        if (!tryRecordAndApply(command, LedgerEntryType.ON_ACCOUNT, wallet)) {
+            return; // FIN-10: lost a concurrent race — the other writer already recorded this.
+        }
+
+        events.publishEvent(new BookingPaidOnAccountEvent(command.bookingId(), command.consultantId(), command.amount()));
+    }
+
+    @Override
+    @Transactional
+    public RefundCalculation calculateRefund(CalculateRefundCommand command) {
+        boolean cancelledBeforeDeadline = command.cancelledAt().isBefore(command.cancellationDeadline());
+
+        Money refundAmount;
+        Money penaltyAmount;
+        if (cancelledBeforeDeadline) {
+            refundAmount = command.sellPrice();
+            penaltyAmount = Money.zero(command.sellPrice().currency());
+        } else {
+            penaltyAmount = command.sellPrice().percentOf(command.postDeadlinePenaltyPercent());
+            refundAmount = command.sellPrice().percentOf(BigDecimal.valueOf(100).subtract(command.postDeadlinePenaltyPercent()));
+        }
+        boolean requiresConsultantApproval = penaltyAmount.amount().signum() > 0;
+
+        events.publishEvent(new RefundCalculatedEvent(command.bookingId(), command.consultantId(), refundAmount,
+            penaltyAmount, requiresConsultantApproval));
+
+        // FIN-14/PRD §23.4 Edge Case #9: converted using the booking's
+        // ORIGINAL FxRateSnapshot (FIN-04), inverted, never a fresh rate —
+        // command.originalFxRateSnapshot() is the only rate this method
+        // has access to, so reusing it is structural, not a discipline.
+        FxRateSnapshot originalSnapshot = command.originalFxRateSnapshot();
+        BigDecimal inverseRate = BigDecimal.ONE.divide(originalSnapshot.rate(), 10, RoundingMode.HALF_UP);
+        Money refundAmountInSupplierCurrency = refundAmount.convertTo(originalSnapshot.supplierCurrency(), inverseRate);
+
+        return new RefundCalculation(refundAmount, penaltyAmount, requiresConsultantApproval,
+            refundAmountInSupplierCurrency);
+    }
+
+    @Override
+    @Transactional
+    public void processRefund(WalletHoldCommand command) {
+        if (walletLedgerEntryRepository.existsByRelatedBookingIdAndType(command.bookingId(), LedgerEntryType.REFUND)) {
+            return; // FIN-10: already recorded — idempotent no-op on a sequential retry.
+        }
+
+        Wallet wallet = walletRepository.findById(command.consultantId())
+            .orElseGet(() -> provisionWallet(command.consultantId()));
+        wallet.credit(command.amount().amount());
+
+        if (!tryRecordAndApply(command, LedgerEntryType.REFUND, wallet)) {
+            return; // FIN-10: lost a concurrent race — the other writer already recorded this refund.
+        }
+
+        events.publishEvent(new RefundProcessedEvent(command.bookingId(), command.consultantId(), command.amount()));
+    }
+
+    @Override
+    @Transactional
+    public IndiaGstTcsCalculation calculateIndiaGstTcs(CalculateIndiaGstTcsCommand command) {
+        Money gstAmount;
+        Money tcsAmount;
+        boolean applied = indiaTaxProperties.enabled();
+        if (applied) {
+            gstAmount = command.marginAmount().percentOf(indiaTaxProperties.gstPercent());
+            boolean overThreshold = command.packageValue().amount().compareTo(indiaTaxProperties.tcsThreshold()) > 0;
+            tcsAmount = overThreshold
+                ? command.packageValue().percentOf(indiaTaxProperties.tcsPercent())
+                : Money.zero(command.packageValue().currency());
+        } else {
+            // PRD §19: exact rates pending tax-counsel sign-off — never
+            // silently charge the PRD's illustrative figures as if final.
+            gstAmount = Money.zero(command.marginAmount().currency());
+            tcsAmount = Money.zero(command.packageValue().currency());
+        }
+
+        events.publishEvent(new IndiaGstTcsCalculatedEvent(command.bookingId(), command.consultantId(), gstAmount,
+            tcsAmount, applied));
+
+        return new IndiaGstTcsCalculation(gstAmount, tcsAmount, applied);
+    }
+
+    @Override
+    @Transactional
+    public UkTomsVatCalculation calculateUkTomsVat(CalculateUkTomsVatCommand command) {
+        boolean applied = ukTomsVatProperties.enabled();
+        // PRD §19: exact rate pending UK tax-counsel sign-off — never
+        // silently charge the PRD's illustrative figure as if final.
+        // Always on the margin only, per Example D — never the full sale
+        // price, so there's no separate "full price" input to branch on.
+        Money vatAmount = applied
+            ? command.marginAmount().percentOf(ukTomsVatProperties.vatPercent())
+            : Money.zero(command.marginAmount().currency());
+
+        events.publishEvent(new UkTomsVatCalculatedEvent(command.bookingId(), command.consultantId(), vatAmount, applied));
+
+        return new UkTomsVatCalculation(vatAmount, applied);
     }
 
     // FIN-10: the ledger insert is attempted (and, on a unique-constraint

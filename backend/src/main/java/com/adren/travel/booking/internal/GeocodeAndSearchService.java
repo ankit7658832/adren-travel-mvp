@@ -15,21 +15,25 @@ import java.util.List;
  * typed, check whether any supplier has inventory there — one location
  * with no inventory must still render its own pin (T1), so this never
  * throws or drops a location, it marks it {@code hasInventory: false} —
- * and runs FND-14's Default Selection Algorithm over whatever inventory
- * exists to pre-select a per-location default.
+ * deduplicates the same physical hotel offered by more than one supplier
+ * (BOK-20), then runs FND-14's Default Selection Algorithm over whatever
+ * inventory remains to pre-select a per-location default.
  */
 @Service
 class GeocodeAndSearchService {
 
     private final GeocodingService geocodingService;
     private final SupplierSearchApi supplierSearchApi;
+    private final HotelDedupService hotelDedupService;
     private final DefaultSelectionService defaultSelectionService;
     private final WhitelabelApi whitelabelApi;
 
     GeocodeAndSearchService(GeocodingService geocodingService, SupplierSearchApi supplierSearchApi,
-                             DefaultSelectionService defaultSelectionService, WhitelabelApi whitelabelApi) {
+                             HotelDedupService hotelDedupService, DefaultSelectionService defaultSelectionService,
+                             WhitelabelApi whitelabelApi) {
         this.geocodingService = geocodingService;
         this.supplierSearchApi = supplierSearchApi;
+        this.hotelDedupService = hotelDedupService;
         this.defaultSelectionService = defaultSelectionService;
         this.whitelabelApi = whitelabelApi;
     }
@@ -44,7 +48,8 @@ class GeocodeAndSearchService {
         return locationQueries.stream()
             .map(query -> {
                 GeocodingService.GeoPoint point = geocodingService.geocode(query);
-                List<SupplierSearchResult> options = supplierSearchApi.searchHotels(query, checkIn, checkOut);
+                List<SupplierSearchResult> rawOptions = supplierSearchApi.searchHotels(query, checkIn, checkOut);
+                List<SupplierSearchResult> options = hotelDedupService.deduplicate(rawOptions);
                 // No per-Consultant preferred-supplier config exists yet
                 // (FIN-01, Financial Layer) — the algorithm already honors
                 // one once that lands, nothing here needs to change.

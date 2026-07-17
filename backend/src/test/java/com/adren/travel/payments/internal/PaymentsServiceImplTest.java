@@ -2,28 +2,40 @@ package com.adren.travel.payments.internal;
 
 import com.adren.travel.payments.ApplyCurrencyBufferCommand;
 import com.adren.travel.payments.CalculateCommissionCommand;
+import com.adren.travel.payments.CalculateIndiaGstTcsCommand;
+import com.adren.travel.payments.CalculateRefundCommand;
 import com.adren.travel.payments.CalculateSellRateCommand;
+import com.adren.travel.payments.CalculateUkTomsVatCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.CreatePaymentIntentCommand;
+import com.adren.travel.payments.CreditLimitExceededException;
 import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.HandleStripeWebhookCommand;
+import com.adren.travel.payments.IndiaGstTcsCalculation;
+import com.adren.travel.payments.InitiateWalletTopUpCommand;
 import com.adren.travel.payments.MarkupRuleView;
 import com.adren.travel.payments.MarkupType;
 import com.adren.travel.payments.PaymentIntentStatus;
 import com.adren.travel.payments.PaymentIntentView;
+import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.SnapshotFxRateCommand;
+import com.adren.travel.payments.UkTomsVatCalculation;
 import com.adren.travel.payments.WalletHoldCommand;
 import com.adren.travel.payments.WalletView;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
+import com.adren.travel.payments.event.IndiaGstTcsCalculatedEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
+import com.adren.travel.payments.event.RefundCalculatedEvent;
 import com.adren.travel.payments.event.StripePaymentSucceededEvent;
+import com.adren.travel.payments.event.UkTomsVatCalculatedEvent;
 import com.adren.travel.payments.event.WalletHoldDebitedEvent;
 import com.adren.travel.payments.event.WalletHoldPlacedEvent;
 import com.adren.travel.payments.event.WalletHoldReleasedEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
+import com.adren.travel.payments.event.WalletTopUpReconciledEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
@@ -48,6 +60,7 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -55,6 +68,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -85,9 +99,15 @@ class PaymentsServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        // Disabled by default (illustrative rates, pending tax-counsel
+        // sign-off — see IndiaTaxProperties' Javadoc); FIN-17's own tests
+        // construct an enabled instance explicitly where they need one.
+        IndiaTaxProperties disabledIndiaTax = new IndiaTaxProperties(false, BigDecimal.valueOf(5),
+            BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
+        UkTomsVatProperties disabledUkTomsVat = new UkTomsVatProperties(false, BigDecimal.valueOf(20));
         service = new PaymentsServiceImpl(markupRuleRepository, walletRepository, paymentIntentRepository,
             walletLedgerEntryRepository, new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
-            new PricingPipeline(markupRuleRepository, events), stripeClient);
+            new PricingPipeline(markupRuleRepository, events), stripeClient, disabledIndiaTax, disabledUkTomsVat);
     }
 
     @AfterEach
@@ -241,6 +261,63 @@ class PaymentsServiceImplTest {
         authenticateAs(Role.CONSULTANT, ownConsultantId);
 
         assertThatThrownBy(() -> service.getWallet(otherConsultantId))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void findWalletLedgerReturnsEveryEntryWhenNoTypeFilterIsSuppliedFIN09() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        WalletLedgerEntry entry = new WalletLedgerEntry(UUID.randomUUID(), consultantId, LedgerEntryType.TOP_UP,
+            BigDecimal.valueOf(1_000), CurrencyCode.INR, null, BigDecimal.valueOf(1_000));
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        when(walletLedgerEntryRepository.findByConsultantId(consultantId, pageable))
+            .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entry)));
+
+        org.springframework.data.domain.Page<com.adren.travel.payments.WalletLedgerEntryView> page =
+            service.findWalletLedger(consultantId, null, pageable);
+
+        assertThat(page.getContent()).hasSize(1);
+        assertThat(page.getContent().get(0).type()).isEqualTo("TOP_UP");
+        verify(walletLedgerEntryRepository, org.mockito.Mockito.never())
+            .findByConsultantIdAndType(any(), any(), any());
+    }
+
+    @Test
+    void findWalletLedgerFiltersByTypeWhenSuppliedFIN09() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        WalletLedgerEntry entry = new WalletLedgerEntry(UUID.randomUUID(), consultantId, LedgerEntryType.REFUND,
+            BigDecimal.valueOf(500), CurrencyCode.INR, UUID.randomUUID(), BigDecimal.valueOf(500));
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        when(walletLedgerEntryRepository.findByConsultantIdAndType(consultantId, LedgerEntryType.REFUND, pageable))
+            .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(entry)));
+
+        org.springframework.data.domain.Page<com.adren.travel.payments.WalletLedgerEntryView> page =
+            service.findWalletLedger(consultantId, "REFUND", pageable);
+
+        assertThat(page.getContent()).hasSize(1);
+        assertThat(page.getContent().get(0).type()).isEqualTo("REFUND");
+    }
+
+    @Test
+    void findWalletLedgerRejectsAnUnknownTypeFIN09() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+
+        assertThatThrownBy(() -> service.findWalletLedger(consultantId, "NOT_A_REAL_TYPE", pageable))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void aConsultantCannotQueryAnotherConsultantsLedgerFIN09() {
+        UUID ownConsultantId = UUID.randomUUID();
+        UUID otherConsultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, ownConsultantId);
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+
+        assertThatThrownBy(() -> service.findWalletLedger(otherConsultantId, null, pageable))
             .isInstanceOf(AccessDeniedException.class);
     }
 
@@ -472,7 +549,8 @@ class PaymentsServiceImplTest {
         UUID bookingReferenceId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         PaymentIntentRecord record = new PaymentIntentRecord("pi_123", bookingReferenceId, consultantId,
-            BigDecimal.valueOf(1_000), CurrencyCode.INR, PaymentIntentStatus.REQUIRES_PAYMENT_METHOD);
+            BigDecimal.valueOf(1_000), CurrencyCode.INR, PaymentIntentStatus.REQUIRES_PAYMENT_METHOD,
+            PaymentIntentPurpose.BOOKING);
         when(paymentIntentRepository.findById("pi_123")).thenReturn(Optional.of(record));
 
         service.handleStripeWebhook(new HandleStripeWebhookCommand("payment_intent.succeeded", "pi_123"));
@@ -487,13 +565,73 @@ class PaymentsServiceImplTest {
     @Test
     void aFailedWebhookMarksTheRecordFailedWithoutPublishingAnEventFIN11() {
         PaymentIntentRecord record = new PaymentIntentRecord("pi_123", UUID.randomUUID(), UUID.randomUUID(),
-            BigDecimal.valueOf(1_000), CurrencyCode.INR, PaymentIntentStatus.REQUIRES_PAYMENT_METHOD);
+            BigDecimal.valueOf(1_000), CurrencyCode.INR, PaymentIntentStatus.REQUIRES_PAYMENT_METHOD,
+            PaymentIntentPurpose.BOOKING);
         when(paymentIntentRepository.findById("pi_123")).thenReturn(Optional.of(record));
 
         service.handleStripeWebhook(new HandleStripeWebhookCommand("payment_intent.payment_failed", "pi_123"));
 
         assertThat(record.getStatus()).isEqualTo(PaymentIntentStatus.FAILED);
         verifyNoInteractions(events);
+    }
+
+    @Test
+    void initiatingAWalletTopUpCreatesAPaymentIntentWithoutCreditingTheWalletFIN15() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money amount = new Money(BigDecimal.valueOf(5_000), CurrencyCode.INR);
+        when(stripeClient.createPaymentIntent(eq(amount), any())).thenReturn(
+            new StripePaymentIntent("pi_topup_1", "pi_topup_1_secret", amount, PaymentIntentStatus.REQUIRES_PAYMENT_METHOD));
+
+        PaymentIntentView intent = service.initiateWalletTopUp(new InitiateWalletTopUpCommand(consultantId, amount));
+
+        assertThat(intent.paymentIntentId()).isNotBlank();
+        // FIN-15: availableBalance is deliberately NOT touched at initiation
+        // — only handleStripeWebhook's reconciliation does that.
+        verifyNoInteractions(walletRepository);
+        ArgumentCaptor<PaymentIntentRecord> captor = ArgumentCaptor.forClass(PaymentIntentRecord.class);
+        verify(paymentIntentRepository).save(captor.capture());
+        assertThat(captor.getValue().getPurpose()).isEqualTo(PaymentIntentPurpose.WALLET_TOP_UP);
+    }
+
+    @Test
+    void aSucceededTopUpWebhookCreditsTheWalletAndPublishesWalletTopUpReconciledEventFIN15() {
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        PaymentIntentRecord record = new PaymentIntentRecord("pi_topup", UUID.randomUUID(), consultantId,
+            BigDecimal.valueOf(5_000), CurrencyCode.INR, PaymentIntentStatus.REQUIRES_PAYMENT_METHOD,
+            PaymentIntentPurpose.WALLET_TOP_UP);
+        when(paymentIntentRepository.findById("pi_topup")).thenReturn(Optional.of(record));
+
+        service.handleStripeWebhook(new HandleStripeWebhookCommand("payment_intent.succeeded", "pi_topup"));
+
+        assertThat(wallet.getAvailableBalance()).isEqualByComparingTo("5000");
+        verify(walletRepository).save(wallet);
+        ArgumentCaptor<WalletLedgerEntry> entryCaptor = ArgumentCaptor.forClass(WalletLedgerEntry.class);
+        verify(walletLedgerEntryRepository).save(entryCaptor.capture());
+        assertThat(entryCaptor.getValue().getType()).isEqualTo(LedgerEntryType.TOP_UP);
+
+        ArgumentCaptor<WalletTopUpReconciledEvent> eventCaptor = ArgumentCaptor.forClass(WalletTopUpReconciledEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().consultantId()).isEqualTo(consultantId);
+        assertThat(eventCaptor.getValue().amount().amount()).isEqualByComparingTo("5000");
+    }
+
+    @Test
+    void aRetriedSucceededWebhookDoesNotCreditTheWalletTwiceFIN15() {
+        UUID consultantId = UUID.randomUUID();
+        PaymentIntentRecord record = new PaymentIntentRecord("pi_topup", UUID.randomUUID(), consultantId,
+            BigDecimal.valueOf(5_000), CurrencyCode.INR, PaymentIntentStatus.SUCCEEDED, // already reconciled
+            PaymentIntentPurpose.WALLET_TOP_UP);
+        when(paymentIntentRepository.findById("pi_topup")).thenReturn(Optional.of(record));
+
+        service.handleStripeWebhook(new HandleStripeWebhookCommand("payment_intent.succeeded", "pi_topup"));
+
+        // FIN-15: the whole point of the guard is that reconcileWalletTopUp
+        // never runs on a retry — no wallet lookup, no ledger write, no event.
+        verifyNoInteractions(walletRepository, events);
+        verify(walletLedgerEntryRepository, org.mockito.Mockito.never()).save(any());
     }
 
     @Test
@@ -517,6 +655,7 @@ class PaymentsServiceImplTest {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        wallet.grantCreditLimit(BigDecimal.valueOf(20_000)); // FIN-08: within credit limit, not a breach case
         when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
         Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
 
@@ -541,13 +680,64 @@ class PaymentsServiceImplTest {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         when(walletRepository.findById(consultantId)).thenReturn(Optional.empty());
-        Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
+        // FIN-08: a freshly auto-provisioned wallet starts at zero balance
+        // AND zero credit limit — a non-zero amount would now correctly
+        // trip the credit-limit check (see placeHoldIsBlockedWhenItWouldExceedAvailableCreditFIN08),
+        // so this test uses a zero amount to isolate what it actually
+        // verifies: that provisioning happens, not the credit check.
+        Money amount = Money.zero(CurrencyCode.INR);
 
         service.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
 
         ArgumentCaptor<Wallet> walletCaptor = ArgumentCaptor.forClass(Wallet.class);
         verify(walletRepository, org.mockito.Mockito.atLeastOnce()).save(walletCaptor.capture());
-        assertThat(walletCaptor.getValue().getPendingHolds()).isEqualByComparingTo("1000");
+        assertThat(walletCaptor.getValue().getPendingHolds()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void placeHoldIsBlockedWhenItWouldExceedAvailableCreditFIN08() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR); // zero balance, zero credit limit
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
+
+        assertThatThrownBy(() -> service.placeHold(new WalletHoldCommand(bookingId, consultantId, amount)))
+            .isInstanceOf(CreditLimitExceededException.class);
+
+        assertThat(wallet.getPendingHolds()).isEqualByComparingTo("0"); // rejected, not partially applied
+        verify(walletRepository, org.mockito.Mockito.never()).save(any());
+        verify(walletLedgerEntryRepository, org.mockito.Mockito.never()).saveAndFlush(any());
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void placeHoldIsBlockedWhenItWouldExceedTheCombinedBalancePlusCreditFIN08() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        wallet.credit(BigDecimal.valueOf(300));
+        wallet.grantCreditLimit(BigDecimal.valueOf(200)); // 500 total available
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        Money amount = new Money(BigDecimal.valueOf(501), CurrencyCode.INR); // 1 over the limit
+
+        assertThatThrownBy(() -> service.placeHold(new WalletHoldCommand(bookingId, consultantId, amount)))
+            .isInstanceOf(CreditLimitExceededException.class);
+    }
+
+    @Test
+    void placeHoldSucceedsWhenExactlyAtTheCombinedBalancePlusCreditBoundaryFIN08() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        wallet.credit(BigDecimal.valueOf(300));
+        wallet.grantCreditLimit(BigDecimal.valueOf(200));
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR); // exactly at the boundary
+
+        service.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        assertThat(wallet.getPendingHolds()).isEqualByComparingTo("500");
     }
 
     @Test
@@ -570,6 +760,7 @@ class PaymentsServiceImplTest {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        wallet.grantCreditLimit(BigDecimal.valueOf(20_000)); // FIN-08: within credit limit, not a breach case
         when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
         when(walletLedgerEntryRepository.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("dup"));
         Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
@@ -588,6 +779,7 @@ class PaymentsServiceImplTest {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        wallet.grantCreditLimit(BigDecimal.valueOf(20_000)); // FIN-08: within credit limit, not a breach case
         wallet.placeHold(BigDecimal.valueOf(11_500));
         when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
         Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
@@ -618,6 +810,7 @@ class PaymentsServiceImplTest {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Wallet wallet = new Wallet(consultantId, CurrencyCode.INR);
+        wallet.grantCreditLimit(BigDecimal.valueOf(20_000)); // FIN-08: within credit limit, not a breach case
         wallet.placeHold(BigDecimal.valueOf(500));
         when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
         Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
@@ -630,6 +823,312 @@ class PaymentsServiceImplTest {
         ArgumentCaptor<WalletHoldReleasedEvent> eventCaptor = ArgumentCaptor.forClass(WalletHoldReleasedEvent.class);
         verify(events).publishEvent(eventCaptor.capture());
         assertThat(eventCaptor.getValue().bookingId()).isEqualTo(bookingId);
+    }
+
+    @Test
+    void payOnAccountRecordsALedgerEntryWithoutTouchingWalletBalanceOrPublishesTheEventFIN12() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR); // zero balance, zero credit limit
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+
+        service.payOnAccount(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        // FIN-12: never gated by FIN-08's credit-limit check, and never
+        // touches balance/pendingHolds — a zero-zero wallet still succeeds.
+        assertThat(wallet.getAvailableBalance()).isEqualByComparingTo("0");
+        assertThat(wallet.getPendingHolds()).isEqualByComparingTo("0");
+        verify(walletRepository).save(wallet);
+
+        ArgumentCaptor<WalletLedgerEntry> entryCaptor = ArgumentCaptor.forClass(WalletLedgerEntry.class);
+        verify(walletLedgerEntryRepository).saveAndFlush(entryCaptor.capture());
+        assertThat(entryCaptor.getValue().getType()).isEqualTo(LedgerEntryType.ON_ACCOUNT);
+        assertThat(entryCaptor.getValue().getRelatedBookingId()).isEqualTo(bookingId);
+
+        ArgumentCaptor<com.adren.travel.payments.event.BookingPaidOnAccountEvent> eventCaptor =
+            ArgumentCaptor.forClass(com.adren.travel.payments.event.BookingPaidOnAccountEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().bookingId()).isEqualTo(bookingId);
+        assertThat(eventCaptor.getValue().amount()).isEqualTo(amount);
+    }
+
+    @Test
+    void payOnAccountAutoProvisionsAWalletWhenNoneExistsFIN12() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.empty());
+        Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
+
+        service.payOnAccount(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        verify(walletRepository, org.mockito.Mockito.atLeastOnce()).save(any());
+    }
+
+    @Test
+    void payOnAccountIsANoOpWhenAnEntryAlreadyExistsForTheBookingFIN10() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        when(walletLedgerEntryRepository.existsByRelatedBookingIdAndType(bookingId, LedgerEntryType.ON_ACCOUNT))
+            .thenReturn(true);
+        Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
+
+        service.payOnAccount(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        verifyNoInteractions(walletRepository);
+        verify(walletLedgerEntryRepository, org.mockito.Mockito.never()).saveAndFlush(any());
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void processRefundCreditsTheWalletAndPublishesTheEventFIN16() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR); // zero balance, zero credit limit
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        Money amount = new Money(BigDecimal.valueOf(7_000), CurrencyCode.INR);
+
+        service.processRefund(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        assertThat(wallet.getAvailableBalance()).isEqualByComparingTo("7000");
+        verify(walletRepository).save(wallet);
+
+        ArgumentCaptor<WalletLedgerEntry> entryCaptor = ArgumentCaptor.forClass(WalletLedgerEntry.class);
+        verify(walletLedgerEntryRepository).saveAndFlush(entryCaptor.capture());
+        assertThat(entryCaptor.getValue().getType()).isEqualTo(LedgerEntryType.REFUND);
+        assertThat(entryCaptor.getValue().getRelatedBookingId()).isEqualTo(bookingId);
+
+        ArgumentCaptor<com.adren.travel.payments.event.RefundProcessedEvent> eventCaptor =
+            ArgumentCaptor.forClass(com.adren.travel.payments.event.RefundProcessedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().bookingId()).isEqualTo(bookingId);
+        assertThat(eventCaptor.getValue().amount()).isEqualTo(amount);
+    }
+
+    @Test
+    void processRefundAutoProvisionsAWalletWhenNoneExistsFIN16() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.empty());
+        Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
+
+        service.processRefund(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        verify(walletRepository, org.mockito.Mockito.atLeastOnce()).save(any());
+    }
+
+    @Test
+    void processRefundIsANoOpWhenAnEntryAlreadyExistsForTheBookingFIN10() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        when(walletLedgerEntryRepository.existsByRelatedBookingIdAndType(bookingId, LedgerEntryType.REFUND))
+            .thenReturn(true);
+        Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
+
+        service.processRefund(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        verifyNoInteractions(walletRepository);
+        verify(walletLedgerEntryRepository, org.mockito.Mockito.never()).saveAndFlush(any());
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void calculateRefundReturnsAFullRefundWhenCancelledBeforeTheDeadlineFIN13() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        Instant deadline = Instant.now().plusSeconds(3600);
+        Instant cancelledAt = Instant.now();
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
+
+        RefundCalculation calculation = service.calculateRefund(new CalculateRefundCommand(
+            bookingId, consultantId, sellPrice, deadline, cancelledAt, BigDecimal.valueOf(50), originalFxRateSnapshot));
+
+        assertThat(calculation.refundAmount()).isEqualTo(sellPrice);
+        assertThat(calculation.penaltyAmount().amount()).isEqualByComparingTo("0");
+        assertThat(calculation.requiresConsultantApproval()).isFalse();
+
+        ArgumentCaptor<RefundCalculatedEvent> captor = ArgumentCaptor.forClass(RefundCalculatedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().requiresConsultantApproval()).isFalse();
+    }
+
+    @Test
+    void calculateRefundAppliesThePenaltyAndRequiresApprovalWhenCancelledAfterTheDeadlineFIN13() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        Instant deadline = Instant.now().minusSeconds(3600); // already past
+        Instant cancelledAt = Instant.now();
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
+
+        RefundCalculation calculation = service.calculateRefund(new CalculateRefundCommand(
+            bookingId, consultantId, sellPrice, deadline, cancelledAt, BigDecimal.valueOf(30), originalFxRateSnapshot));
+
+        assertThat(calculation.penaltyAmount().amount()).isEqualByComparingTo("3000.00");
+        assertThat(calculation.refundAmount().amount()).isEqualByComparingTo("7000.00");
+        assertThat(calculation.requiresConsultantApproval()).isTrue();
+
+        ArgumentCaptor<RefundCalculatedEvent> captor = ArgumentCaptor.forClass(RefundCalculatedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().requiresConsultantApproval()).isTrue();
+    }
+
+    @Test
+    void calculateRefundNeverMovesMoneyFIN13() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
+
+        service.calculateRefund(new CalculateRefundCommand(
+            bookingId, consultantId, sellPrice, Instant.now().minusSeconds(1), Instant.now(), BigDecimal.valueOf(20),
+            originalFxRateSnapshot));
+
+        verifyNoInteractions(walletRepository, walletLedgerEntryRepository);
+    }
+
+    @Test
+    void calculateRefundRejectsAnOutOfRangePenaltyPercentFIN13() {
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
+
+        assertThatThrownBy(() -> new CalculateRefundCommand(
+            UUID.randomUUID(), UUID.randomUUID(), sellPrice, Instant.now(), Instant.now(), BigDecimal.valueOf(150),
+            originalFxRateSnapshot))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void calculateRefundConvertsUsingTheOriginalFxSnapshotRateNotAFreshOneFIN14() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        // Original rate locked at booking time: 1 USD = 80 INR.
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
+
+        RefundCalculation calculation = service.calculateRefund(new CalculateRefundCommand(
+            bookingId, consultantId, sellPrice, Instant.now().plusSeconds(3600), Instant.now(),
+            BigDecimal.valueOf(50), originalFxRateSnapshot));
+
+        // Full refund (10,000 INR) converted back at the ORIGINAL 80 rate = 125.00 USD,
+        // regardless of whatever the market rate might be today — there is no
+        // "current rate" input anywhere on this command for it to have used instead.
+        assertThat(calculation.refundAmountInSupplierCurrency().currency()).isEqualTo(CurrencyCode.USD);
+        assertThat(calculation.refundAmountInSupplierCurrency().amount()).isEqualByComparingTo("125.00");
+    }
+
+    @Test
+    void calculateRefundRejectsASnapshotWhoseSellCurrencyDoesNotMatchTheRefundFIN14() {
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        FxRateSnapshot mismatchedSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.GBP,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
+
+        assertThatThrownBy(() -> new CalculateRefundCommand(
+            UUID.randomUUID(), UUID.randomUUID(), sellPrice, Instant.now(), Instant.now(), BigDecimal.valueOf(20),
+            mismatchedSnapshot))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void calculateIndiaGstTcsAppliesNothingWhenTheFeatureFlagIsOffFIN17() {
+        // Default `service` from setUp() is built with the flag disabled.
+        Money margin = new Money(BigDecimal.valueOf(50_000), CurrencyCode.INR);
+        Money packageValue = new Money(BigDecimal.valueOf(1_000_000), CurrencyCode.INR);
+
+        IndiaGstTcsCalculation calculation = service.calculateIndiaGstTcs(
+            new CalculateIndiaGstTcsCommand(UUID.randomUUID(), UUID.randomUUID(), margin, packageValue));
+
+        assertThat(calculation.applied()).isFalse();
+        assertThat(calculation.gstAmount().amount()).isEqualByComparingTo("0");
+        assertThat(calculation.tcsAmount().amount()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void calculateIndiaGstTcsAppliesGstOnMarginAndTcsOnPackageValueAboveThresholdWhenEnabledFIN17() {
+        IndiaTaxProperties enabledIndiaTax = new IndiaTaxProperties(true, BigDecimal.valueOf(5),
+            BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
+        UkTomsVatProperties disabledUkTomsVat = new UkTomsVatProperties(false, BigDecimal.valueOf(20));
+        PaymentsServiceImpl enabledService = new PaymentsServiceImpl(markupRuleRepository, walletRepository,
+            paymentIntentRepository, walletLedgerEntryRepository,
+            new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
+            new PricingPipeline(markupRuleRepository, events), stripeClient, enabledIndiaTax, disabledUkTomsVat);
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money margin = new Money(BigDecimal.valueOf(50_000), CurrencyCode.INR);
+        Money packageValue = new Money(BigDecimal.valueOf(1_000_000), CurrencyCode.INR); // over the 700,000 threshold
+
+        IndiaGstTcsCalculation calculation = enabledService.calculateIndiaGstTcs(
+            new CalculateIndiaGstTcsCommand(bookingId, consultantId, margin, packageValue));
+
+        assertThat(calculation.applied()).isTrue();
+        assertThat(calculation.gstAmount().amount()).isEqualByComparingTo("2500.00"); // 5% of margin
+        assertThat(calculation.tcsAmount().amount()).isEqualByComparingTo("50000.00"); // 5% of package value
+
+        ArgumentCaptor<IndiaGstTcsCalculatedEvent> captor = ArgumentCaptor.forClass(IndiaGstTcsCalculatedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().applied()).isTrue();
+    }
+
+    @Test
+    void calculateIndiaGstTcsAppliesNoTcsBelowTheThresholdEvenWhenEnabledFIN17() {
+        IndiaTaxProperties enabledIndiaTax = new IndiaTaxProperties(true, BigDecimal.valueOf(5),
+            BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
+        UkTomsVatProperties disabledUkTomsVat = new UkTomsVatProperties(false, BigDecimal.valueOf(20));
+        PaymentsServiceImpl enabledService = new PaymentsServiceImpl(markupRuleRepository, walletRepository,
+            paymentIntentRepository, walletLedgerEntryRepository,
+            new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
+            new PricingPipeline(markupRuleRepository, events), stripeClient, enabledIndiaTax, disabledUkTomsVat);
+        Money margin = new Money(BigDecimal.valueOf(20_000), CurrencyCode.INR);
+        Money packageValue = new Money(BigDecimal.valueOf(500_000), CurrencyCode.INR); // under the threshold
+
+        IndiaGstTcsCalculation calculation = enabledService.calculateIndiaGstTcs(
+            new CalculateIndiaGstTcsCommand(UUID.randomUUID(), UUID.randomUUID(), margin, packageValue));
+
+        assertThat(calculation.gstAmount().amount()).isEqualByComparingTo("1000.00"); // GST still applies to margin
+        assertThat(calculation.tcsAmount().amount()).isEqualByComparingTo("0"); // TCS does not, below the threshold
+    }
+
+    @Test
+    void calculateUkTomsVatAppliesNothingWhenTheFeatureFlagIsOffFIN18() {
+        // Default `service` from setUp() is built with the flag disabled.
+        Money margin = new Money(BigDecimal.valueOf(1_000), CurrencyCode.GBP);
+
+        UkTomsVatCalculation calculation = service.calculateUkTomsVat(
+            new CalculateUkTomsVatCommand(UUID.randomUUID(), UUID.randomUUID(), margin));
+
+        assertThat(calculation.applied()).isFalse();
+        assertThat(calculation.vatAmount().amount()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void calculateUkTomsVatAppliesVatOnMarginOnlyWhenEnabledFIN18() {
+        UkTomsVatProperties enabledUkTomsVat = new UkTomsVatProperties(true, BigDecimal.valueOf(20));
+        IndiaTaxProperties disabledIndiaTax = new IndiaTaxProperties(false, BigDecimal.valueOf(5),
+            BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
+        PaymentsServiceImpl enabledService = new PaymentsServiceImpl(markupRuleRepository, walletRepository,
+            paymentIntentRepository, walletLedgerEntryRepository,
+            new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
+            new PricingPipeline(markupRuleRepository, events), stripeClient, disabledIndiaTax, enabledUkTomsVat);
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money margin = new Money(BigDecimal.valueOf(1_000), CurrencyCode.GBP);
+
+        UkTomsVatCalculation calculation = enabledService.calculateUkTomsVat(
+            new CalculateUkTomsVatCommand(bookingId, consultantId, margin));
+
+        assertThat(calculation.applied()).isTrue();
+        assertThat(calculation.vatAmount().amount()).isEqualByComparingTo("200.00"); // 20% of margin only
+
+        ArgumentCaptor<UkTomsVatCalculatedEvent> captor = ArgumentCaptor.forClass(UkTomsVatCalculatedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().applied()).isTrue();
+        assertThat(captor.getValue().vatAmount().amount()).isEqualByComparingTo("200.00");
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

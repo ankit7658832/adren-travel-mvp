@@ -1,5 +1,6 @@
 package com.adren.travel.payments.internal;
 
+import com.adren.travel.payments.CreditLimitExceededException;
 import com.adren.travel.shared.ProblemDetailFactory;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
@@ -25,6 +26,14 @@ class PaymentsControllerAdvice {
     ProblemDetail handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
         return ProblemDetailFactory.create(HttpStatus.BAD_REQUEST,
             "https://docs.adren.travel/errors/invalid-request", "Invalid request", ex.getMessage(), request.getRequestURI());
+    }
+
+    @ExceptionHandler(CreditLimitExceededException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ProblemDetail handleCreditLimitExceeded(CreditLimitExceededException ex, HttpServletRequest request) {
+        return ProblemDetailFactory.create(HttpStatus.CONFLICT,
+            "https://docs.adren.travel/errors/credit-limit-exceeded", "Top up required",
+            ex.getMessage(), request.getRequestURI());
     }
 
     @ExceptionHandler(AccessDeniedException.class)

@@ -4,11 +4,13 @@ import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
+import com.adren.travel.payments.event.RefundCalculatedEvent;
 import com.adren.travel.payments.event.StripePaymentSucceededEvent;
 import com.adren.travel.payments.event.WalletHoldDebitedEvent;
 import com.adren.travel.payments.event.WalletHoldPlacedEvent;
 import com.adren.travel.payments.event.WalletHoldReleasedEvent;
 import com.adren.travel.payments.event.WalletProvisionedEvent;
+import com.adren.travel.payments.event.WalletTopUpReconciledEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.modulith.test.Scenario;
 import org.springframework.security.access.AccessDeniedException;
@@ -58,9 +61,23 @@ class PaymentsModuleIntegrationTests {
     @Autowired
     PaymentsApi paymentsApi;
 
+    @Autowired
+    JdbcTemplate jdbcTemplate;
+
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
+    }
+
+    // FIN-08: placeHold now enforces availableBalance + creditLimit >= amount
+    // — every test below that expects a hold to succeed needs a funded
+    // wallet first (a fresh auto-provisioned wallet starts at zero/zero).
+    private void seedSufficientCreditLimit(UUID consultantId) {
+        jdbcTemplate.update(
+            "INSERT INTO wallet (consultant_id, available_balance, credit_limit, pending_holds, currency, updated_at) " +
+                "VALUES (?, 0, 100000, 0, 'INR', now()) " +
+                "ON CONFLICT (consultant_id) DO UPDATE SET credit_limit = EXCLUDED.credit_limit",
+            consultantId);
     }
 
     @Test
@@ -234,6 +251,34 @@ class PaymentsModuleIntegrationTests {
             .matchingMappedValue(StripePaymentSucceededEvent::bookingReferenceId, bookingReferenceId);
     }
 
+    /**
+     * FIN-15's actual acceptance criterion, PRD §23.4 Edge Case #10: a
+     * top-up succeeds at the gateway (the PaymentIntent is created) but the
+     * confirming webhook is delayed — until it arrives, the Consultant must
+     * not be able to book against those funds. Proven end to end: wallet
+     * balance stays at zero through the "delay" (no webhook call yet), and
+     * only moves once the webhook is simulated arriving.
+     */
+    @Test
+    void aDelayedTopUpWebhookLeavesTheWalletUnreconciledUntilItArrivesFIN15(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money amount = new Money(BigDecimal.valueOf(5_000), CurrencyCode.INR);
+
+        PaymentIntentView intent = paymentsApi.initiateWalletTopUp(new InitiateWalletTopUpCommand(consultantId, amount));
+
+        // The "delay" — no webhook has arrived yet. A booking attempted now
+        // must see these funds as unavailable (FIN-08's credit-limit check
+        // reads availableBalance, which this hasn't touched).
+        WalletView duringDelay = paymentsApi.getWallet(consultantId);
+        assertThat(duringDelay.availableBalance()).isEqualByComparingTo("0");
+
+        var webhookCommand = new HandleStripeWebhookCommand("payment_intent.succeeded", intent.paymentIntentId());
+        scenario.stimulate(() -> paymentsApi.handleStripeWebhook(webhookCommand))
+            .andWaitForEventOfType(WalletTopUpReconciledEvent.class)
+            .matchingMappedValue(WalletTopUpReconciledEvent::consultantId, consultantId);
+    }
+
     @Test
     void aUserCannotCreateAPaymentIntentForAnotherConsultantFIN11() {
         authenticateAs(Role.USER, UUID.randomUUID());
@@ -248,6 +293,7 @@ class PaymentsModuleIntegrationTests {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
         Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
 
         scenario.stimulate(() -> paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount)))
@@ -260,6 +306,7 @@ class PaymentsModuleIntegrationTests {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
         Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
         paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
 
@@ -273,6 +320,7 @@ class PaymentsModuleIntegrationTests {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
         Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
         paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
 
@@ -291,6 +339,7 @@ class PaymentsModuleIntegrationTests {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
         Money amount = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
 
         paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
@@ -306,10 +355,41 @@ class PaymentsModuleIntegrationTests {
     }
 
     @Test
+    void findWalletLedgerReturnsEveryEntryForTheConsultantWhenUnfilteredFIN09() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
+        Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
+        paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+        paymentsApi.resolveHoldAsDebit(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        var page = paymentsApi.findWalletLedger(consultantId, null, org.springframework.data.domain.PageRequest.of(0, 20));
+
+        assertThat(page.getContent()).extracting(WalletLedgerEntryView::type).containsExactlyInAnyOrder("HOLD", "DEBIT");
+    }
+
+    @Test
+    void findWalletLedgerFiltersByTypeFIN09() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
+        Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
+        paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+        paymentsApi.resolveHoldAsDebit(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        var page = paymentsApi.findWalletLedger(consultantId, "DEBIT", org.springframework.data.domain.PageRequest.of(0, 20));
+
+        assertThat(page.getContent()).extracting(WalletLedgerEntryView::type).containsExactly("DEBIT");
+    }
+
+    @Test
     void resolvingAHoldAsAReleaseLeavesAvailableBalanceUntouchedFIN07() {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
         Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
         paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
 
@@ -325,6 +405,7 @@ class PaymentsModuleIntegrationTests {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
+        seedSufficientCreditLimit(consultantId);
         Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
 
         paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
@@ -332,6 +413,71 @@ class PaymentsModuleIntegrationTests {
 
         WalletView wallet = paymentsApi.getWallet(consultantId);
         assertThat(wallet.pendingHolds()).isEqualByComparingTo("500");
+    }
+
+    @Test
+    void calculatingARefundAfterTheDeadlinePublishesRefundCalculatedEventRequiringApprovalFIN13(Scenario scenario) {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), java.time.Instant.now().minusSeconds(7200));
+        var command = new CalculateRefundCommand(bookingId, consultantId, sellPrice,
+            java.time.Instant.now().minusSeconds(3600), java.time.Instant.now(), BigDecimal.valueOf(25),
+            originalFxRateSnapshot);
+
+        scenario.stimulate(() -> paymentsApi.calculateRefund(command))
+            .andWaitForEventOfType(RefundCalculatedEvent.class)
+            .matchingMappedValue(RefundCalculatedEvent::requiresConsultantApproval, true);
+    }
+
+    @Test
+    void calculatingARefundNeverWritesAWalletLedgerEntryFIN13() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), java.time.Instant.now().minusSeconds(7200));
+
+        paymentsApi.calculateRefund(new CalculateRefundCommand(bookingId, consultantId, sellPrice,
+            java.time.Instant.now().minusSeconds(3600), java.time.Instant.now(), BigDecimal.valueOf(25),
+            originalFxRateSnapshot));
+
+        Long count = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM wallet_ledger_entry WHERE related_booking_id = ?", Long.class, bookingId);
+        assertThat(count).isZero();
+    }
+
+    /**
+     * FIN-17's real acceptance criterion: against the actual application.yml
+     * wiring (not a hand-constructed test double), the India GST/TCS layer
+     * is off by default — PRD §19's tax-counsel sign-off is still pending,
+     * so a real Spring context must never silently apply the illustrative
+     * rates. Flipping it on is covered at the unit tier
+     * (PaymentsServiceImplTest), which also proves the actual GST/TCS math.
+     */
+    @Test
+    void indiaGstTcsIsDisabledByDefaultInTheRealApplicationConfigurationFIN17() {
+        Money margin = new Money(BigDecimal.valueOf(50_000), CurrencyCode.INR);
+        Money packageValue = new Money(BigDecimal.valueOf(1_000_000), CurrencyCode.INR);
+
+        IndiaGstTcsCalculation calculation = paymentsApi.calculateIndiaGstTcs(
+            new CalculateIndiaGstTcsCommand(UUID.randomUUID(), UUID.randomUUID(), margin, packageValue));
+
+        assertThat(calculation.applied()).isFalse();
+        assertThat(calculation.gstAmount().amount()).isEqualByComparingTo("0");
+        assertThat(calculation.tcsAmount().amount()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void ukTomsVatIsDisabledByDefaultInTheRealApplicationConfigurationFIN18() {
+        Money margin = new Money(BigDecimal.valueOf(1_000), CurrencyCode.GBP);
+
+        UkTomsVatCalculation calculation = paymentsApi.calculateUkTomsVat(
+            new CalculateUkTomsVatCommand(UUID.randomUUID(), UUID.randomUUID(), margin));
+
+        assertThat(calculation.applied()).isFalse();
+        assertThat(calculation.vatAmount().amount()).isEqualByComparingTo("0");
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

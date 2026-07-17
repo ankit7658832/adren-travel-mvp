@@ -1,6 +1,8 @@
 package com.adren.travel.payments;
 
 import com.adren.travel.shared.Money;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
@@ -42,6 +44,20 @@ public interface PaymentsApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     WalletView getWallet(UUID consultantId);
+
+    /**
+     * A Consultant's wallet transaction ledger, optionally filtered by
+     * {@code type} (PRD §21.7, FIN-09) — {@code type} matches one of
+     * {@code WalletLedgerEntryView.type}'s values (TopUp/Hold/Debit/
+     * Refund/CommissionDeduction/Release/OnAccount) case-sensitively, or
+     * {@code null} for no filter; an unrecognized value throws {@code
+     * IllegalArgumentException}, mapped to a 4xx same as any other bad
+     * request. Same tenant-scoping/role shape as {@link #getWallet} — a
+     * read with no financial side effect, so {@code USER} is included.
+     * Paginated per RULES.md §3.4.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    Page<WalletLedgerEntryView> findWalletLedger(UUID consultantId, String type, Pageable pageable);
 
     /**
      * Calculates Adren's commission on a booking's supplier net rate,
@@ -94,6 +110,20 @@ public interface PaymentsApi {
     PaymentIntentView createPaymentIntent(CreatePaymentIntentCommand command);
 
     /**
+     * Starts a wallet top-up via Stripe (PRD §23.4 Edge Case #10, FIN-15) —
+     * creates a PaymentIntent, exactly like {@link #createPaymentIntent},
+     * but {@code availableBalance} is deliberately NOT credited here. The
+     * credit only happens inside {@link #handleStripeWebhook} once Stripe's
+     * confirming webhook actually arrives — this is what makes "booking
+     * against not-yet-reconciled funds" structurally impossible rather than
+     * a check that has to remember to exclude pending top-ups: the funds
+     * simply aren't in {@code availableBalance} yet. Same tenant-scoping
+     * shape as {@link #createPaymentIntent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT')")
+    PaymentIntentView initiateWalletTopUp(InitiateWalletTopUpCommand command);
+
+    /**
      * Handles a Stripe webhook event (PRD §12.4, FIN-11) — not
      * {@code @PreAuthorize}-gated since the caller is Stripe itself, not
      * an authenticated Adren principal (a real deployment authenticates
@@ -134,4 +164,70 @@ public interface PaymentsApi {
      * caller this is built for.
      */
     void resolveHoldAsRelease(WalletHoldCommand command);
+
+    /**
+     * Bills a booking to a Consultant's On-Account balance (PRD §21.4's
+     * third payment-method option alongside Stripe/Wallet, §20.8, FIN-12) —
+     * to be settled later, so unlike {@link #placeHold}/{@link
+     * #resolveHoldAsDebit} this never touches {@code availableBalance}/
+     * {@code creditLimit}/{@code pendingHolds}, only writes the ledger
+     * entry those methods already share. Idempotent the same way (FIN-10):
+     * retrying with the same {@code bookingId} is a no-op. Same internal-
+     * pricing-pipeline-step shape as {@link #calculateCommission} — no
+     * {@code @PreAuthorize}; invoked from {@code BookingApi.confirmBookingOnAccount}.
+     */
+    void payOnAccount(WalletHoldCommand command);
+
+    /**
+     * Calculates a cancellation's refund/penalty split against the actual
+     * supplier cancellation policy captured on the line item (PRD §12.4/
+     * §12.5, FIN-13) — a real policy shape (deadline-based), not a flat
+     * percentage. Pure calculation: never moves money (no wallet/Stripe
+     * mutation) — {@link RefundCalculation#requiresConsultantApproval} true
+     * means a penalty applies and this calculation alone is not
+     * authorization to process it (see the record's own Javadoc for why
+     * enforcing that gate is out of this method's scope). Also converts
+     * the refund back into the original supplier currency using the
+     * booking's original {@code FxRateSnapshot} (FIN-14, PRD §23.4 Edge
+     * Case #9/T15) — never a freshly looked-up rate. Same internal-
+     * pricing-pipeline-step shape as {@link #calculateCommission} — no
+     * {@code @PreAuthorize}; invoked from {@code BookingApi.calculateCancellationRefund}.
+     */
+    RefundCalculation calculateRefund(CalculateRefundCommand command);
+
+    /**
+     * Credits a previously calculated refund ({@link #calculateRefund})
+     * back to a Consultant's wallet (PRD §12.5, FIN-16) — the actual money
+     * movement {@link #calculateRefund} deliberately never performs.
+     * Idempotent (FIN-10) the same way as {@link #placeHold}: retrying
+     * with the same {@code bookingId} is a no-op. Same internal-
+     * pricing-pipeline-step shape as {@link #calculateCommission} — no
+     * {@code @PreAuthorize}; invoked from {@code BookingApi}'s cancellation
+     * workflow (FIN-16) once a penalized refund has been explicitly
+     * approved, or immediately for a penalty-free refund.
+     */
+    void processRefund(WalletHoldCommand command);
+
+    /**
+     * Calculates India GST/TCS on an outbound package (PRD §12.1 Worked
+     * Example C, §17.2, §25 T24, FIN-17) — GST on the Consultant's margin
+     * component, TCS on the full package value above the notified
+     * threshold. Gated behind {@code adren.payments.tax.india.enabled}
+     * (off by default, see {@link IndiaGstTcsCalculation}'s Javadoc) since
+     * PRD §19 flags the exact rates as pending tax-counsel sign-off. Same
+     * internal-pricing-pipeline-step shape as {@link #calculateCommission}
+     * — no {@code @PreAuthorize}.
+     */
+    IndiaGstTcsCalculation calculateIndiaGstTcs(CalculateIndiaGstTcsCommand command);
+
+    /**
+     * Calculates UK TOMS VAT on a package's margin component (PRD §12.1
+     * Worked Example D, §17.2, FIN-18) — never the full package sale price
+     * (Example D's own explicit distinction). Gated behind {@code
+     * adren.payments.tax.uk-toms.enabled} (off by default, same reasoning
+     * as {@link #calculateIndiaGstTcs}'s gate — PRD §19 pending UK
+     * tax-counsel sign-off). Same internal-pricing-pipeline-step shape as
+     * {@link #calculateCommission} — no {@code @PreAuthorize}.
+     */
+    UkTomsVatCalculation calculateUkTomsVat(CalculateUkTomsVatCommand command);
 }

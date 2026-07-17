@@ -44,7 +44,7 @@ class GeocodeAndSearchServiceTest {
     @BeforeEach
     void setUp() {
         service = new GeocodeAndSearchService(
-            new GeocodingService(), supplierSearchApi, new DefaultSelectionService(), whitelabelApi);
+            new GeocodingService(), supplierSearchApi, new HotelDedupService(), new DefaultSelectionService(), whitelabelApi);
         authenticateAs(Role.CONSULTANT, UUID.randomUUID());
     }
 
@@ -82,6 +82,21 @@ class GeocodeAndSearchServiceTest {
         assertThat(result.get(1).hasInventory()).isFalse();
         assertThat(result.get(1).autoSelectedSupplierRateId()).isNull();
         assertThat(result.get(1).autoSelectedSupplierId()).isNull();
+    }
+
+    @Test
+    void deduplicatesTheSamePropertyBeforeDefaultSelectionRunsBOK20() {
+        LocalDate checkIn = LocalDate.now().plusDays(30);
+        LocalDate checkOut = checkIn.plusDays(3);
+        when(supplierSearchApi.searchHotels(eq("Goa"), any(), any())).thenReturn(List.of(
+            new SupplierSearchResult(SupplierId.HOTELBEDS, "hb-1", "Taj Palace", "Deluxe",
+                new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), 4.0),
+            new SupplierSearchResult(SupplierId.STUBA, "st-1", "Taj Palace", "Standard",
+                new Money(BigDecimal.valueOf(4800), CurrencyCode.INR), 4.2)));
+
+        List<GeocodedLocation> result = service.geocodeAndSearch(List.of("Goa"), checkIn, checkOut);
+
+        assertThat(result.get(0).autoSelectedSupplierId()).isEqualTo("STUBA");
     }
 
     @Test

@@ -113,6 +113,8 @@ class FullVerticalSliceEndToEndIT {
 
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
         new ParameterizedTypeReference<>() { };
+    private static final ParameterizedTypeReference<List<Map<String, Object>>> LIST_OF_MAP_TYPE =
+        new ParameterizedTypeReference<>() { };
 
     @LocalServerPort
     private int port;
@@ -140,10 +142,22 @@ class FullVerticalSliceEndToEndIT {
     void theDirectBookingPathSearchesQuotesPackagesBooksDebitsTheWalletAndNotifiesEndToEnd() {
         startCapturingEmailLog();
         String token = mintSuperAdminToken();
-        UUID consultantId = UUID.randomUUID();
+        // BOK-11 (Stage 3 Batch 2) added a real whitelabelApi.findConsultantMarket
+        // lookup to publishPackage's ATOL gate — a random, never-onboarded
+        // consultantId (Stage 2's original approach) now 400s there. A real
+        // onboarded Consultant is required from this point on; this also
+        // exercises the actual onboarding endpoint over HTTP as part of the
+        // slice, rather than the walking-skeleton's usual "insert directly."
+        UUID consultantId = onboardConsultant("Goa Getaways", "INDIA", token);
 
-        // 1. Search — real HTTP call into GeocodeAndSearchService, backed by
-        // the Hotelbeds stub client (no real network call).
+        // 1. Search — real HTTP call into GeocodeAndSearchService, now
+        // fanning out across Hotelbeds+STUBA+TBO in parallel (Stage 3
+        // Batch 1) rather than Hotelbeds alone. TBO's stub (4500 INR net)
+        // undercuts STUBA's (4800) and Hotelbeds' (5000), so under
+        // DefaultSelectionService's deterministic "lowest net rate wins"
+        // tie-break (PRD S9.2/S22.2 step 3) TBO is the correct winner now
+        // — this replaces Stage 2's stale hardcoded HOTELBEDS assertion,
+        // which this very re-run caught as failing once Batch 1 landed.
         Map<String, Object> searchResponse = postJson("/api/v1/search",
             Map.of("locationQueries", List.of("Goa")), token);
         @SuppressWarnings("unchecked")
@@ -152,7 +166,7 @@ class FullVerticalSliceEndToEndIT {
         Map<String, Object> location = locations.get(0);
         String supplierId = (String) location.get("autoSelectedSupplierId");
         String supplierRateId = (String) location.get("autoSelectedSupplierRateId");
-        assertThat(supplierId).isEqualTo("HOTELBEDS");
+        assertThat(supplierId).isEqualTo("TBO");
         assertThat(supplierRateId).isNotBlank();
 
         // 2. Itinerary — no HTTP endpoint creates one yet (only the AI
@@ -160,6 +174,19 @@ class FullVerticalSliceEndToEndIT {
         // this); every existing test in this codebase inserts one directly,
         // this checkpoint follows the same established convention.
         UUID itineraryId = insertDraftItinerary(consultantId);
+
+        // 2a. Multi-supplier fan-out, proven directly rather than inferred
+        // from step 1's single winner: the Itinerary Builder's alternate
+        // panel (BOK-20's dedup surface) returns real candidates from ALL
+        // THREE suppliers for the same search, not just Hotelbeds.
+        List<Map<String, Object>> alternates = webClient().get()
+            .uri("/api/v1/itineraries/" + itineraryId + "/alternates?location=Goa")
+            .headers(h -> h.setBearerAuth(token))
+            .retrieve()
+            .bodyToMono(LIST_OF_MAP_TYPE)
+            .block();
+        assertThat(alternates).extracting(a -> a.get("supplierId"))
+            .containsExactlyInAnyOrder("HOTELBEDS", "STUBA", "TBO");
 
         // 3. A markup rule must exist before a line item can be priced
         // through FIN-05's pipeline.
@@ -203,12 +230,15 @@ class FullVerticalSliceEndToEndIT {
         // 7. Publish the Package.
         postForRawBody("/api/v1/packages/" + packageId + "/publish", Map.of("promoteViaAds", false), token);
 
-        // 8. Wallet baseline — auto-provisioned at zero on first access.
+        // 8. Wallet baseline — availableBalance starts at 0 (insertDraftItinerary
+        // pre-seeds a 100,000 INR credit_limit so step 9's 11,500 INR
+        // confirmation clears FIN-08's credit-limit check).
         Map<String, Object> walletBefore = getJson("/api/v1/wallet?consultantId=" + consultantId, token);
         assertThat(new BigDecimal(walletBefore.get("availableBalance").toString())).isEqualByComparingTo("0");
 
         // 9. Direct (non-Stripe) booking confirmation — places then
-        // immediately resolves a wallet hold as a debit (FIN-07).
+        // immediately resolves a wallet hold as a debit (FIN-07), after
+        // clearing the FIN-08 credit-limit check.
         BigDecimal totalSellPrice = BigDecimal.valueOf(11_500);
         Map<String, Object> bookingResponse = postJson("/api/v1/bookings",
             Map.of("quotationOrPackageId", packageId.toString(), "totalSellPrice", totalSellPrice, "currency", "INR"),
@@ -216,8 +246,7 @@ class FullVerticalSliceEndToEndIT {
         UUID bookingId = UUID.fromString((String) bookingResponse.get("bookingId"));
         assertThat(bookingId).isNotNull();
 
-        // 10. Wallet debited by exactly totalSellPrice — no credit-limit
-        // gate exists yet (FIN-08, not built), so this simple delta holds.
+        // 10. Wallet debited by exactly totalSellPrice.
         Map<String, Object> walletAfter = getJson("/api/v1/wallet?consultantId=" + consultantId, token);
         assertThat(new BigDecimal(walletAfter.get("availableBalance").toString()))
             .isEqualByComparingTo(totalSellPrice.negate());
@@ -239,6 +268,93 @@ class FullVerticalSliceEndToEndIT {
         Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
             assertThat(emailAppender.list.stream().anyMatch(e -> e.getFormattedMessage().contains(bookingId.toString())))
                 .isTrue());
+
+        // 13. FIN-16's cancellation workflow, end to end over real HTTP —
+        // cancelled well before the deadline, so no penalty applies and the
+        // refund is processed in this same call (no separate approval step).
+        Map<String, Object> cancellationBody = Map.of(
+            "sellPrice", totalSellPrice,
+            "currency", "INR",
+            "cancellationDeadline", Instant.now().plusSeconds(3600).toString(),
+            "cancelledAt", Instant.now().toString(),
+            "postDeadlinePenaltyPercent", 30,
+            "originalSupplierCurrency", "INR",
+            "originalFxRate", 1,
+            "originalFxSnapshotAt", Instant.now().minusSeconds(60).toString());
+        Map<String, Object> cancellationResponse = postJson(
+            "/api/v1/bookings/" + bookingId + "/cancellation-requests", cancellationBody, token);
+        assertThat(cancellationResponse.get("status")).isEqualTo("REFUNDED");
+
+        // 14. The refund actually credited the wallet back to zero — proven
+        // against the real ledger, not just the cancellation response.
+        Map<String, Object> walletAfterCancellation = getJson("/api/v1/wallet?consultantId=" + consultantId, token);
+        assertThat(new BigDecimal(walletAfterCancellation.get("availableBalance").toString()))
+            .isEqualByComparingTo("0");
+        String refundLedgerType = jdbcTemplate.queryForObject(
+            "SELECT type FROM wallet_ledger_entry WHERE related_booking_id = ? AND type = 'REFUND'",
+            String.class, bookingId);
+        assertThat(refundLedgerType).isEqualTo("REFUND");
+
+        // 15. The booking itself moved to CANCELLED.
+        String bookingStatus = jdbcTemplate.queryForObject(
+            "SELECT status FROM booking WHERE booking_id = ?", String.class, bookingId);
+        assertThat(bookingStatus).isEqualTo("CANCELLED");
+    }
+
+    @Test
+    void confirmingABookingThatWouldBreachTheCreditLimitFailsWithAnActionableMessageEndToEnd() {
+        String token = mintSuperAdminToken();
+        UUID consultantId = onboardConsultant("Underfunded Travel Co", "INDIA", token);
+        // A DRAFT itinerary with a zero credit_limit — deliberately not
+        // insertDraftItinerary's usual 100,000 INR seed — so any
+        // confirmation attempt has nothing to draw against (FIN-08).
+        UUID itineraryId = UUID.randomUUID();
+        jdbcTemplate.update(
+            "INSERT INTO itinerary (itinerary_id, consultant_id, status, ai_generated, created_at, updated_at) " +
+                "VALUES (?, ?, 'DRAFT', false, now(), now())",
+            itineraryId, consultantId);
+        jdbcTemplate.update(
+            "INSERT INTO wallet (consultant_id, available_balance, credit_limit, pending_holds, currency, updated_at) " +
+                "VALUES (?, 0, 0, 0, 'INR', now())",
+            consultantId);
+        putJson("/api/v1/consultants/" + consultantId + "/markup-rules",
+            Map.of("category", "HOTEL", "markupType", "PERCENTAGE", "percentageValue", 15), token);
+        Map<String, Object> lineItemBody = Map.ofEntries(
+            Map.entry("supplierId", "HOTELBEDS"),
+            Map.entry("supplierRateId", "rate-1"),
+            Map.entry("propertyName", "Taj Exotica"),
+            Map.entry("roomType", "Deluxe Room"),
+            Map.entry("mealPlan", "BB"),
+            Map.entry("cancellationDeadline", Instant.now().plusSeconds(3600).toString()),
+            Map.entry("netRate", 5000),
+            Map.entry("netRateCurrency", "INR"),
+            Map.entry("sellCurrency", "INR"),
+            Map.entry("fxRate", 1),
+            Map.entry("bufferPercent", 3),
+            Map.entry("commissionPercent", 0));
+        postJson("/api/v1/itineraries/" + itineraryId + "/line-items/hotel", lineItemBody, token);
+        String quotationIdJson = postForRawBody("/api/v1/itineraries/" + itineraryId + "/quotation", null, token);
+        UUID quotationId = UUID.fromString(stripQuotes(quotationIdJson));
+
+        // FIN-08's AC: rejected with an actionable message (a 409 Conflict
+        // Problem Detail, not a generic 500) BEFORE any wallet/booking
+        // state changes — the credit-limit check runs ahead of the debit.
+        var thrown = org.junit.jupiter.api.Assertions.assertThrows(
+            org.springframework.web.reactive.function.client.WebClientResponseException.class,
+            () -> postJson("/api/v1/bookings",
+                Map.of("quotationOrPackageId", quotationId.toString(), "totalSellPrice", BigDecimal.valueOf(11_500),
+                    "currency", "INR"),
+                token));
+        assertThat(thrown.getStatusCode().value()).isEqualTo(409);
+        assertThat(thrown.getResponseBodyAsString()).contains("credit-limit-exceeded");
+
+        // No booking was ever created, and the wallet is untouched.
+        Long bookingCount = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM booking WHERE consultant_id = ?", Long.class, consultantId);
+        assertThat(bookingCount).isZero();
+        Map<String, Object> walletAfter = getJson("/api/v1/wallet?consultantId=" + consultantId, token);
+        assertThat(new BigDecimal(walletAfter.get("availableBalance").toString())).isEqualByComparingTo("0");
+        assertThat(new BigDecimal(walletAfter.get("pendingHolds").toString())).isEqualByComparingTo("0");
     }
 
     @Test
@@ -314,6 +430,20 @@ class FullVerticalSliceEndToEndIT {
         return superAdminToken;
     }
 
+    /**
+     * PRD §13.1 — real Consultant onboarding over HTTP, needed since BOK-11's
+     * ATOL gate resolves a real home market. INDIA's required KYC fields
+     * (gstRegistration, businessPan, bankDetails per MarketKycRuleProvider)
+     * must all be present or onboarding itself 400s.
+     */
+    private UUID onboardConsultant(String businessName, String homeMarket, String token) {
+        Map<String, Object> response = postJson("/api/v1/consultants",
+            Map.of("businessName", businessName, "homeMarket", homeMarket, "kycFields",
+                Map.of("gstRegistration", "GST123", "businessPan", "PAN123", "bankDetails", "IFSC0001/12345")),
+            token);
+        return UUID.fromString((String) response.get("consultantId"));
+    }
+
     // BOK-13: confirmBooking/addHotelLineItem all resolve/require a real
     // consultantId already present on the itinerary row.
     private UUID insertDraftItinerary(UUID consultantId) {
@@ -322,6 +452,12 @@ class FullVerticalSliceEndToEndIT {
             "INSERT INTO itinerary (itinerary_id, consultant_id, status, ai_generated, created_at, updated_at) " +
                 "VALUES (?, ?, 'DRAFT', false, now(), now())",
             itineraryId, consultantId);
+        // FIN-08: the direct booking path now enforces the credit limit —
+        // seed enough credit for step 9's 11,500 INR confirmation below.
+        jdbcTemplate.update(
+            "INSERT INTO wallet (consultant_id, available_balance, credit_limit, pending_holds, currency, updated_at) " +
+                "VALUES (?, 0, 100000, 0, 'INR', now())",
+            consultantId);
         return itineraryId;
     }
 

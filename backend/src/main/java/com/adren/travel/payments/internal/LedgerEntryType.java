@@ -13,5 +13,7 @@ enum LedgerEntryType {
     DEBIT,
     REFUND,
     COMMISSION_DEDUCTION,
-    RELEASE
+    RELEASE,
+    /** PRD §21.4/§20.8, FIN-12 — On-Account billing: settled later, never against wallet balance/credit/pendingHolds. */
+    ON_ACCOUNT
 }

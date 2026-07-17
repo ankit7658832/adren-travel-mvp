@@ -1,13 +1,19 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AddActivityLineItemCommand;
+import com.adren.travel.booking.AddCruiseLineItemCommand;
+import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
+import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
+import com.adren.travel.booking.ConsolidateCheckoutTotalCommand;
 import com.adren.travel.shared.Money;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -69,5 +75,72 @@ class ItineraryController {
             new Money(request.netRate(), request.netRateCurrency()), request.sellCurrency(),
             request.fxRate(), request.bufferPercent(), request.commissionPercent()));
         return Map.of("lineItemId", lineItemId);
+    }
+
+    /** PRD §20.3, §10.2.4 — adds a Flight line item to the itinerary (BOK-04). */
+    @PostMapping("/{itineraryId}/line-items/flight")
+    @ResponseStatus(HttpStatus.CREATED)
+    Map<String, UUID> addFlightLineItem(@PathVariable UUID itineraryId, @Valid @RequestBody AddFlightLineItemRequest request) {
+        UUID lineItemId = bookingApi.addFlightLineItem(itineraryId, new AddFlightLineItemCommand(
+            request.supplierId(), request.supplierRateId(), request.airlineCode(), request.flightNumber(),
+            request.cabinClass(), request.baggageAllowance(),
+            new Money(request.netRate(), request.netRateCurrency()), request.sellCurrency(),
+            request.fxRate(), request.bufferPercent(), request.commissionPercent()));
+        return Map.of("lineItemId", lineItemId);
+    }
+
+    /** PRD §20.4, §10.2.5 — adds a Transfer line item to the itinerary (BOK-05). */
+    @PostMapping("/{itineraryId}/line-items/transfer")
+    @ResponseStatus(HttpStatus.CREATED)
+    Map<String, UUID> addTransferLineItem(@PathVariable UUID itineraryId, @Valid @RequestBody AddTransferLineItemRequest request) {
+        UUID lineItemId = bookingApi.addTransferLineItem(itineraryId, new AddTransferLineItemCommand(
+            request.supplierId(), request.supplierRateId(), request.vehicleType(), request.pickupPoint(),
+            request.dropoffPoint(), new Money(request.netRate(), request.netRateCurrency()), request.sellCurrency(),
+            request.fxRate(), request.bufferPercent(), request.commissionPercent()));
+        return Map.of("lineItemId", lineItemId);
+    }
+
+    /** PRD §20.5, §10.2.6 — adds a Cruise line item to the itinerary (BOK-06). */
+    @PostMapping("/{itineraryId}/line-items/cruise")
+    @ResponseStatus(HttpStatus.CREATED)
+    Map<String, UUID> addCruiseLineItem(@PathVariable UUID itineraryId, @Valid @RequestBody AddCruiseLineItemRequest request) {
+        UUID lineItemId = bookingApi.addCruiseLineItem(itineraryId, new AddCruiseLineItemCommand(
+            request.supplierId(), request.supplierRateId(), request.cruiseLine(), request.cabinCategory(),
+            request.ports(), request.passengerDocumentsRequired(),
+            new Money(request.netRate(), request.netRateCurrency()), request.sellCurrency(),
+            request.fxRate(), request.bufferPercent(), request.commissionPercent()));
+        return Map.of("lineItemId", lineItemId);
+    }
+
+    /** PRD §20.6, §10.2.7 — adds an Activity line item to the itinerary (BOK-07). */
+    @PostMapping("/{itineraryId}/line-items/activity")
+    @ResponseStatus(HttpStatus.CREATED)
+    Map<String, UUID> addActivityLineItem(@PathVariable UUID itineraryId, @Valid @RequestBody AddActivityLineItemRequest request) {
+        UUID lineItemId = bookingApi.addActivityLineItem(itineraryId, new AddActivityLineItemCommand(
+            request.supplierId(), request.supplierRateId(), request.durationMinutes(), request.timeSlot(),
+            request.headcount(), new Money(request.netRate(), request.netRateCurrency()), request.sellCurrency(),
+            request.fxRate(), request.bufferPercent(), request.commissionPercent()));
+        return Map.of("lineItemId", lineItemId);
+    }
+
+    /**
+     * PRD §10.2.7 — changes an Activity line item's headcount, blocked once
+     * the itinerary has left DRAFT (BOK-07).
+     */
+    @PatchMapping("/{itineraryId}/line-items/activity/{lineItemId}/headcount")
+    void updateActivityHeadcount(@PathVariable UUID itineraryId, @PathVariable UUID lineItemId,
+                                  @RequestBody UpdateActivityHeadcountRequest request) {
+        bookingApi.updateActivityHeadcount(itineraryId, lineItemId, request.headcount());
+    }
+
+    /**
+     * PRD §23.1 Edge Case #2 — consolidates the itinerary's line items into
+     * one total in the requested sell currency (BOK-17), for the checkout
+     * screen to call before {@code POST .../bookings}.
+     */
+    @PostMapping("/{itineraryId}/checkout-total")
+    Money consolidateCheckoutTotal(@PathVariable UUID itineraryId, @Valid @RequestBody ConsolidateCheckoutTotalRequest request) {
+        return bookingApi.consolidateCheckoutTotal(new ConsolidateCheckoutTotalCommand(
+            itineraryId, request.targetSellCurrency(), request.ratesToTargetCurrency()));
     }
 }

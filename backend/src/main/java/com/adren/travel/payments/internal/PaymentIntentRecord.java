@@ -14,9 +14,12 @@ import java.util.UUID;
 
 /**
  * The persisted mapping a Stripe webhook needs to find its way back to a
- * booking (PRD §12.4, FIN-11) — package-private, own table, keyed by
- * Stripe's own PaymentIntent id since that's the only identifier the
- * webhook payload carries.
+ * booking or wallet top-up (PRD §12.4, FIN-11; §23.4 Edge Case #10, FIN-15)
+ * — package-private, own table, keyed by Stripe's own PaymentIntent id
+ * since that's the only identifier the webhook payload carries.
+ * {@code bookingReferenceId} is a synthetic reference (not a real booking)
+ * for {@code WALLET_TOP_UP}-purpose records — there is no booking to
+ * reference for a top-up.
  */
 @Entity
 @Table(name = "payment_intent")
@@ -35,6 +38,9 @@ class PaymentIntentRecord {
     @Enumerated(EnumType.STRING)
     private PaymentIntentStatus status;
 
+    @Enumerated(EnumType.STRING)
+    private PaymentIntentPurpose purpose;
+
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -43,13 +49,14 @@ class PaymentIntentRecord {
     }
 
     PaymentIntentRecord(String paymentIntentId, UUID bookingReferenceId, UUID consultantId, BigDecimal amount,
-                         CurrencyCode currency, PaymentIntentStatus status) {
+                         CurrencyCode currency, PaymentIntentStatus status, PaymentIntentPurpose purpose) {
         this.paymentIntentId = paymentIntentId;
         this.bookingReferenceId = bookingReferenceId;
         this.consultantId = consultantId;
         this.amount = amount;
         this.currency = currency;
         this.status = status;
+        this.purpose = purpose;
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
     }
@@ -81,5 +88,9 @@ class PaymentIntentRecord {
 
     PaymentIntentStatus getStatus() {
         return status;
+    }
+
+    PaymentIntentPurpose getPurpose() {
+        return purpose;
     }
 }

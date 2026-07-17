@@ -46,6 +46,23 @@ adren:
     # resolves to; local/dev provisioning of it is tracked as a NEEDS
     # CLARIFICATION follow-up (docker-compose has no init step for it yet).
     kms-key-id: ${ADREN_KMS_KEY_ID:alias/adren-byos-credentials}
+  payments:
+    tax:
+      # FIN-17, PRD §12.1 Worked Example C / §19: illustrative rates only —
+      # exact GST/TCS figures/mechanics are pending tax-counsel sign-off,
+      # so this stays off by default; a real deployment must not flip this
+      # on without confirmed rates replacing the illustrative ones below.
+      india:
+        enabled: ${ADREN_INDIA_TAX_ENABLED:false}
+        gst-percent: 5
+        tcs-percent: 5
+        tcs-threshold: 700000
+      # FIN-18, PRD §12.1 Worked Example D / §19: same "illustrative rate,
+      # pending tax-counsel sign-off" reasoning as india above — applies to
+      # the Consultant's margin only, never the full package sale price.
+      uk-toms:
+        enabled: ${ADREN_UK_TOMS_VAT_ENABLED:false}
+        vat-percent: 20
 
 server:
   port: 8080

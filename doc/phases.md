@@ -92,13 +92,13 @@ Every `⚠️ NEEDS CLARIFICATION` flag in the story catalogues, consolidated in
 
 This is the ongoing tracker, now backed by `doc/user-stories/mvp-mock/PROGRESS.md` (created in Stage 1; §5's "gap" note above predates it and is left as historical record). Update as stories close.
 
-### Mock phase (149 stories / 748 points, updated Stage 3 Step A — 2026-07-16)
+### Mock phase (149 stories / 748 points, updated Stage 3 Batch 2 — 2026-07-17)
 
 | Epic | Stories | Points | Status |
 |---|---|---|---|
 | Foundation | 24 | 124 | 100% (24/24) |
-| Booking Core | 27 | 121 | 37% (10/27, 47 pts) — +7 stories/+23 pts added Stage 3 Step B (`BOK-21`–`BOK-27`) |
-| Financial Layer | 18 | 95 | 50% (9/18, 46 pts) |
+| Booking Core | 27 | 121 | **100% (27/27)** — completed Stage 3 Batch 2 |
+| Financial Layer | 18 | 95 | **100% (18/18)** — completed Stage 3 Batch 2 |
 | AI Layer | 13 | 72 | 0% (0/13) |
 | Local DMC + BYOS | 11 | 57 | 0% (0/11) |
 | Ads/Campaign Management | 15 | 80 | 0% (0/15) |
@@ -106,7 +106,7 @@ This is the ongoing tracker, now backed by `doc/user-stories/mvp-mock/PROGRESS.m
 | Frontend Shell | 10 | 55 | 20% (2/10, 10 pts) |
 | DevOps/Infra | 9 | 30 | 0% (0/9) |
 | Test Infrastructure | 9 | 38 | 0% (0/9) |
-| **Total** | **149** | **748** | **31% (46/149 stories, 235/748 pts)** |
+| **Total** | **149** | **748** | **48% (72/149 stories, 358/748 pts)** |
 
 ## 7a. Stage 1 & Stage 2 actual velocity, and a revised remaining-timeline estimate (Stage 3, Step A)
 
@@ -132,6 +132,22 @@ This is the ongoing tracker, now backed by `doc/user-stories/mvp-mock/PROGRESS.m
 | Calendar-date count (crude) | 3 distinct dates | 235 | 78.3 pts/day → **~548 pts/week** |
 
 **Revised remaining-timeline estimate:** Total mock scope is now 748 points (149 stories, including Stage 3 Step B's +23 pts). Completed: 235 points. **Remaining: 513 points** (not the ~546 cited going into Stage 3 — that figure predates both the exact Stage 2 tally and Step B's 7 new stories). At the literal wall-clock rate above, 513 points ≈ **8.6 more hours** (calendar-date-count basis: ≈6.5 more calendar days) to finish the entire remaining mock phase — a number that should be read as "this project is being built at AI-agent implementation speed, not staffed-team speed," not as a real staffing commitment. If a human-team-comparable planning number is wanted instead, that requires a policy input (assumed sprint length, team size, etc.) this document can't derive from commit timestamps alone — flagging rather than guessing at one.
+
+## 7b. Stage 3 Batch 2 completion and next-epic recommendation (Stage 3, Step F — 2026-07-17)
+
+**What landed:** Batch 2 closed out **Booking Core (27/27) and Financial Layer (18/18) to 100%** — the last 17 stories of those two epics (`BOK-04–07`, `BOK-11`, `BOK-16–20`, `FIN-08`, `FIN-09`, `FIN-12–18`), each implemented/tested/committed individually per the same per-story discipline as Stage 1/2. Mock-phase total is now **72/149 stories, 358/748 points (48%)**.
+
+**Step E's validation surfaced two real, previously-unexercised bugs**, both now fixed (see the "Step E" commit): `CreditLimitExceededException` wasn't mapped by `BookingControllerAdvice` (it 401'd via a generic error page instead of the intended 409 when reached through the real booking-confirmation HTTP path — `CreditLimitBreachIT` only ever called `paymentsApi.placeHold` directly, never through that controller), and BOK-11's new `whitelabelApi.findConsultantMarket` dependency in `publishPackage` broke every test (including Stage 2's own vertical-slice checkpoint and one pre-existing BOK-12 test) that used a never-onboarded `consultantId` — both are the kind of gap that only a real, executed end-to-end run catches, not a mocked-repository unit test or a `@PreAuthorize`/compile-time check. Also discovered mid-session: this environment's Docker (`backend-postgres-1`, the repo's own `docker-compose.yml` service) is actually reachable, so `FullVerticalSliceEndToEndIT` and every `@ApplicationModuleTest` module-integration test could be **executed for real** for the first time this stage (54/54 passing) — a materially stronger verification bar than "compiles, never run" from Batches 1 and prior. Testcontainers-spun-fresh-containers still doesn't work in this sandbox (a Gradle-JVM docker-context wiring gap, not investigated further — out of scope for this stage).
+
+**Recommendation: build the AI Layer next (13 stories, 72 points).**
+
+Both `AI Layer` and `Local DMC + BYOS` are fully unblocked right now — every dependency either epic has (`FND-01/02/14/16`, `BOK-08/12/13`) is already done, so either could be built top-to-bottom without the epic-interleaving `Booking Core`/`Financial Layer` needed throughout Stages 1–3. Recommending AI Layer over Local DMC+BYOS and Ads/Campaign for three reasons:
+
+1. **It's what PRD §8's own high-level release order says is next** ("Booking core → Financial layer → AI layer → Local DMC+BYOS → Ads/Campaign → Hardening") — Booking Core and Financial Layer just finished, so this isn't a re-derivation, it's confirmation the derived build order (§2) and the PRD's stated intent agree.
+2. **It unblocks `Ads/Campaign Management`, which cannot otherwise finish.** `ADS-04` (ad creative approval) depends on `AI-12` (AI-generated ad creative) — verified directly in `ADS-04`'s frontmatter. `ADS-01/02/03` could start without AI Layer, but the epic has a hard wall partway through regardless; building AI Layer first removes that wall before Ads/Campaign work begins, rather than discovering it mid-epic.
+3. **It's the platform's core product differentiator** (PRD §11's AI Itinerary Governance — grounded generation, 100%-logged suggestions, "AI states inability rather than substituting"), not a peripheral feature; landing it earlier gets the highest-uncertainty, most architecturally novel epic (governance/audit-log-gating a third-party LLM call, a pattern nothing built so far resembles) de-risked while Booking Core/Financial Layer context is still fresh.
+
+`Local DMC + BYOS` (11 stories, 57 points) is the natural epic after that — equally unblocked, self-contained (adds a new supplier channel + BYOS credential management), and doesn't block anything else, so it's a reasonable parallel-track candidate if a second work-stream is available, but not the recommended *next* single target.
 
 ### Production phase (83 stories / 476 points)
 

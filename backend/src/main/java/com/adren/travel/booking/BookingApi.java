@@ -1,5 +1,6 @@
 package com.adren.travel.booking;
 
+import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.shared.Money;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -43,6 +44,70 @@ public interface BookingApi {
     UUID confirmBooking(UUID quotationOrPackageId, Money totalSellPrice);
 
     /**
+     * Confirms a booking billed to the Consultant's On-Account balance
+     * (PRD §21.4's third payment-method option alongside Stripe/Wallet,
+     * §20.8, FIN-12) — same concurrency-safe/tenant-scoped shape as {@link
+     * #confirmBooking}, but settles via {@code PaymentsApi.payOnAccount}
+     * instead of a wallet hold+debit, and is never gated by FIN-08's
+     * credit-limit check (On-Account is a separate settlement path, not
+     * wallet balance/credit). Publishes the same {@link
+     * com.adren.travel.booking.event.BookingConfirmedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    UUID confirmBookingOnAccount(UUID quotationOrPackageId, Money totalSellPrice);
+
+    /**
+     * Calculates a cancellation's refund/penalty split against the
+     * supplier's actual cancellation policy (PRD §12.4/§12.5, FIN-13) —
+     * delegates to {@code PaymentsApi.calculateRefund}; exposed here (not
+     * directly off {@code PaymentsApi}) so the REST surface stays
+     * resource-oriented under {@code /api/v1/bookings/{id}/cancellation}
+     * (RULES.md §3.1), matching every other booking-resource endpoint's
+     * shape.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    RefundCalculation calculateCancellationRefund(UUID bookingId, CalculateCancellationRefundCommand command);
+
+    /**
+     * Submits a cancellation, starting FIN-16/PRD §12.5's tracked workflow
+     * — runs the same policy-check/refund-calculation {@link
+     * #calculateCancellationRefund} does, then persists a {@code
+     * CancellationRequest}. A penalty-free cancellation processes its
+     * refund immediately in this same call; a penalized one stops at
+     * {@code PENDING_APPROVAL} and waits for {@link #approveCancellation}
+     * — the refund is never processed without that explicit step. Same
+     * role shape as {@link #calculateCancellationRefund}, since submitting
+     * is part of the same "cancel my booking" action a User can take.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    CancellationRequestView submitCancellation(UUID bookingId, CalculateCancellationRefundCommand command);
+
+    /**
+     * A Consultant explicitly approves a penalized cancellation (PRD
+     * §12.5's AC), processing the refund in the same call. {@code
+     * CONSULTANT}-only (self-scoped) rather than the {@code
+     * CONSULTANT,USER} shape most of this Api uses — the same "a
+     * Consultant's own Users cannot [take this action] unless granted"
+     * reasoning {@code PaymentsApi.configureMarkup} documents, since
+     * approving a penalty is a financial sign-off, not a booking action.
+     * {@code SUPER_ADMIN} retains the usual oversight path.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT')")
+    CancellationRequestView approveCancellation(UUID cancellationRequestId);
+
+    /**
+     * Flags a dispute on a booking (PRD §12.5, FIN-16) — creates a tracked
+     * {@code DisputeTicket}, not just an email handoff. Publishes {@link
+     * com.adren.travel.booking.event.DisputeTicketCreatedEvent}, which
+     * {@code notification} reacts to independently (same fan-out shape as
+     * {@link #confirmBooking}'s {@code BookingConfirmedEvent}). Same role
+     * shape as {@link #calculateCancellationRefund} — flagging a problem
+     * with your own booking is part of the same access a User already has.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    DisputeTicketView flagDispute(UUID bookingId, FlagDisputeCommand command);
+
+    /**
      * Paginated per RULES.md §3.4 — never a bare {@code List<UUID>} at a
      * public Api boundary a controller might wire up unbounded, given a
      * Consultant can accumulate thousands of bookings over time.
@@ -83,6 +148,86 @@ public interface BookingApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     UUID addHotelLineItem(UUID itineraryId, AddHotelLineItemCommand command);
+
+    /**
+     * Adds a Flight line item to an itinerary (PRD §20.3, §10.2.4, BOK-04),
+     * priced through the same {@code PaymentsApi.calculateSellRate} pipeline
+     * as {@link #addHotelLineItem} under {@code ProductCategory.FLIGHT}.
+     * Publishes {@link com.adren.travel.booking.event.FlightLineItemAddedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    UUID addFlightLineItem(UUID itineraryId, AddFlightLineItemCommand command);
+
+    /**
+     * Adds a Transfer line item to an itinerary (PRD §20.4, §10.2.5, BOK-05),
+     * priced through the same {@code PaymentsApi.calculateSellRate} pipeline
+     * under {@code ProductCategory.TRANSFER}. Publishes {@link
+     * com.adren.travel.booking.event.TransferLineItemAddedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    UUID addTransferLineItem(UUID itineraryId, AddTransferLineItemCommand command);
+
+    /**
+     * Adds a Cruise line item to an itinerary (PRD §20.5, §10.2.6, BOK-06),
+     * priced through the same {@code PaymentsApi.calculateSellRate} pipeline
+     * under {@code ProductCategory.CRUISE}. Publishes {@link
+     * com.adren.travel.booking.event.CruiseLineItemAddedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    UUID addCruiseLineItem(UUID itineraryId, AddCruiseLineItemCommand command);
+
+    /**
+     * Adds an Activity line item to an itinerary (PRD §20.6, §10.2.7, BOK-07),
+     * priced through the same {@code PaymentsApi.calculateSellRate} pipeline
+     * under {@code ProductCategory.ACTIVITY}. Publishes {@link
+     * com.adren.travel.booking.event.ActivityLineItemAddedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    UUID addActivityLineItem(UUID itineraryId, AddActivityLineItemCommand command);
+
+    /**
+     * Changes an Activity line item's headcount (PRD §20.6, §10.2.7, BOK-07)
+     * — blocked once the owning itinerary has left DRAFT (the same
+     * immutability boundary {@link #addActivityLineItem} and every other
+     * {@code add*LineItem} method already enforces), matching most
+     * suppliers' fixed-at-booking headcount constraint.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    void updateActivityHeadcount(UUID itineraryId, UUID lineItemId, int newHeadcount);
+
+    /**
+     * Consolidates an itinerary's (possibly mixed-sell-currency) line items
+     * into one total in the Consultant's sell currency (PRD §23.1 Edge Case
+     * #2, BOK-17) — the checkout screen calls this to compute the value it
+     * then passes as {@link #confirmBooking}'s {@code totalSellPrice},
+     * rather than {@code confirmBooking} itself performing conversion
+     * inline (its signature is an existing, already-exercised public
+     * contract; this stays a separate, composable step upstream of it).
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    Money consolidateCheckoutTotal(ConsolidateCheckoutTotalCommand command);
+
+    /**
+     * Records a traveler-count change on an existing Quotation (PRD §23.1
+     * Edge Case #3, BOK-18) — blocked once the underlying itinerary has
+     * reached BOOKED (the "before booking" boundary the story's AC names).
+     * Resets the Quotation's FX/price validity window to a fresh one from
+     * now, so a stale window can never silently carry over past this
+     * change. Publishes {@link com.adren.travel.booking.event.QuotationRecalculatedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    void recalculateQuotation(UUID quotationId, int newTravelerCount);
+
+    /**
+     * Marks a Package's ATOL disclosure step complete (PRD §17.2, §22.3 T5,
+     * BOK-11) — the precondition {@link #publishPackage} checks for a UK
+     * Consultant's dynamic flight+hotel package. Same "Create package"
+     * role/capability-grant shape as {@link #publishPackage} itself.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT') or "
+        + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
+        + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
+    void completeAtolDisclosure(UUID packageId);
 
     /**
      * Confirms a booking once a Stripe webhook (not a direct user request)
