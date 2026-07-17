@@ -1,5 +1,6 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AiApprovalRequiredException;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -64,10 +65,24 @@ class Itinerary {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * @throws AiApprovalRequiredException AI-06, PRD §11.2 principle 3 —
+     *     an AI-generated itinerary cannot become a Quotation (the step
+     *     that leads to it reaching a traveler) until a Consultant/
+     *     permitted User has explicitly called {@link #markAiApproved()}.
+     *     Checked here, at the actual state-transition method, rather than
+     *     only in a controller/service-layer {@code if} — matching
+     *     backend-best-practices §1's "the invariant is enforced in one
+     *     place" rule, so no future call site can reintroduce the gap by
+     *     forgetting the check.
+     */
     void markAsQuotation() {
         if (this.status != ItineraryStatus.DRAFT) {
             throw new IllegalStateException(
                 "Only a DRAFT itinerary can become a QUOTATION, was: " + this.status);
+        }
+        if (this.aiGenerated && !this.aiApproved) {
+            throw new AiApprovalRequiredException(itineraryId);
         }
         this.status = ItineraryStatus.QUOTATION;
         this.updatedAt = Instant.now();

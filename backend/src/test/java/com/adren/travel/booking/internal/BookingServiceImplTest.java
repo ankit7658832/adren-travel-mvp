@@ -231,6 +231,64 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void savingAsQuotationBlocksAnUnapprovedAiGeneratedItineraryFIN06() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        draft.markAiGenerated(UUID.randomUUID());
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        assertThatThrownBy(() -> service.saveAsQuotation(itineraryId))
+            .isInstanceOf(com.adren.travel.booking.AiApprovalRequiredException.class);
+        assertThat(draft.getStatus()).isEqualTo(ItineraryStatus.DRAFT);
+    }
+
+    @Test
+    void savingAsQuotationSucceedsOnceTheAiSuggestionIsApprovedFIN06() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        draft.markAiGenerated(UUID.randomUUID());
+        draft.markAiApproved();
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        service.saveAsQuotation(itineraryId);
+
+        assertThat(draft.getStatus()).isEqualTo(ItineraryStatus.QUOTATION);
+    }
+
+    @Test
+    void approveAiSuggestionMarksTheItineraryApprovedFIN06() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        draft.markAiGenerated(UUID.randomUUID());
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        service.approveAiSuggestion(itineraryId);
+
+        assertThat(draft.isAiApproved()).isTrue();
+        verify(itineraryRepository).save(draft);
+    }
+
+    @Test
+    void approvingWithNoAiSuggestionEverGeneratedThrowsFIN06() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        assertThatThrownBy(() -> service.approveAiSuggestion(itineraryId))
+            .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
     void savingAsQuotationNeverPublishesTheEventWhenTheRepositorySaveFailsBOK01() {
         UUID itineraryId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();

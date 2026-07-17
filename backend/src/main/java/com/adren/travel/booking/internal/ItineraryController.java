@@ -58,6 +58,12 @@ class ItineraryController {
             request.locationCode(), request.checkIn(), request.checkOut(), request.naturalLanguageRequest(), budgetLimit));
     }
 
+    /** PRD §11.2 principle 3, AI-06 — the only way to clear the AI-approval gate on {@link #saveAsQuotation}. */
+    @PostMapping("/{itineraryId}/ai-suggestion/approval")
+    void approveAiSuggestion(@PathVariable UUID itineraryId) {
+        bookingApi.approveAiSuggestion(itineraryId);
+    }
+
     /**
      * The Itinerary Builder's alternate-selection side panel (PRD §21.2,
      * FND-16) — {@code checkIn}/{@code checkOut} default the same way

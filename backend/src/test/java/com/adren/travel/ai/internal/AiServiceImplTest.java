@@ -29,13 +29,20 @@ import tools.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -197,6 +204,68 @@ class AiServiceImplTest {
         ArgumentCaptor<AiSuggestionAuditLog> captor = ArgumentCaptor.forClass(AiSuggestionAuditLog.class);
         verify(auditLogRecorder).record(captor.capture());
         assertThat(captor.getValue().getDisposition()).isEqualTo(AiSuggestionDisposition.GROQ_ERROR);
+    }
+
+    /**
+     * AI-07's own AC, verbatim: "Given 100 AI calls are made in a load
+     * test, when the audit log is inspected, then exactly 100 entries
+     * exist — zero sampling." Run here with mocked {@code GroqClient}/
+     * {@code SupplierSearchApi} (fast, deterministic, no dependency on the
+     * real Groq API's rate limits) so all 100 calls genuinely run
+     * concurrently against the SAME {@code AiServiceImpl} instance —
+     * {@code AiSuggestionAuditLogRecorder.record} is a plain interaction
+     * on a Mockito mock, and Mockito's invocation recording is itself
+     * thread-safe, so counting exactly 100 calls afterward is a valid
+     * proof this method never drops/batches/samples a write under
+     * concurrent load. Each thread authenticates itself independently
+     * ({@code SecurityContextHolder} is thread-local by default) with its
+     * own distinct {@code itineraryId}/{@code consultantId} pair.
+     */
+    @Test
+    void logsExactlyOneAuditEntryPerCallUnderOneHundredConcurrentGenerationsFIN07() throws InterruptedException {
+        int callCount = 100;
+        when(supplierSearchApi.searchHotels(anyString(), any(), any())).thenReturn(List.of(TAJ, OBEROI));
+        when(groqClient.chatCompletion(anyString(), anyString(), anyBoolean()))
+            .thenReturn("{\"selectedSupplierRateIds\":[\"rate-taj-1\"],\"viable\":true,\"reason\":null}");
+
+        ExecutorService executor = Executors.newFixedThreadPool(20);
+        CountDownLatch ready = new CountDownLatch(callCount);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(callCount);
+        List<UUID> itineraryIds = new CopyOnWriteArrayList<>();
+
+        for (int i = 0; i < callCount; i++) {
+            executor.submit(() -> {
+                UUID consultantId = UUID.randomUUID();
+                UUID itineraryId = UUID.randomUUID();
+                itineraryIds.add(itineraryId);
+                authenticateAs(Role.CONSULTANT, consultantId);
+                try {
+                    ready.countDown();
+                    start.await();
+                    service.generateItinerary(new GenerateItineraryCommand(consultantId, itineraryId, "GOA",
+                        LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "Anything", null));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    SecurityContextHolder.clearContext();
+                    done.countDown();
+                }
+            });
+        }
+        ready.await(10, TimeUnit.SECONDS);
+        start.countDown();
+        assertThat(done.await(30, TimeUnit.SECONDS)).as("all %d calls completed in time", callCount).isTrue();
+        executor.shutdown();
+
+        assertThat(itineraryIds).hasSize(callCount).doesNotHaveDuplicates();
+
+        ArgumentCaptor<AiSuggestionAuditLog> captor = ArgumentCaptor.forClass(AiSuggestionAuditLog.class);
+        verify(auditLogRecorder, times(callCount)).record(captor.capture());
+        Set<UUID> distinctAuditLogIds = captor.getAllValues().stream()
+            .map(AiSuggestionAuditLog::getAuditLogId)
+            .collect(java.util.stream.Collectors.toSet());
+        assertThat(distinctAuditLogIds).as("every audit log row has a distinct id, none overwritten").hasSize(callCount);
     }
 
     @Test

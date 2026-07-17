@@ -49,6 +49,16 @@ public interface BookingApi {
     AiItineraryGenerationResult generateAiItinerarySuggestion(UUID itineraryId, GenerateAiSuggestionCommand command);
 
     /**
+     * A Consultant/permitted User explicitly approves the itinerary's
+     * current AI suggestion (AI-06, PRD §11.2 principle 3) — the only way
+     * {@link #saveAsQuotation}'s AI gate ({@code Itinerary.markAsQuotation})
+     * can ever be satisfied for an AI-generated itinerary. Same role shape
+     * as {@link #generateAiItinerarySuggestion}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    void approveAiSuggestion(UUID itineraryId);
+
+    /**
      * Confirms a booking from a Quotation or Package after payment succeeds.
      * Publishes {@link com.adren.travel.booking.event.BookingConfirmedEvent},
      * which the Notification and Payments modules react to independently

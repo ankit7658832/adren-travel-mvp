@@ -1,5 +1,6 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.booking.AiApprovalRequiredException;
 import com.adren.travel.booking.AtolDisclosureRequiredException;
 import com.adren.travel.booking.InventoryNoLongerAvailableException;
 import com.adren.travel.payments.CreditLimitExceededException;
@@ -55,6 +56,14 @@ class BookingControllerAdvice {
     ProblemDetail handleAtolDisclosureRequired(AtolDisclosureRequiredException ex, HttpServletRequest request) {
         return ProblemDetailFactory.create(HttpStatus.CONFLICT,
             "https://docs.adren.travel/errors/atol-disclosure-required", "ATOL disclosure required",
+            ex.getMessage(), request.getRequestURI());
+    }
+
+    @ExceptionHandler(AiApprovalRequiredException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ProblemDetail handleAiApprovalRequired(AiApprovalRequiredException ex, HttpServletRequest request) {
+        return ProblemDetailFactory.create(HttpStatus.CONFLICT,
+            "https://docs.adren.travel/errors/ai-approval-required", "AI approval required",
             ex.getMessage(), request.getRequestURI());
     }
 

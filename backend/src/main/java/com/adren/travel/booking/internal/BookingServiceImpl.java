@@ -199,6 +199,14 @@ class BookingServiceImpl implements BookingApi {
 
     @Override
     @Transactional
+    public void approveAiSuggestion(UUID itineraryId) {
+        Itinerary itinerary = requireOwnedDraftItinerary(itineraryId);
+        itinerary.markAiApproved();
+        itineraryRepository.save(itinerary);
+    }
+
+    @Override
+    @Transactional
     public UUID confirmBooking(UUID quotationOrPackageId, Money totalSellPrice) {
         ConfirmationTarget target = resolveConfirmationTargetFor(quotationOrPackageId);
         CurrentPrincipal.resolveTenantScope(target.consultantId());
