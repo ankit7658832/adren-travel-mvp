@@ -149,6 +149,34 @@ Both `AI Layer` and `Local DMC + BYOS` are fully unblocked right now — every d
 
 `Local DMC + BYOS` (11 stories, 57 points) is the natural epic after that — equally unblocked, self-contained (adds a new supplier channel + BYOS credential management), and doesn't block anything else, so it's a reasonable parallel-track candidate if a second work-stream is available, but not the recommended *next* single target.
 
+## 7c. Stage 3 actual velocity — a third data point, and a refined remaining-timeline estimate (Stage 4, pre-Step A — 2026-07-17)
+
+**Source:** same method as §7a — git commit timestamps, not estimates.
+
+**Stage 3** (`AD-stage3-capture-real-velocity-and-supplier-integration` + `AD-stage3-batch2-booking-core-financial-layer`, Step A through Step F):
+- Commits: `a063b0b` (2026-07-16 21:26:03, "Stage 3 Step A/B: real velocity capture, add BOK-21-BOK-27 supplier stories, implement BOK-21") through `149921a` (2026-07-17 22:04:16, the Batch-2-into-main merge commit).
+- Delivered **26 stories / 123 points**: `BOK-21,22,23,24,25,26,27` (7 stories, 23 pts — the supplier-stub gap Step B found and filled), `BOK-04,05,06,07,11,16,17,18,19,20` (10 stories, 47 pts), `FIN-08,09,12,13,14,15,16,17,18` (9 stories, 46 pts).
+- Calendar-day span: 2026-07-16 → 2026-07-17 (2 distinct dates). Wall-clock elapsed: ~24h38m.
+
+**Updated three-stage comparison:**
+
+| Stage | Stories | Points | Wall-clock | Wall-clock pts/day |
+|---|---|---|---|---|
+| Stage 1 | 26 | 134 | ~10h17m | 312.8 |
+| Stage 2 | 20 | 101 | ~14h54m | 162.7 |
+| Stage 3 | 26 | 123 | ~24h38m | 119.9 |
+
+**⚠️ The trend across all three stages is a consistent, non-noise decline in wall-clock velocity** (312.8 → 162.7 → 119.9 pts/day, each stage running at roughly 40–75% of the prior stage's rate) — not attributable to one outlier stage. The likely driver, visible in the work itself rather than guessed at: each stage added genuine integration surface the next stage has to keep working (Stage 2 built the first cross-module booking flow; Stage 3 built 9 interlocking Financial Layer stories culminating in `FIN-16`'s three-module cancellation workflow, *plus* Step E's adversarial re-validation against a real, executed HTTP+Postgres stack — the first time in this project that tier of verification actually ran end-to-end rather than compiling-only). More stories/epics built ⇒ more surface a later story can regress ⇒ more verification time per subsequent story, which is exactly the dynamic a real engineering team also experiences as a codebase grows, not an artifact unique to AI-assisted pace.
+
+**Combined actual delivery (all three stages):** 72 stories / **358 points**. Summing each stage's own active wall-clock (not the calendar span between stages, which includes idle gaps — e.g. ~20h elapsed between Stage 2's last commit and Stage 3's first): **10h17m + 14h54m + 24h38m ≈ 49h49m (≈2.08 days) of actual active work**, across 4 distinct calendar dates (2026-07-14 through 2026-07-17).
+
+| Basis | Elapsed | Points | Velocity |
+|---|---|---|---|
+| Summed active wall-clock | ~49.8h (2.08 days) | 358 | 172.5 pts/day → **~1,207.7 pts/week** |
+| Calendar-date count (crude) | 4 distinct dates | 358 | 89.5 pts/day → **~626.7 pts/week** |
+
+**Revised remaining-timeline estimate:** Remaining: **390 points** (748 total − 358 done). At the summed-active-wall-clock rate, 390 points ≈ **2.3 more days of active work** (calendar-date-count basis: ≈4.4 more calendar days). Given the declining-velocity trend above, the wall-clock figure is now a **more optimistic bound, not a stable rate** — a straight-line extrapolation from Stage 3's own 119.9 pts/day (the most recent, and lowest, observed rate) is more defensible than the cumulative average: 390 / 119.9 ≈ **3.25 more days of active work** at Stage 3's demonstrated pace, before accounting for whatever the AI Layer epic's own novelty (a first real external-LLM integration, no precedent in this codebase) does to that rate in either direction.
+
 ### Production phase (83 stories / 476 points)
 
 | Epic | Stories | Points | Status |
