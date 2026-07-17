@@ -89,8 +89,10 @@ class AiServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        GroqProperties groqProperties = new GroqProperties("https://api.groq.com/openai/v1", "test-key",
+            "llama-3.3-70b-versatile", 15, 2);
         service = new AiServiceImpl(groqClient, supplierSearchApi, auditLogRepository, auditLogRecorder,
-            approvalRepository, new ObjectMapper(), events);
+            approvalRepository, groqProperties, new ObjectMapper(), events);
     }
 
     @AfterEach
@@ -214,6 +216,82 @@ class AiServiceImplTest {
         ArgumentCaptor<AiSuggestionAuditLog> captor = ArgumentCaptor.forClass(AiSuggestionAuditLog.class);
         verify(auditLogRecorder).record(captor.capture());
         assertThat(captor.getValue().getDisposition()).isEqualTo(AiSuggestionDisposition.GROQ_ERROR);
+    }
+
+    @Test
+    void aTimeoutIsRetriedUpToMaxRetriesWithEachAttemptLoggedDistinctlyThenRethrownAI13() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(supplierSearchApi.searchHotels(anyString(), any(), any())).thenReturn(List.of(TAJ));
+        GroqClient.GroqTimeoutException timeout = new GroqClient.GroqTimeoutException(15, null);
+        when(groqClient.chatCompletion(anyString(), anyString(), anyBoolean())).thenThrow(timeout);
+
+        // groqProperties in setUp() is configured with maxRetries=2, so 3
+        // total attempts (1 original + 2 retries) before giving up.
+        assertThatThrownBy(() -> service.generateItinerary(new GenerateItineraryCommand(
+            consultantId, UUID.randomUUID(), "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
+            "Anything", null)))
+            .isSameAs(timeout);
+
+        verify(groqClient, times(3)).chatCompletion(any(), any(), anyBoolean());
+        ArgumentCaptor<AiSuggestionAuditLog> captor = ArgumentCaptor.forClass(AiSuggestionAuditLog.class);
+        verify(auditLogRecorder, times(3)).record(captor.capture());
+        List<Integer> attemptNumbers = captor.getAllValues().stream()
+            .map(AiSuggestionAuditLog::getAttemptNumber)
+            .toList();
+        assertThat(attemptNumbers).containsExactly(1, 2, 3);
+        assertThat(captor.getAllValues()).allSatisfy(log ->
+            assertThat(log.getDisposition()).isEqualTo(AiSuggestionDisposition.GROQ_ERROR));
+        // Every attempt shares one correlationId, distinguishing "3
+        // attempts of the same request" from "3 unrelated requests."
+        Set<UUID> correlationIds = captor.getAllValues().stream()
+            .map(AiSuggestionAuditLog::getCorrelationId)
+            .collect(java.util.stream.Collectors.toSet());
+        assertThat(correlationIds).hasSize(1);
+    }
+
+    @Test
+    void aTimeoutThatSucceedsOnRetryReturnsAGroundedSuggestionAI13() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(supplierSearchApi.searchHotels(anyString(), any(), any())).thenReturn(List.of(TAJ));
+        when(groqClient.chatCompletion(anyString(), anyString(), anyBoolean()))
+            .thenThrow(new GroqClient.GroqTimeoutException(15, null))
+            .thenReturn("{\"selectedSupplierRateIds\":[\"rate-taj-1\"],\"viable\":true,\"reason\":null}");
+
+        AiItineraryGenerationResult result = service.generateItinerary(new GenerateItineraryCommand(
+            consultantId, UUID.randomUUID(), "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
+            "Anything", null));
+
+        assertThat(result).isInstanceOf(AiItinerarySuggestion.class);
+        verify(groqClient, times(2)).chatCompletion(any(), any(), anyBoolean());
+        // One GROQ_ERROR row for the failed attempt, one SUGGESTED row for
+        // the successful one — never overwritten into a single row.
+        ArgumentCaptor<AiSuggestionAuditLog> captor = ArgumentCaptor.forClass(AiSuggestionAuditLog.class);
+        verify(auditLogRecorder, times(2)).record(captor.capture());
+        assertThat(captor.getAllValues()).extracting(AiSuggestionAuditLog::getDisposition)
+            .containsExactly(AiSuggestionDisposition.GROQ_ERROR, AiSuggestionDisposition.SUGGESTED);
+    }
+
+    @Test
+    void aRateLimitFailureIsRetriedButAnAuthFailureIsNotAI13() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(supplierSearchApi.searchHotels(anyString(), any(), any())).thenReturn(List.of(TAJ));
+        GroqClient.GroqAuthenticationException authFailure = new GroqClient.GroqAuthenticationException(401, null);
+        when(groqClient.chatCompletion(anyString(), anyString(), anyBoolean()))
+            .thenThrow(new GroqClient.GroqRateLimitException(null))
+            .thenThrow(authFailure);
+
+        assertThatThrownBy(() -> service.generateItinerary(new GenerateItineraryCommand(
+            consultantId, UUID.randomUUID(), "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
+            "Anything", null)))
+            .isSameAs(authFailure);
+
+        // Rate limit (attempt 1) is retryable, so a 2nd attempt happens;
+        // that 2nd attempt hits an auth failure, which is NOT retryable,
+        // so it stops there rather than exhausting all 3 configured attempts.
+        verify(groqClient, times(2)).chatCompletion(any(), any(), anyBoolean());
     }
 
     /**

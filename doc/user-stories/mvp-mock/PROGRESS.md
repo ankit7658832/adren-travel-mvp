@@ -99,7 +99,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **AI-10** — build the complete with ai entry point with source availability badges
 - [ ] **AI-11** — build the ai governance audit log viewer in the super admin console
 - [ ] **AI-12** — generate ai ad creative variants grounded in package content and live pricing
-- [ ] **AI-13** — bound ai response latency to protect the 10 minute itinerary target
+- [x] **AI-13** — bound ai response latency to protect the 10 minute itinerary target
 
 ## Local DMC + BYOS (11)
 

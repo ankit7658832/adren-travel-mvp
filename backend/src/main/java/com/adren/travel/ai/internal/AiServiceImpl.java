@@ -83,18 +83,20 @@ class AiServiceImpl implements AiApi {
     private final AiSuggestionAuditLogRepository auditLogRepository;
     private final AiSuggestionAuditLogRecorder auditLogRecorder;
     private final AiSuggestionApprovalRepository approvalRepository;
+    private final GroqProperties groqProperties;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher events;
 
     AiServiceImpl(GroqClient groqClient, SupplierSearchApi supplierSearchApi,
                   AiSuggestionAuditLogRepository auditLogRepository, AiSuggestionAuditLogRecorder auditLogRecorder,
-                  AiSuggestionApprovalRepository approvalRepository, ObjectMapper objectMapper,
-                  ApplicationEventPublisher events) {
+                  AiSuggestionApprovalRepository approvalRepository, GroqProperties groqProperties,
+                  ObjectMapper objectMapper, ApplicationEventPublisher events) {
         this.groqClient = groqClient;
         this.supplierSearchApi = supplierSearchApi;
         this.auditLogRepository = auditLogRepository;
         this.auditLogRecorder = auditLogRecorder;
         this.approvalRepository = approvalRepository;
+        this.groqProperties = groqProperties;
         this.objectMapper = objectMapper;
         this.events = events;
     }
@@ -119,14 +121,8 @@ class AiServiceImpl implements AiApi {
                 "No inventory available for " + command.locationCode());
         }
 
-        String rawOutput;
-        try {
-            rawOutput = groqClient.chatCompletion(SYSTEM_PROMPT, buildUserPrompt(command, candidates), true);
-        } catch (GroqClient.GroqClientException e) {
-            recordGroqError(correlationId, scopedConsultantId, command.itineraryId(),
-                requestInputJson, candidateSnapshotJson, e);
-            throw e;
-        }
+        String rawOutput = callGroqWithBoundedRetries(correlationId, scopedConsultantId, command.itineraryId(),
+            requestInputJson, candidateSnapshotJson, buildUserPrompt(command, candidates));
 
         GroundedSelection selection = validateAndGround(rawOutput, candidates, command.budgetLimit());
         if (selection.lineItems().isEmpty()) {
@@ -235,10 +231,44 @@ class AiServiceImpl implements AiApi {
         return new NoViableSuggestion(auditLogId, reason);
     }
 
-    private void recordGroqError(UUID correlationId, UUID consultantId, UUID itineraryId, String requestInputJson,
-                                  String candidateSnapshotJson, GroqClient.GroqClientException e) {
+    /**
+     * AI-13, PRD §24.3/§9.6: bounds the Groq call to {@code
+     * adren.ai.groq.max-retries} additional attempts beyond the first,
+     * and ONLY for the failure modes a retry could plausibly fix — a
+     * timeout or a rate limit, never an auth failure (retrying an invalid
+     * {@code GROQ_API_KEY} cannot succeed, so failing fast on the first
+     * attempt is correct there, not a missed-retry bug). Every attempt,
+     * successful or not, gets its OWN {@code AiSuggestionAuditLog} row
+     * sharing one {@code correlationId} — the audit trail shows exactly
+     * how many attempts a generation took and what each one did, not just
+     * the final outcome.
+     */
+    private String callGroqWithBoundedRetries(UUID correlationId, UUID consultantId, UUID itineraryId,
+                                                String requestInputJson, String candidateSnapshotJson,
+                                                String userPrompt) {
+        int maxAttempts = 1 + groqProperties.maxRetries();
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return groqClient.chatCompletion(SYSTEM_PROMPT, userPrompt, true);
+            } catch (GroqClient.GroqClientException e) {
+                recordGroqError(correlationId, attempt, consultantId, itineraryId, requestInputJson,
+                    candidateSnapshotJson, e);
+                boolean retryable = e instanceof GroqClient.GroqTimeoutException
+                    || e instanceof GroqClient.GroqRateLimitException;
+                if (!retryable || attempt == maxAttempts) {
+                    throw e;
+                }
+            }
+        }
+        // Unreachable — the loop always either returns or throws.
+        throw new IllegalStateException("callGroqWithBoundedRetries exited its loop without returning or throwing");
+    }
+
+    private void recordGroqError(UUID correlationId, int attemptNumber, UUID consultantId, UUID itineraryId,
+                                  String requestInputJson, String candidateSnapshotJson,
+                                  GroqClient.GroqClientException e) {
         UUID auditLogId = UUID.randomUUID();
-        auditLogRecorder.record(new AiSuggestionAuditLog(auditLogId, correlationId, 1, consultantId,
+        auditLogRecorder.record(new AiSuggestionAuditLog(auditLogId, correlationId, attemptNumber, consultantId,
             itineraryId, requestInputJson, candidateSnapshotJson, e.getMessage(), null,
             AiSuggestionDisposition.GROQ_ERROR));
         events.publishEvent(new AiSuggestionGeneratedEvent(auditLogId, itineraryId, consultantId,
