@@ -88,12 +88,12 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 ## AI Layer (13)
 
 - [x] **AI-01** — integrate a groq client wrapper for the ai module
-- [ ] **AI-02** — generate an itinerary from natural language or structured input
+- [x] **AI-02** — generate an itinerary from natural language or structured input
 - [ ] **AI-03** — complete a partially built itinerary with ai
-- [ ] **AI-04** — include supplier source and live availability status on every ai suggestion
-- [ ] **AI-05** — model ai failure no viable suggestion as an explicit response state
+- [x] **AI-04** — include supplier source and live availability status on every ai suggestion
+- [x] **AI-05** — model ai failure no viable suggestion as an explicit response state
 - [ ] **AI-06** — enforce mandatory human in the loop approval before an ai itinerary reaches the traveler
-- [ ] **AI-07** — write a 100 logged insert only ai suggestion audit trail
+- [x] **AI-07** — write a 100 logged insert only ai suggestion audit trail
 - [ ] **AI-08** — capture both the original ai suggestion and the consultant s edited final version in the audit trail
 - [ ] **AI-09** — re validate ai suggested pricing at booking time if it has gone stale
 - [ ] **AI-10** — build the complete with ai entry point with source availability badges

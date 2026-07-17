@@ -14,6 +14,7 @@ import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.DisputeTicketView;
 import com.adren.travel.booking.FlagDisputeCommand;
+import com.adren.travel.booking.GenerateAiSuggestionCommand;
 import com.adren.travel.booking.MealPlan;
 import com.adren.travel.booking.event.ActivityLineItemAddedEvent;
 import com.adren.travel.booking.event.BookingCancelledEvent;
@@ -140,6 +141,9 @@ class BookingServiceImplTest {
     @Mock
     DisputeTicketRepository disputeTicketRepository;
 
+    @Mock
+    com.adren.travel.ai.AiApi aiApi;
+
     BookingServiceImpl service;
 
     @BeforeEach
@@ -148,7 +152,7 @@ class BookingServiceImplTest {
             flightLineItemRepository, transferLineItemRepository, cruiseLineItemRepository,
             activityLineItemRepository, quotationRepository, travelPackageRepository, bookingRepository,
             voucherService, events, whitelabelApi, supplierSearchApi, hotelDedupService, paymentsApi,
-            cancellationRequestRepository, disputeTicketRepository);
+            cancellationRequestRepository, disputeTicketRepository, aiApi);
     }
 
     // BOK-08: saveAsQuotation now requires at least one line item — stub a
@@ -185,6 +189,45 @@ class BookingServiceImplTest {
         verify(events).publishEvent(captor.capture());
         assertThat(captor.getValue().itineraryId()).isEqualTo(itineraryId);
         assertThat(captor.getValue().consultantId()).isEqualTo(consultantId);
+    }
+
+    @Test
+    void generatingAnAiSuggestionMarksTheItineraryAiGeneratedFIN02() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        UUID auditLogId = UUID.randomUUID();
+        com.adren.travel.ai.AiItinerarySuggestion suggestion = new com.adren.travel.ai.AiItinerarySuggestion(
+            auditLogId, List.of());
+        when(aiApi.generateItinerary(any())).thenReturn(suggestion);
+
+        var result = service.generateAiItinerarySuggestion(itineraryId, new GenerateAiSuggestionCommand(
+            "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "A relaxing trip", null));
+
+        assertThat(result).isSameAs(suggestion);
+        assertThat(draft.isAiGenerated()).isTrue();
+        assertThat(draft.getAiAuditLogId()).isEqualTo(auditLogId);
+        assertThat(draft.isAiApproved()).isFalse();
+        verify(itineraryRepository).save(draft);
+    }
+
+    @Test
+    void generatingANoViableSuggestionNeverMarksTheItineraryAiGeneratedFIN05() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(aiApi.generateItinerary(any()))
+            .thenReturn(new com.adren.travel.ai.NoViableSuggestion(UUID.randomUUID(), "No inventory available"));
+
+        service.generateAiItinerarySuggestion(itineraryId, new GenerateAiSuggestionCommand(
+            "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "A relaxing trip", null));
+
+        assertThat(draft.isAiGenerated()).isFalse();
+        verify(itineraryRepository, org.mockito.Mockito.never()).save(draft);
     }
 
     @Test

@@ -43,6 +43,7 @@ class Itinerary {
 
     private boolean aiGenerated;
     private UUID aiAuditLogId;
+    private boolean aiApproved;
 
     private Instant createdAt;
     private Instant updatedAt;
@@ -86,6 +87,38 @@ class Itinerary {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * Records that an AI suggestion was generated for this itinerary
+     * (AI-02) — {@code aiApproved} deliberately stays false here even on a
+     * repeat call, since a fresh suggestion supersedes whatever was
+     * approved (or not) before it. Idempotent-shaped (always safe to call
+     * again), matching the "AI may be asked to regenerate" reality of the
+     * "Complete with AI" flow (AI-10) rather than throwing on a second call.
+     */
+    void markAiGenerated(UUID auditLogId) {
+        this.aiGenerated = true;
+        this.aiAuditLogId = auditLogId;
+        this.aiApproved = false;
+        this.updatedAt = Instant.now();
+    }
+
+    /**
+     * A Consultant/permitted User has explicitly approved the current AI
+     * suggestion (AI-06, PRD §11.2 principle 3) — the only thing {@link
+     * #markAsQuotation()}'s AI gate checks. Throws rather than silently
+     * no-op'ing if there is no AI suggestion to approve (backend-best-
+     * practices §1) — approving nothing is a caller error, not a valid
+     * no-op transition.
+     */
+    void markAiApproved() {
+        if (!this.aiGenerated) {
+            throw new IllegalStateException(
+                "Cannot approve an AI suggestion for itinerary " + itineraryId + ": none was generated");
+        }
+        this.aiApproved = true;
+        this.updatedAt = Instant.now();
+    }
+
     UUID getItineraryId() {
         return itineraryId;
     }
@@ -96,5 +129,17 @@ class Itinerary {
 
     ItineraryStatus getStatus() {
         return status;
+    }
+
+    boolean isAiGenerated() {
+        return aiGenerated;
+    }
+
+    UUID getAiAuditLogId() {
+        return aiAuditLogId;
+    }
+
+    boolean isAiApproved() {
+        return aiApproved;
     }
 }

@@ -144,6 +144,11 @@ class BookingApiMethodSecurityTest {
         }
 
         @Bean
+        com.adren.travel.ai.AiApi aiApi() {
+            return Mockito.mock(com.adren.travel.ai.AiApi.class);
+        }
+
+        @Bean
         BookingApi bookingApi(ItineraryRepository repository, TravelerProfileRepository travelerProfileRepository,
                                HotelLineItemRepository hotelLineItemRepository, FlightLineItemRepository flightLineItemRepository,
                                TransferLineItemRepository transferLineItemRepository,
@@ -155,12 +160,12 @@ class BookingApiMethodSecurityTest {
                                ApplicationEventPublisher publisher, WhitelabelApi whitelabelApi,
                                SupplierSearchApi supplierSearchApi, HotelDedupService hotelDedupService,
                                PaymentsApi paymentsApi, CancellationRequestRepository cancellationRequestRepository,
-                               DisputeTicketRepository disputeTicketRepository) {
+                               DisputeTicketRepository disputeTicketRepository, com.adren.travel.ai.AiApi aiApi) {
             return new BookingServiceImpl(repository, travelerProfileRepository, hotelLineItemRepository,
                 flightLineItemRepository, transferLineItemRepository, cruiseLineItemRepository,
                 activityLineItemRepository, quotationRepository, travelPackageRepository, bookingRepository,
                 voucherService, publisher, whitelabelApi, supplierSearchApi, hotelDedupService, paymentsApi,
-                cancellationRequestRepository, disputeTicketRepository);
+                cancellationRequestRepository, disputeTicketRepository, aiApi);
         }
     }
 

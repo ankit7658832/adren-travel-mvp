@@ -1,5 +1,8 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.ai.AiApi;
+import com.adren.travel.ai.AiItineraryGenerationResult;
+import com.adren.travel.ai.AiItinerarySuggestion;
 import com.adren.travel.booking.AddActivityLineItemCommand;
 import com.adren.travel.booking.AddCruiseLineItemCommand;
 import com.adren.travel.booking.AddFlightLineItemCommand;
@@ -14,6 +17,7 @@ import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.DisputeTicketView;
 import com.adren.travel.booking.FlagDisputeCommand;
+import com.adren.travel.booking.GenerateAiSuggestionCommand;
 import com.adren.travel.booking.PackageView;
 import com.adren.travel.booking.event.ActivityLineItemAddedEvent;
 import com.adren.travel.booking.event.BookingCancelledEvent;
@@ -95,11 +99,12 @@ class BookingServiceImpl implements BookingApi {
     private final PaymentsApi paymentsApi;
     private final CancellationRequestRepository cancellationRequestRepository;
     private final DisputeTicketRepository disputeTicketRepository;
+    private final AiApi aiApi;
 
     // backend-best-practices §4 flags >4-5 constructor dependencies as a
     // decomposition signal — this one is well past that (pre-existing,
     // grew one line-item repo at a time across BOK-03..07). Not refactored
-    // here (FIN-16 is a functional addition, not the moment for that
+    // here (AI-02 is a functional addition, not the moment for that
     // separate change) but worth flagging rather than silently adding
     // another param without comment.
     BookingServiceImpl(ItineraryRepository itineraryRepository, TravelerProfileRepository travelerProfileRepository,
@@ -113,7 +118,7 @@ class BookingServiceImpl implements BookingApi {
                         ApplicationEventPublisher events, WhitelabelApi whitelabelApi,
                         SupplierSearchApi supplierSearchApi, HotelDedupService hotelDedupService,
                         PaymentsApi paymentsApi, CancellationRequestRepository cancellationRequestRepository,
-                        DisputeTicketRepository disputeTicketRepository) {
+                        DisputeTicketRepository disputeTicketRepository, AiApi aiApi) {
         this.itineraryRepository = itineraryRepository;
         this.travelerProfileRepository = travelerProfileRepository;
         this.hotelLineItemRepository = hotelLineItemRepository;
@@ -128,6 +133,7 @@ class BookingServiceImpl implements BookingApi {
         this.events = events;
         this.whitelabelApi = whitelabelApi;
         this.hotelDedupService = hotelDedupService;
+        this.aiApi = aiApi;
         this.supplierSearchApi = supplierSearchApi;
         this.paymentsApi = paymentsApi;
         this.cancellationRequestRepository = cancellationRequestRepository;
@@ -169,6 +175,26 @@ class BookingServiceImpl implements BookingApi {
 
         events.publishEvent(new ItineraryQuotationSavedEvent(itineraryId, quotationId, itinerary.getConsultantId()));
         return quotationId;
+    }
+
+    @Override
+    @Transactional
+    public AiItineraryGenerationResult generateAiItinerarySuggestion(UUID itineraryId, GenerateAiSuggestionCommand command) {
+        Itinerary itinerary = requireOwnedDraftItinerary(itineraryId);
+
+        AiItineraryGenerationResult result = aiApi.generateItinerary(new com.adren.travel.ai.GenerateItineraryCommand(
+            itinerary.getConsultantId(), itineraryId, command.locationCode(), command.checkIn(), command.checkOut(),
+            command.naturalLanguageRequest(), command.budgetLimit()));
+
+        // AI-06's approval gate (Itinerary.markAsQuotation) checks
+        // aiGenerated/aiApproved — only record aiGenerated on an actual
+        // suggestion, never on a NoViableSuggestion outcome (nothing was
+        // suggested, so nothing needs approval before Quotation).
+        if (result instanceof AiItinerarySuggestion suggestion) {
+            itinerary.markAiGenerated(suggestion.auditLogId());
+            itineraryRepository.save(itinerary);
+        }
+        return result;
     }
 
     @Override

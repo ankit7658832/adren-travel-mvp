@@ -1,5 +1,6 @@
 package com.adren.travel.booking;
 
+import com.adren.travel.ai.AiItineraryGenerationResult;
 import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.shared.Money;
 import org.springframework.data.domain.Page;
@@ -33,6 +34,19 @@ public interface BookingApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     UUID saveAsQuotation(UUID itineraryId);
+
+    /**
+     * Generates a grounded AI itinerary suggestion for a DRAFT itinerary
+     * (PRD §11.1/§11.2, AI-02) — delegates to {@code AiApi.generateItinerary}
+     * with the owned itinerary's resolved consultantId, then records the
+     * result on the itinerary itself ({@code Itinerary.markAiGenerated})
+     * so {@link #saveAsQuotation}'s AI-06 approval gate has something to
+     * check. Same role shape as {@link #saveAsQuotation} — generating a
+     * suggestion is part of the same "build an itinerary" access every
+     * role already has.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    AiItineraryGenerationResult generateAiItinerarySuggestion(UUID itineraryId, GenerateAiSuggestionCommand command);
 
     /**
      * Confirms a booking from a Quotation or Package after payment succeeds.
