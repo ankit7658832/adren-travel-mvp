@@ -57,6 +57,12 @@ adren:
         gst-percent: 5
         tcs-percent: 5
         tcs-threshold: 700000
+      # FIN-18, PRD §12.1 Worked Example D / §19: same "illustrative rate,
+      # pending tax-counsel sign-off" reasoning as india above — applies to
+      # the Consultant's margin only, never the full package sale price.
+      uk-toms:
+        enabled: ${ADREN_UK_TOMS_VAT_ENABLED:false}
+        vat-percent: 20
 
 server:
   port: 8080

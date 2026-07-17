@@ -5,6 +5,7 @@ import com.adren.travel.payments.CalculateCommissionCommand;
 import com.adren.travel.payments.CalculateIndiaGstTcsCommand;
 import com.adren.travel.payments.CalculateRefundCommand;
 import com.adren.travel.payments.CalculateSellRateCommand;
+import com.adren.travel.payments.CalculateUkTomsVatCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.CreatePaymentIntentCommand;
 import com.adren.travel.payments.FxRateSnapshot;
@@ -19,6 +20,7 @@ import com.adren.travel.payments.PaymentsApi;
 import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.SnapshotFxRateCommand;
+import com.adren.travel.payments.UkTomsVatCalculation;
 import com.adren.travel.payments.WalletHoldCommand;
 import com.adren.travel.payments.WalletView;
 import com.adren.travel.payments.event.BookingPaidOnAccountEvent;
@@ -29,6 +31,7 @@ import com.adren.travel.payments.event.IndiaGstTcsCalculatedEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.RefundCalculatedEvent;
 import com.adren.travel.payments.event.StripePaymentSucceededEvent;
+import com.adren.travel.payments.event.UkTomsVatCalculatedEvent;
 import com.adren.travel.payments.event.WalletTopUpReconciledEvent;
 import com.adren.travel.payments.event.WalletHoldDebitedEvent;
 import com.adren.travel.payments.event.WalletHoldPlacedEvent;
@@ -58,13 +61,14 @@ class PaymentsServiceImpl implements PaymentsApi {
     private final PricingPipeline pricingPipeline;
     private final StripeClient stripeClient;
     private final IndiaTaxProperties indiaTaxProperties;
+    private final UkTomsVatProperties ukTomsVatProperties;
 
     PaymentsServiceImpl(MarkupRuleRepository markupRuleRepository, WalletRepository walletRepository,
                          PaymentIntentRepository paymentIntentRepository,
                          WalletLedgerEntryRepository walletLedgerEntryRepository,
                          WalletLedgerEntryRecorder walletLedgerEntryRecorder, ApplicationEventPublisher events,
                          PricingPipeline pricingPipeline, StripeClient stripeClient,
-                         IndiaTaxProperties indiaTaxProperties) {
+                         IndiaTaxProperties indiaTaxProperties, UkTomsVatProperties ukTomsVatProperties) {
         this.markupRuleRepository = markupRuleRepository;
         this.walletRepository = walletRepository;
         this.paymentIntentRepository = paymentIntentRepository;
@@ -74,6 +78,7 @@ class PaymentsServiceImpl implements PaymentsApi {
         this.pricingPipeline = pricingPipeline;
         this.stripeClient = stripeClient;
         this.indiaTaxProperties = indiaTaxProperties;
+        this.ukTomsVatProperties = ukTomsVatProperties;
     }
 
     @Override
@@ -352,6 +357,23 @@ class PaymentsServiceImpl implements PaymentsApi {
             tcsAmount, applied));
 
         return new IndiaGstTcsCalculation(gstAmount, tcsAmount, applied);
+    }
+
+    @Override
+    @Transactional
+    public UkTomsVatCalculation calculateUkTomsVat(CalculateUkTomsVatCommand command) {
+        boolean applied = ukTomsVatProperties.enabled();
+        // PRD §19: exact rate pending UK tax-counsel sign-off — never
+        // silently charge the PRD's illustrative figure as if final.
+        // Always on the margin only, per Example D — never the full sale
+        // price, so there's no separate "full price" input to branch on.
+        Money vatAmount = applied
+            ? command.marginAmount().percentOf(ukTomsVatProperties.vatPercent())
+            : Money.zero(command.marginAmount().currency());
+
+        events.publishEvent(new UkTomsVatCalculatedEvent(command.bookingId(), command.consultantId(), vatAmount, applied));
+
+        return new UkTomsVatCalculation(vatAmount, applied);
     }
 
     // FIN-10: the ledger insert is attempted (and, on a unique-constraint

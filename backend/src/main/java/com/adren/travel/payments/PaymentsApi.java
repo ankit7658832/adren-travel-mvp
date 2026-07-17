@@ -187,4 +187,15 @@ public interface PaymentsApi {
      * — no {@code @PreAuthorize}.
      */
     IndiaGstTcsCalculation calculateIndiaGstTcs(CalculateIndiaGstTcsCommand command);
+
+    /**
+     * Calculates UK TOMS VAT on a package's margin component (PRD §12.1
+     * Worked Example D, §17.2, FIN-18) — never the full package sale price
+     * (Example D's own explicit distinction). Gated behind {@code
+     * adren.payments.tax.uk-toms.enabled} (off by default, same reasoning
+     * as {@link #calculateIndiaGstTcs}'s gate — PRD §19 pending UK
+     * tax-counsel sign-off). Same internal-pricing-pipeline-step shape as
+     * {@link #calculateCommission} — no {@code @PreAuthorize}.
+     */
+    UkTomsVatCalculation calculateUkTomsVat(CalculateUkTomsVatCommand command);
 }

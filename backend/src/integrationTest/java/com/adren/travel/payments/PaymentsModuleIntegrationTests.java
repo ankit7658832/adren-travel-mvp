@@ -433,6 +433,17 @@ class PaymentsModuleIntegrationTests {
         assertThat(calculation.tcsAmount().amount()).isEqualByComparingTo("0");
     }
 
+    @Test
+    void ukTomsVatIsDisabledByDefaultInTheRealApplicationConfigurationFIN18() {
+        Money margin = new Money(BigDecimal.valueOf(1_000), CurrencyCode.GBP);
+
+        UkTomsVatCalculation calculation = paymentsApi.calculateUkTomsVat(
+            new CalculateUkTomsVatCommand(UUID.randomUUID(), UUID.randomUUID(), margin));
+
+        assertThat(calculation.applied()).isFalse();
+        assertThat(calculation.vatAmount().amount()).isEqualByComparingTo("0");
+    }
+
     private static void authenticateAs(Role role, UUID consultantId) {
         AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), role, consultantId);
         List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));

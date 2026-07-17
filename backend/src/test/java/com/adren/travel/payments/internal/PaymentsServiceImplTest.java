@@ -5,6 +5,7 @@ import com.adren.travel.payments.CalculateCommissionCommand;
 import com.adren.travel.payments.CalculateIndiaGstTcsCommand;
 import com.adren.travel.payments.CalculateRefundCommand;
 import com.adren.travel.payments.CalculateSellRateCommand;
+import com.adren.travel.payments.CalculateUkTomsVatCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.CreatePaymentIntentCommand;
 import com.adren.travel.payments.CreditLimitExceededException;
@@ -19,6 +20,7 @@ import com.adren.travel.payments.PaymentIntentView;
 import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.SnapshotFxRateCommand;
+import com.adren.travel.payments.UkTomsVatCalculation;
 import com.adren.travel.payments.WalletHoldCommand;
 import com.adren.travel.payments.WalletView;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
@@ -28,6 +30,7 @@ import com.adren.travel.payments.event.IndiaGstTcsCalculatedEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.RefundCalculatedEvent;
 import com.adren.travel.payments.event.StripePaymentSucceededEvent;
+import com.adren.travel.payments.event.UkTomsVatCalculatedEvent;
 import com.adren.travel.payments.event.WalletHoldDebitedEvent;
 import com.adren.travel.payments.event.WalletHoldPlacedEvent;
 import com.adren.travel.payments.event.WalletHoldReleasedEvent;
@@ -101,9 +104,10 @@ class PaymentsServiceImplTest {
         // construct an enabled instance explicitly where they need one.
         IndiaTaxProperties disabledIndiaTax = new IndiaTaxProperties(false, BigDecimal.valueOf(5),
             BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
+        UkTomsVatProperties disabledUkTomsVat = new UkTomsVatProperties(false, BigDecimal.valueOf(20));
         service = new PaymentsServiceImpl(markupRuleRepository, walletRepository, paymentIntentRepository,
             walletLedgerEntryRepository, new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
-            new PricingPipeline(markupRuleRepository, events), stripeClient, disabledIndiaTax);
+            new PricingPipeline(markupRuleRepository, events), stripeClient, disabledIndiaTax, disabledUkTomsVat);
     }
 
     @AfterEach
@@ -898,10 +902,11 @@ class PaymentsServiceImplTest {
     void calculateIndiaGstTcsAppliesGstOnMarginAndTcsOnPackageValueAboveThresholdWhenEnabledFIN17() {
         IndiaTaxProperties enabledIndiaTax = new IndiaTaxProperties(true, BigDecimal.valueOf(5),
             BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
+        UkTomsVatProperties disabledUkTomsVat = new UkTomsVatProperties(false, BigDecimal.valueOf(20));
         PaymentsServiceImpl enabledService = new PaymentsServiceImpl(markupRuleRepository, walletRepository,
             paymentIntentRepository, walletLedgerEntryRepository,
             new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
-            new PricingPipeline(markupRuleRepository, events), stripeClient, enabledIndiaTax);
+            new PricingPipeline(markupRuleRepository, events), stripeClient, enabledIndiaTax, disabledUkTomsVat);
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Money margin = new Money(BigDecimal.valueOf(50_000), CurrencyCode.INR);
@@ -923,10 +928,11 @@ class PaymentsServiceImplTest {
     void calculateIndiaGstTcsAppliesNoTcsBelowTheThresholdEvenWhenEnabledFIN17() {
         IndiaTaxProperties enabledIndiaTax = new IndiaTaxProperties(true, BigDecimal.valueOf(5),
             BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
+        UkTomsVatProperties disabledUkTomsVat = new UkTomsVatProperties(false, BigDecimal.valueOf(20));
         PaymentsServiceImpl enabledService = new PaymentsServiceImpl(markupRuleRepository, walletRepository,
             paymentIntentRepository, walletLedgerEntryRepository,
             new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
-            new PricingPipeline(markupRuleRepository, events), stripeClient, enabledIndiaTax);
+            new PricingPipeline(markupRuleRepository, events), stripeClient, enabledIndiaTax, disabledUkTomsVat);
         Money margin = new Money(BigDecimal.valueOf(20_000), CurrencyCode.INR);
         Money packageValue = new Money(BigDecimal.valueOf(500_000), CurrencyCode.INR); // under the threshold
 
@@ -935,6 +941,43 @@ class PaymentsServiceImplTest {
 
         assertThat(calculation.gstAmount().amount()).isEqualByComparingTo("1000.00"); // GST still applies to margin
         assertThat(calculation.tcsAmount().amount()).isEqualByComparingTo("0"); // TCS does not, below the threshold
+    }
+
+    @Test
+    void calculateUkTomsVatAppliesNothingWhenTheFeatureFlagIsOffFIN18() {
+        // Default `service` from setUp() is built with the flag disabled.
+        Money margin = new Money(BigDecimal.valueOf(1_000), CurrencyCode.GBP);
+
+        UkTomsVatCalculation calculation = service.calculateUkTomsVat(
+            new CalculateUkTomsVatCommand(UUID.randomUUID(), UUID.randomUUID(), margin));
+
+        assertThat(calculation.applied()).isFalse();
+        assertThat(calculation.vatAmount().amount()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void calculateUkTomsVatAppliesVatOnMarginOnlyWhenEnabledFIN18() {
+        UkTomsVatProperties enabledUkTomsVat = new UkTomsVatProperties(true, BigDecimal.valueOf(20));
+        IndiaTaxProperties disabledIndiaTax = new IndiaTaxProperties(false, BigDecimal.valueOf(5),
+            BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
+        PaymentsServiceImpl enabledService = new PaymentsServiceImpl(markupRuleRepository, walletRepository,
+            paymentIntentRepository, walletLedgerEntryRepository,
+            new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
+            new PricingPipeline(markupRuleRepository, events), stripeClient, disabledIndiaTax, enabledUkTomsVat);
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money margin = new Money(BigDecimal.valueOf(1_000), CurrencyCode.GBP);
+
+        UkTomsVatCalculation calculation = enabledService.calculateUkTomsVat(
+            new CalculateUkTomsVatCommand(bookingId, consultantId, margin));
+
+        assertThat(calculation.applied()).isTrue();
+        assertThat(calculation.vatAmount().amount()).isEqualByComparingTo("200.00"); // 20% of margin only
+
+        ArgumentCaptor<UkTomsVatCalculatedEvent> captor = ArgumentCaptor.forClass(UkTomsVatCalculatedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().applied()).isTrue();
+        assertThat(captor.getValue().vatAmount().amount()).isEqualByComparingTo("200.00");
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {
