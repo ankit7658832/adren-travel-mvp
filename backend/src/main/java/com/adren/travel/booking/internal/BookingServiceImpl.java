@@ -3,7 +3,10 @@ package com.adren.travel.booking.internal;
 import com.adren.travel.ai.AiApi;
 import com.adren.travel.ai.AiItineraryGenerationResult;
 import com.adren.travel.ai.AiItinerarySuggestion;
+import com.adren.travel.ai.AiPricingRevalidationResult;
+import com.adren.travel.ai.PricingStale;
 import com.adren.travel.booking.AddActivityLineItemCommand;
+import com.adren.travel.booking.AiPricingStaleException;
 import com.adren.travel.booking.ApproveAiSuggestionCommand;
 import com.adren.travel.booking.AddCruiseLineItemCommand;
 import com.adren.travel.booking.AddFlightLineItemCommand;
@@ -237,6 +240,10 @@ class BookingServiceImpl implements BookingApi {
         CurrentPrincipal.resolveTenantScope(target.consultantId());
         requireActiveUnlessSuperAdmin(target.consultantId());
 
+        // AI-09, PRD §11.3: re-validate BEFORE the concurrency lock — no
+        // point winning the booking race only to fail on stale pricing.
+        requireFreshAiPricingIfApplicable(target.itineraryId());
+
         // BOK-16, PRD §23.1 Edge Case #1: two concurrent confirmBooking
         // calls for the SAME itinerary must not both succeed — this
         // saveAndFlush is where that race is actually decided (see
@@ -267,6 +274,11 @@ class BookingServiceImpl implements BookingApi {
         ConfirmationTarget target = resolveConfirmationTargetFor(quotationOrPackageId);
         CurrentPrincipal.resolveTenantScope(target.consultantId());
         requireActiveUnlessSuperAdmin(target.consultantId());
+
+        // AI-09, PRD §11.3: same re-validation as the wallet path — the
+        // payment method never changes whether stale AI pricing blocks
+        // confirmation.
+        requireFreshAiPricingIfApplicable(target.itineraryId());
 
         // BOK-16, PRD §23.1 Edge Case #1: same concurrency guard as the
         // wallet path — the last available inventory unit can't be
@@ -316,6 +328,26 @@ class BookingServiceImpl implements BookingApi {
             itineraryRepository.saveAndFlush(itinerary);
         } catch (ObjectOptimisticLockingFailureException e) {
             throw new InventoryNoLongerAvailableException(itineraryId);
+        }
+    }
+
+    /**
+     * AI-09, PRD §11.3 — a no-op for any itinerary that was never
+     * AI-generated ({@code Itinerary.isAiGenerated()} false); scoped to
+     * {@code confirmBooking}/{@code confirmBookingOnAccount} same as
+     * {@code lockForBooking}'s own scoping note explains for BOK-16 (the
+     * Stripe-webhook path runs from an async, unauthenticated listener
+     * context this check is a separate, deliberate follow-up for).
+     */
+    private void requireFreshAiPricingIfApplicable(UUID itineraryId) {
+        Itinerary itinerary = itineraryRepository.findById(itineraryId)
+            .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + itineraryId));
+        if (!itinerary.isAiGenerated()) {
+            return;
+        }
+        AiPricingRevalidationResult result = aiApi.revalidateAiPricingAtBooking(itinerary.getAiAuditLogId());
+        if (result instanceof PricingStale stale) {
+            throw new AiPricingStaleException(itineraryId, stale.reason());
         }
     }
 

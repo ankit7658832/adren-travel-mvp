@@ -1,6 +1,7 @@
 package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.AiApprovalRequiredException;
+import com.adren.travel.booking.AiPricingStaleException;
 import com.adren.travel.booking.AtolDisclosureRequiredException;
 import com.adren.travel.booking.InventoryNoLongerAvailableException;
 import com.adren.travel.payments.CreditLimitExceededException;
@@ -64,6 +65,14 @@ class BookingControllerAdvice {
     ProblemDetail handleAiApprovalRequired(AiApprovalRequiredException ex, HttpServletRequest request) {
         return ProblemDetailFactory.create(HttpStatus.CONFLICT,
             "https://docs.adren.travel/errors/ai-approval-required", "AI approval required",
+            ex.getMessage(), request.getRequestURI());
+    }
+
+    @ExceptionHandler(AiPricingStaleException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    ProblemDetail handleAiPricingStale(AiPricingStaleException ex, HttpServletRequest request) {
+        return ProblemDetailFactory.create(HttpStatus.CONFLICT,
+            "https://docs.adren.travel/errors/ai-pricing-stale", "AI-suggested pricing has changed",
             ex.getMessage(), request.getRequestURI());
     }
 

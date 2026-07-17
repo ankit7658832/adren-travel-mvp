@@ -3,6 +3,9 @@ package com.adren.travel.ai;
 import com.adren.travel.ai.event.AiSuggestionGeneratedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
+import com.adren.travel.shared.CurrencyCode;
+import com.adren.travel.shared.Money;
+import com.adren.travel.supplier.SupplierId;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,7 +20,10 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.reactive.function.client.WebClient;
+import tools.jackson.databind.ObjectMapper;
 
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -67,6 +73,9 @@ class AiModuleIntegrationTests {
 
     @Autowired
     JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    ObjectMapper objectMapper;
 
     @AfterEach
     void clearSecurityContext() {
@@ -138,6 +147,58 @@ class AiModuleIntegrationTests {
             itineraryId);
         assertThat(row.get("disposition")).isEqualTo("NO_VIABLE_SUGGESTION");
         assertThat(row.get("ai_output_json")).isNull();
+    }
+
+    @Test
+    void revalidateAiPricingAtBookingConfirmsAgainstTheRealStubSupplierLivePriceAI09() {
+        UUID consultantId = UUID.randomUUID();
+        UUID itineraryId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        seedSuggestedAuditLog(auditLogId, consultantId, itineraryId,
+            new AiSuggestedLineItem(SupplierId.HOTELBEDS, "stub-rate-key",
+                "Stub Hotel — replace with live Hotelbeds response", "Deluxe Room",
+                new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), Instant.now()));
+
+        // The real (stub, but unmocked) HotelbedsClient always returns
+        // "stub-rate-key" at 5000 INR — the same price seeded above, so
+        // this genuinely round-trips through SupplierAggregationService
+        // and confirms, not a mocked SupplierSearchApi.
+        AiPricingRevalidationResult result = aiApi.revalidateAiPricingAtBooking(auditLogId);
+
+        assertThat(result).isInstanceOf(PricingConfirmed.class);
+    }
+
+    @Test
+    void revalidateAiPricingAtBookingDetectsAGenuineLivePriceMismatchAgainstTheRealSupplierAI09() {
+        UUID consultantId = UUID.randomUUID();
+        UUID itineraryId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        // Same real supplierRateId ("stub-rate-key") the live Hotelbeds
+        // stub returns, but approved at a DIFFERENT price than that stub
+        // actually serves (5000 INR) — a genuine mismatch, not a fabricated one.
+        seedSuggestedAuditLog(auditLogId, consultantId, itineraryId,
+            new AiSuggestedLineItem(SupplierId.HOTELBEDS, "stub-rate-key",
+                "Stub Hotel — replace with live Hotelbeds response", "Deluxe Room",
+                new Money(BigDecimal.valueOf(9999), CurrencyCode.INR), Instant.now()));
+
+        AiPricingRevalidationResult result = aiApi.revalidateAiPricingAtBooking(auditLogId);
+
+        assertThat(result).isInstanceOf(PricingStale.class);
+        assertThat(((PricingStale) result).reason()).contains("9999").contains("5000");
+    }
+
+    private void seedSuggestedAuditLog(UUID auditLogId, UUID consultantId, UUID itineraryId,
+                                        AiSuggestedLineItem approvedLineItem) {
+        String suggestedJson = objectMapper.writeValueAsString(List.of(approvedLineItem));
+        String requestJson = "{\"locationCode\":\"GOA\",\"checkIn\":\"" + LocalDate.now().plusDays(30)
+            + "\",\"checkOut\":\"" + LocalDate.now().plusDays(34) + "\"}";
+        jdbcTemplate.update(
+            "INSERT INTO ai_suggestion_audit_log (audit_log_id, correlation_id, attempt_number, consultant_id, "
+                + "itinerary_id, request_input_json, source_data_snapshot_json, ai_output_json, disposition, "
+                + "created_at, suggested_line_items_json) VALUES (?, ?, 1, ?, ?, ?, '[]', '{}', 'SUGGESTED', now(), ?)",
+            auditLogId, UUID.randomUUID(), consultantId, itineraryId, requestJson, suggestedJson);
     }
 
     @Test

@@ -3,10 +3,14 @@ package com.adren.travel.ai.internal;
 import com.adren.travel.ai.AiApi;
 import com.adren.travel.ai.AiItineraryGenerationResult;
 import com.adren.travel.ai.AiItinerarySuggestion;
+import com.adren.travel.ai.AiPricingRevalidationResult;
 import com.adren.travel.ai.ApproveAiSuggestionCommand;
 import com.adren.travel.ai.AiSuggestedLineItem;
 import com.adren.travel.ai.GenerateItineraryCommand;
 import com.adren.travel.ai.NoViableSuggestion;
+import com.adren.travel.ai.PricingConfirmed;
+import com.adren.travel.ai.PricingStale;
+import com.adren.travel.ai.event.AiPricingRevalidatedEvent;
 import com.adren.travel.ai.event.AiSuggestionGeneratedEvent;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.Money;
@@ -15,10 +19,13 @@ import com.adren.travel.supplier.SupplierSearchResult;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -175,6 +182,78 @@ class AiServiceImpl implements AiApi {
 
         approvalRepository.saveAndFlush(new AiSuggestionApproval(UUID.randomUUID(), command.auditLogId(),
             command.approvedByUserId(), finalVersionJson, wasEdited));
+    }
+
+    /**
+     * AI-09, PRD §11.3: re-runs the ORIGINAL search this suggestion was
+     * grounded against and compares every approved line item's live net
+     * rate to what was actually approved — never trusts the price the
+     * Consultant approved earlier as still current. {@code
+     * approvalRepository.findByAuditLogId} can return more than one row if
+     * {@code approveAiSuggestion} was ever called twice for the same audit
+     * log (insert-only, so a re-approval is a new row, not an update) — the
+     * most recent one by {@code approvedAt} is what's actually being
+     * booked. Falls back to the original {@code suggestedLineItemsJson} if
+     * no approval row exists at all (defensive; {@code booking} only calls
+     * this for itineraries where {@code Itinerary.isAiGenerated()}, which
+     * implies a SUGGESTED disposition, but this method makes no assumption
+     * about caller discipline).
+     */
+    @Override
+    @Transactional
+    public AiPricingRevalidationResult revalidateAiPricingAtBooking(UUID auditLogId) {
+        AiSuggestionAuditLog auditLog = auditLogRepository.findById(auditLogId)
+            .orElseThrow(() -> new IllegalArgumentException("No AI suggestion audit log: " + auditLogId));
+        UUID consultantId = CurrentPrincipal.resolveTenantScope(auditLog.getConsultantId());
+
+        String finalVersionJson = approvalRepository.findByAuditLogId(auditLogId).stream()
+            .max(Comparator.comparing(AiSuggestionApproval::getApprovedAt))
+            .map(AiSuggestionApproval::getEditedFinalVersionJson)
+            .orElse(auditLog.getSuggestedLineItemsJson());
+        if (finalVersionJson == null) {
+            return new PricingConfirmed();
+        }
+
+        List<AiSuggestedLineItem> approvedLineItems =
+            objectMapper.readValue(finalVersionJson, new TypeReference<List<AiSuggestedLineItem>>() {
+            });
+        OriginalSearchParams params =
+            objectMapper.readValue(auditLog.getRequestInputJson(), OriginalSearchParams.class);
+        List<SupplierSearchResult> liveCandidates =
+            supplierSearchApi.searchHotels(params.locationCode(), params.checkIn(), params.checkOut());
+        Map<String, SupplierSearchResult> liveByRateId = liveCandidates.stream()
+            .collect(java.util.stream.Collectors.toMap(SupplierSearchResult::supplierRateId, c -> c, (a, b) -> a));
+
+        for (AiSuggestedLineItem item : approvedLineItems) {
+            SupplierSearchResult live = liveByRateId.get(item.supplierRateId());
+            String staleReason = staleReasonFor(item, live);
+            if (staleReason != null) {
+                events.publishEvent(new AiPricingRevalidatedEvent(
+                    auditLogId, auditLog.getItineraryId(), consultantId, true, staleReason));
+                return new PricingStale(staleReason);
+            }
+        }
+
+        events.publishEvent(new AiPricingRevalidatedEvent(
+            auditLogId, auditLog.getItineraryId(), consultantId, false, null));
+        return new PricingConfirmed();
+    }
+
+    private static String staleReasonFor(AiSuggestedLineItem approved, SupplierSearchResult live) {
+        if (live == null) {
+            return "Approved option " + approved.supplierRateId() + " (" + approved.propertyName()
+                + ") is no longer available from the supplier";
+        }
+        if (live.netRate().amount().compareTo(approved.netRate().amount()) != 0) {
+            return "Live price for " + approved.propertyName() + " has changed from "
+                + approved.netRate().amount() + " " + approved.netRate().currency() + " to "
+                + live.netRate().amount() + " " + live.netRate().currency() + " — please confirm";
+        }
+        return null;
+    }
+
+    /** Just enough of {@link GenerateItineraryCommand}'s original JSON to re-run the same search (extra fields ignored). */
+    private record OriginalSearchParams(String locationCode, LocalDate checkIn, LocalDate checkOut) {
     }
 
     /**

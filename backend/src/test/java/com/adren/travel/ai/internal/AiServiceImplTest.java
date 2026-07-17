@@ -2,10 +2,13 @@ package com.adren.travel.ai.internal;
 
 import com.adren.travel.ai.AiItineraryGenerationResult;
 import com.adren.travel.ai.AiItinerarySuggestion;
+import com.adren.travel.ai.AiPricingRevalidationResult;
 import com.adren.travel.ai.AiSuggestedLineItem;
 import com.adren.travel.ai.ApproveAiSuggestionCommand;
 import com.adren.travel.ai.GenerateItineraryCommand;
 import com.adren.travel.ai.NoViableSuggestion;
+import com.adren.travel.ai.PricingConfirmed;
+import com.adren.travel.ai.PricingStale;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
@@ -45,6 +48,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -454,6 +458,125 @@ class AiServiceImplTest {
         assertThatThrownBy(() -> service.approveAiSuggestion(
             new ApproveAiSuggestionCommand(unknownAuditLogId, UUID.randomUUID(), List.of(lineItem))))
             .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void revalidateAiPricingAtBookingReturnsConfirmedWhenTheLivePriceStillMatchesAI09() {
+        UUID consultantId = UUID.randomUUID();
+        UUID itineraryId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AiSuggestedLineItem approvedItem = new AiSuggestedLineItem(SupplierId.HOTELBEDS, "rate-taj-1", "Taj Palace",
+            "Deluxe Room", new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), Instant.now());
+        String suggestedJson = new ObjectMapper().writeValueAsString(List.of(approvedItem));
+        AiSuggestionAuditLog auditLog = new AiSuggestionAuditLog(auditLogId, UUID.randomUUID(), 1, consultantId,
+            itineraryId, "{\"locationCode\":\"GOA\",\"checkIn\":\"2026-08-01\",\"checkOut\":\"2026-08-05\"}",
+            "[]", "{}", suggestedJson, AiSuggestionDisposition.SUGGESTED);
+        when(auditLogRepository.findById(auditLogId)).thenReturn(java.util.Optional.of(auditLog));
+        when(approvalRepository.findByAuditLogId(auditLogId)).thenReturn(List.of());
+        when(supplierSearchApi.searchHotels("GOA", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 5)))
+            .thenReturn(List.of(TAJ));
+
+        AiPricingRevalidationResult result = service.revalidateAiPricingAtBooking(auditLogId);
+
+        assertThat(result).isInstanceOf(PricingConfirmed.class);
+        verify(events).publishEvent(argThat((com.adren.travel.ai.event.AiPricingRevalidatedEvent e) -> !e.stale()));
+    }
+
+    @Test
+    void revalidateAiPricingAtBookingReturnsStaleWhenTheLivePriceHasChangedAI09() {
+        UUID consultantId = UUID.randomUUID();
+        UUID itineraryId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AiSuggestedLineItem approvedItem = new AiSuggestedLineItem(SupplierId.HOTELBEDS, "rate-taj-1", "Taj Palace",
+            "Deluxe Room", new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), Instant.now());
+        String suggestedJson = new ObjectMapper().writeValueAsString(List.of(approvedItem));
+        AiSuggestionAuditLog auditLog = new AiSuggestionAuditLog(auditLogId, UUID.randomUUID(), 1, consultantId,
+            itineraryId, "{\"locationCode\":\"GOA\",\"checkIn\":\"2026-08-01\",\"checkOut\":\"2026-08-05\"}",
+            "[]", "{}", suggestedJson, AiSuggestionDisposition.SUGGESTED);
+        when(auditLogRepository.findById(auditLogId)).thenReturn(java.util.Optional.of(auditLog));
+        when(approvalRepository.findByAuditLogId(auditLogId)).thenReturn(List.of());
+        // The live price has risen from 5000 to 6500 INR since approval.
+        SupplierSearchResult repricedTaj = new SupplierSearchResult(SupplierId.HOTELBEDS, "rate-taj-1", "Taj Palace",
+            "Deluxe Room", new Money(BigDecimal.valueOf(6500), CurrencyCode.INR), 4.5);
+        when(supplierSearchApi.searchHotels("GOA", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 5)))
+            .thenReturn(List.of(repricedTaj));
+
+        AiPricingRevalidationResult result = service.revalidateAiPricingAtBooking(auditLogId);
+
+        assertThat(result).isInstanceOf(PricingStale.class);
+        assertThat(((PricingStale) result).reason()).contains("5000").contains("6500").contains("please confirm");
+        verify(events).publishEvent(argThat((com.adren.travel.ai.event.AiPricingRevalidatedEvent e) -> e.stale()));
+    }
+
+    @Test
+    void revalidateAiPricingAtBookingReturnsStaleWhenTheApprovedRateIsNoLongerAvailableAI09() {
+        UUID consultantId = UUID.randomUUID();
+        UUID itineraryId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AiSuggestedLineItem approvedItem = new AiSuggestedLineItem(SupplierId.HOTELBEDS, "rate-taj-1", "Taj Palace",
+            "Deluxe Room", new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), Instant.now());
+        String suggestedJson = new ObjectMapper().writeValueAsString(List.of(approvedItem));
+        AiSuggestionAuditLog auditLog = new AiSuggestionAuditLog(auditLogId, UUID.randomUUID(), 1, consultantId,
+            itineraryId, "{\"locationCode\":\"GOA\",\"checkIn\":\"2026-08-01\",\"checkOut\":\"2026-08-05\"}",
+            "[]", "{}", suggestedJson, AiSuggestionDisposition.SUGGESTED);
+        when(auditLogRepository.findById(auditLogId)).thenReturn(java.util.Optional.of(auditLog));
+        when(approvalRepository.findByAuditLogId(auditLogId)).thenReturn(List.of());
+        // OBEROI only — the approved Taj Palace rate is gone entirely.
+        when(supplierSearchApi.searchHotels("GOA", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 5)))
+            .thenReturn(List.of(OBEROI));
+
+        AiPricingRevalidationResult result = service.revalidateAiPricingAtBooking(auditLogId);
+
+        assertThat(result).isInstanceOf(PricingStale.class);
+        assertThat(((PricingStale) result).reason()).contains("no longer available");
+    }
+
+    @Test
+    void revalidateAiPricingAtBookingComparesTheApprovedEditedVersionNotTheOriginalSuggestionAI09() {
+        UUID consultantId = UUID.randomUUID();
+        UUID itineraryId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        // The ORIGINAL suggestion selected a rate that no longer exists —
+        // if this were compared, it would be stale.
+        AiSuggestedLineItem originallySuggested = new AiSuggestedLineItem(SupplierId.HOTELBEDS, "rate-gone",
+            "Ghost Hotel", "Any Room", new Money(BigDecimal.valueOf(9999), CurrencyCode.INR), Instant.now());
+        String suggestedJson = new ObjectMapper().writeValueAsString(List.of(originallySuggested));
+        // The Consultant EDITED the suggestion before approving, swapping
+        // in OBEROI at its exact live price — this is what must be checked.
+        AiSuggestedLineItem editedApproval = new AiSuggestedLineItem(SupplierId.STUBA, "rate-oberoi-1",
+            "The Oberoi", "Luxury Suite", new Money(BigDecimal.valueOf(15000), CurrencyCode.INR), Instant.now());
+        String editedJson = new ObjectMapper().writeValueAsString(List.of(editedApproval));
+        AiSuggestionAuditLog auditLog = new AiSuggestionAuditLog(auditLogId, UUID.randomUUID(), 1, consultantId,
+            itineraryId, "{\"locationCode\":\"GOA\",\"checkIn\":\"2026-08-01\",\"checkOut\":\"2026-08-05\"}",
+            "[]", "{}", suggestedJson, AiSuggestionDisposition.SUGGESTED);
+        when(auditLogRepository.findById(auditLogId)).thenReturn(java.util.Optional.of(auditLog));
+        AiSuggestionApproval approval = new AiSuggestionApproval(UUID.randomUUID(), auditLogId,
+            UUID.randomUUID(), editedJson, true);
+        when(approvalRepository.findByAuditLogId(auditLogId)).thenReturn(List.of(approval));
+        when(supplierSearchApi.searchHotels("GOA", LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 5)))
+            .thenReturn(List.of(OBEROI));
+
+        AiPricingRevalidationResult result = service.revalidateAiPricingAtBooking(auditLogId);
+
+        assertThat(result).isInstanceOf(PricingConfirmed.class);
+    }
+
+    @Test
+    void revalidateAiPricingAtBookingCannotBeCalledForAnotherConsultantsAuditLogFND03() {
+        UUID ownConsultantId = UUID.randomUUID();
+        UUID otherConsultantId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, ownConsultantId);
+        AiSuggestionAuditLog auditLog = new AiSuggestionAuditLog(auditLogId, UUID.randomUUID(), 1,
+            otherConsultantId, UUID.randomUUID(), "{}", "[]", "{}", null, AiSuggestionDisposition.SUGGESTED);
+        when(auditLogRepository.findById(auditLogId)).thenReturn(java.util.Optional.of(auditLog));
+
+        assertThatThrownBy(() -> service.revalidateAiPricingAtBooking(auditLogId))
+            .isInstanceOf(AccessDeniedException.class);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

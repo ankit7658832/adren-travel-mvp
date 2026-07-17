@@ -2,6 +2,8 @@ package com.adren.travel.ai;
 
 import org.springframework.security.access.prepost.PreAuthorize;
 
+import java.util.UUID;
+
 /**
  * Public API of the AI Itinerary &amp; Governance module (PRD §11). Other
  * modules must depend on this interface, never on classes under
@@ -42,4 +44,22 @@ public interface AiApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     void approveAiSuggestion(ApproveAiSuggestionCommand command);
+
+    /**
+     * Re-validates an approved AI suggestion's line items against LIVE
+     * supplier data (PRD §11.3, AI-09) — invoked internally by {@code
+     * BookingApi.confirmBooking}/{@code confirmBookingOnAccount} for
+     * itineraries where {@code Itinerary.isAiGenerated()}, immediately
+     * before the booking is finalized, following the same "price changed,
+     * please confirm" pattern PRD §10.2.4 already requires for Mystifly
+     * fare expiry. Re-runs {@code SupplierSearchApi.searchHotels} against
+     * the ORIGINAL search parameters captured in the audit log's {@code
+     * requestInputJson} and compares every approved {@code
+     * supplierRateId}'s live net rate against what was actually approved
+     * (the Consultant's edited final version if one exists, else the
+     * original suggestion) — never re-trusts a cached/remembered price.
+     * Same tenant-scoping shape as {@link #generateItinerary}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    AiPricingRevalidationResult revalidateAiPricingAtBooking(UUID auditLogId);
 }

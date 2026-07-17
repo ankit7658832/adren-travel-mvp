@@ -495,6 +495,56 @@ class BookingServiceImplTest {
         // any() binds to the wrong overload since BookingConfirmedEvent
         // isn't an ApplicationEvent, causing a false "not invoked" failure.
         verify(events).publishEvent(any(BookingConfirmedEvent.class));
+        verify(aiApi, org.mockito.Mockito.never()).revalidateAiPricingAtBooking(any());
+    }
+
+    @Test
+    void confirmBookingBlocksWithStalePricingBeforeTouchingTheWalletAI09() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        UUID consultantId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        UUID quotationId = stubAiGeneratedQuotationResolvingTo(consultantId, auditLogId);
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(aiApi.revalidateAiPricingAtBooking(auditLogId))
+            .thenReturn(new com.adren.travel.ai.PricingStale("Live price has changed — please confirm"));
+
+        assertThatThrownBy(() -> service.confirmBooking(quotationId, price))
+            .isInstanceOf(com.adren.travel.booking.AiPricingStaleException.class);
+
+        verify(paymentsApi, org.mockito.Mockito.never()).placeHold(any());
+        verify(events, org.mockito.Mockito.never()).publishEvent(any(BookingConfirmedEvent.class));
+    }
+
+    @Test
+    void confirmBookingProceedsWhenAiPricingIsStillConfirmedAI09() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        UUID consultantId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        UUID quotationId = stubAiGeneratedQuotationResolvingTo(consultantId, auditLogId);
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(aiApi.revalidateAiPricingAtBooking(auditLogId))
+            .thenReturn(new com.adren.travel.ai.PricingConfirmed());
+
+        UUID bookingId = service.confirmBooking(quotationId, price);
+
+        assertThat(bookingId).isNotNull();
+        verify(events).publishEvent(any(BookingConfirmedEvent.class));
+    }
+
+    @Test
+    void confirmBookingOnAccountAlsoBlocksWithStalePricingAI09() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        UUID consultantId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        UUID quotationId = stubAiGeneratedQuotationResolvingTo(consultantId, auditLogId);
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(aiApi.revalidateAiPricingAtBooking(auditLogId))
+            .thenReturn(new com.adren.travel.ai.PricingStale("Live price has changed — please confirm"));
+
+        assertThatThrownBy(() -> service.confirmBookingOnAccount(quotationId, price))
+            .isInstanceOf(com.adren.travel.booking.AiPricingStaleException.class);
+
+        verify(paymentsApi, org.mockito.Mockito.never()).payOnAccount(any());
     }
 
     @Test
@@ -580,6 +630,20 @@ class BookingServiceImplTest {
         // which requires QUOTATION (not the constructor's default DRAFT) —
         // a quotation's source itinerary is always past DRAFT by definition.
         Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        itinerary.markAsQuotation();
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        return quotationId;
+    }
+
+    /** AI-09: same as {@link #stubQuotationResolvingTo} but the itinerary is AI-generated/approved. */
+    private UUID stubAiGeneratedQuotationResolvingTo(UUID consultantId, UUID auditLogId) {
+        UUID itineraryId = UUID.randomUUID();
+        UUID quotationId = UUID.randomUUID();
+        when(quotationRepository.findById(quotationId)).thenReturn(
+            Optional.of(new Quotation(quotationId, itineraryId, Instant.now().plusSeconds(3600))));
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        itinerary.markAiGenerated(auditLogId);
+        itinerary.markAiApproved();
         itinerary.markAsQuotation();
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
         return quotationId;
