@@ -853,10 +853,22 @@ class BookingServiceImpl implements BookingApi {
             .map(BookingServiceImpl::toPackageView);
     }
 
+    @Override
+    public PackageView findPackageById(UUID packageId) {
+        TravelPackage travelPackage = travelPackageRepository.findById(packageId)
+            .orElseThrow(() -> new IllegalArgumentException("No package: " + packageId));
+        CurrentPrincipal.resolveTenantScope(travelPackage.getConsultantId());
+        if (travelPackage.getStatus() != PackageStatus.PUBLISHED) {
+            throw new IllegalStateException("Package " + packageId + " is not published");
+        }
+        return toPackageView(travelPackage);
+    }
+
     private static PackageView toPackageView(TravelPackage travelPackage) {
         return new PackageView(travelPackage.getPackageId(), travelPackage.getSourceItineraryId(),
-            travelPackage.getName(), travelPackage.getDescription(), travelPackage.getValidityStart(),
-            travelPackage.getValidityEnd(), travelPackage.getBasePrice(), travelPackage.getMarkupPrice(),
-            travelPackage.getCurrency(), travelPackage.getMaxPax(), travelPackage.isPromotedViaAds());
+            travelPackage.getConsultantId(), travelPackage.getName(), travelPackage.getDescription(),
+            travelPackage.getValidityStart(), travelPackage.getValidityEnd(), travelPackage.getBasePrice(),
+            travelPackage.getMarkupPrice(), travelPackage.getCurrency(), travelPackage.getMaxPax(),
+            travelPackage.isPromotedViaAds());
     }
 }

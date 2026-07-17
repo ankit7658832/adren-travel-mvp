@@ -1,11 +1,15 @@
 package com.adren.travel.ai.internal;
 
+import com.adren.travel.ai.AdCreativeGenerationResult;
+import com.adren.travel.ai.AdCreativeSuggestion;
 import com.adren.travel.ai.AiItineraryGenerationResult;
 import com.adren.travel.ai.AiItinerarySuggestion;
 import com.adren.travel.ai.AiPricingRevalidationResult;
 import com.adren.travel.ai.AiSuggestedLineItem;
 import com.adren.travel.ai.ApproveAiSuggestionCommand;
+import com.adren.travel.ai.GenerateAdCreativeCommand;
 import com.adren.travel.ai.GenerateItineraryCommand;
+import com.adren.travel.ai.NoViableAdCreative;
 import com.adren.travel.ai.NoViableSuggestion;
 import com.adren.travel.ai.PricingConfirmed;
 import com.adren.travel.ai.PricingStale;
@@ -80,6 +84,9 @@ class AiServiceImplTest {
     AiSuggestionApprovalRepository approvalRepository;
 
     @Mock
+    AdCreativeAuditLogRecorder adCreativeAuditLogRecorder;
+
+    @Mock
     org.springframework.context.ApplicationEventPublisher events;
 
     AiServiceImpl service;
@@ -96,7 +103,7 @@ class AiServiceImplTest {
         GroqProperties groqProperties = new GroqProperties("https://api.groq.com/openai/v1", "test-key",
             "llama-3.3-70b-versatile", 15, 2);
         service = new AiServiceImpl(groqClient, supplierSearchApi, auditLogRepository, auditLogRecorder,
-            approvalRepository, groqProperties, new ObjectMapper(), events);
+            approvalRepository, adCreativeAuditLogRecorder, groqProperties, new ObjectMapper(), events);
     }
 
     @AfterEach
@@ -576,6 +583,106 @@ class AiServiceImplTest {
         when(auditLogRepository.findById(auditLogId)).thenReturn(java.util.Optional.of(auditLog));
 
         assertThatThrownBy(() -> service.revalidateAiPricingAtBooking(auditLogId))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void generateAdCreativeReturnsGroundedVariantsWhenEveryVariantReferencesTheRealNameAndPriceAI12() {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money price = new Money(BigDecimal.valueOf(25000), CurrencyCode.INR);
+        when(groqClient.chatCompletion(anyString(), anyString(), anyBoolean())).thenReturn("""
+            {"variants": [
+                {"headline": "Goa Getaway", "bodyText": "Book Goa Beach Escape now for just 25000.00 INR!"},
+                {"headline": "Limited offer", "bodyText": "Goa Beach Escape — only 25000.00 INR, book today."}
+            ]}
+            """);
+
+        AdCreativeGenerationResult result = service.generateAdCreative(new GenerateAdCreativeCommand(
+            consultantId, packageId, "Goa Beach Escape", "A relaxing beach package", price, 2));
+
+        assertThat(result).isInstanceOf(AdCreativeSuggestion.class);
+        AdCreativeSuggestion suggestion = (AdCreativeSuggestion) result;
+        assertThat(suggestion.variants()).hasSize(2);
+        assertThat(suggestion.variants()).allSatisfy(v -> {
+            assertThat(v.bodyText()).contains("Goa Beach Escape").contains("25000.00 INR");
+        });
+
+        ArgumentCaptor<AdCreativeAuditLog> captor = ArgumentCaptor.forClass(AdCreativeAuditLog.class);
+        verify(adCreativeAuditLogRecorder).record(captor.capture());
+        assertThat(captor.getValue().getDisposition()).isEqualTo(AiSuggestionDisposition.SUGGESTED);
+        assertThat(captor.getValue().getPackageId()).isEqualTo(packageId);
+    }
+
+    @Test
+    void generateAdCreativeDropsVariantsThatDoNotReferenceTheRealNameOrPriceAI12() {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money price = new Money(BigDecimal.valueOf(25000), CurrencyCode.INR);
+        when(groqClient.chatCompletion(anyString(), anyString(), anyBoolean())).thenReturn("""
+            {"variants": [
+                {"headline": "Grounded", "bodyText": "Book Goa Beach Escape now for just 25000.00 INR!"},
+                {"headline": "Fabricated", "bodyText": "Book the Bali Adventure now for only 9999.00 INR!"}
+            ]}
+            """);
+
+        AdCreativeGenerationResult result = service.generateAdCreative(new GenerateAdCreativeCommand(
+            consultantId, packageId, "Goa Beach Escape", "A relaxing beach package", price, 2));
+
+        assertThat(result).isInstanceOf(AdCreativeSuggestion.class);
+        AdCreativeSuggestion suggestion = (AdCreativeSuggestion) result;
+        assertThat(suggestion.variants()).hasSize(1);
+        assertThat(suggestion.variants().get(0).headline()).isEqualTo("Grounded");
+    }
+
+    @Test
+    void generateAdCreativeReturnsNoViableWhenEveryVariantFailsGroundingAI12() {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money price = new Money(BigDecimal.valueOf(25000), CurrencyCode.INR);
+        when(groqClient.chatCompletion(anyString(), anyString(), anyBoolean())).thenReturn(
+            "{\"variants\": [{\"headline\": \"Fabricated\", \"bodyText\": \"Book the Bali Adventure for 9999.00 INR!\"}]}");
+
+        AdCreativeGenerationResult result = service.generateAdCreative(new GenerateAdCreativeCommand(
+            consultantId, packageId, "Goa Beach Escape", "A relaxing beach package", price, 1));
+
+        assertThat(result).isInstanceOf(NoViableAdCreative.class);
+        assertThat(((NoViableAdCreative) result).reason()).contains("real name and exact current price");
+        ArgumentCaptor<AdCreativeAuditLog> captor = ArgumentCaptor.forClass(AdCreativeAuditLog.class);
+        verify(adCreativeAuditLogRecorder).record(captor.capture());
+        assertThat(captor.getValue().getDisposition()).isEqualTo(AiSuggestionDisposition.NO_VIABLE_SUGGESTION);
+    }
+
+    @Test
+    void generateAdCreativeLogsTheGroqFailureAndRethrowsRatherThanFabricatingCopyAI12() {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Money price = new Money(BigDecimal.valueOf(25000), CurrencyCode.INR);
+        GroqClient.GroqAuthenticationException groqFailure = new GroqClient.GroqAuthenticationException(401, null);
+        when(groqClient.chatCompletion(anyString(), anyString(), anyBoolean())).thenThrow(groqFailure);
+
+        assertThatThrownBy(() -> service.generateAdCreative(new GenerateAdCreativeCommand(
+            consultantId, packageId, "Goa Beach Escape", "A relaxing beach package", price, 2)))
+            .isSameAs(groqFailure);
+
+        ArgumentCaptor<AdCreativeAuditLog> captor = ArgumentCaptor.forClass(AdCreativeAuditLog.class);
+        verify(adCreativeAuditLogRecorder).record(captor.capture());
+        assertThat(captor.getValue().getDisposition()).isEqualTo(AiSuggestionDisposition.GROQ_ERROR);
+    }
+
+    @Test
+    void generateAdCreativeCannotBeCalledOnAnotherConsultantsBehalfFND03() {
+        UUID ownConsultantId = UUID.randomUUID();
+        UUID otherConsultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, ownConsultantId);
+        Money price = new Money(BigDecimal.valueOf(25000), CurrencyCode.INR);
+
+        assertThatThrownBy(() -> service.generateAdCreative(new GenerateAdCreativeCommand(
+            otherConsultantId, UUID.randomUUID(), "Goa Beach Escape", "A relaxing beach package", price, 1)))
             .isInstanceOf(AccessDeniedException.class);
     }
 

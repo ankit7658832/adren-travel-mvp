@@ -1,15 +1,21 @@
 package com.adren.travel.ai.internal;
 
+import com.adren.travel.ai.AdCreativeGenerationResult;
+import com.adren.travel.ai.AdCreativeSuggestion;
+import com.adren.travel.ai.AdCreativeVariant;
 import com.adren.travel.ai.AiApi;
 import com.adren.travel.ai.AiItineraryGenerationResult;
 import com.adren.travel.ai.AiItinerarySuggestion;
 import com.adren.travel.ai.AiPricingRevalidationResult;
 import com.adren.travel.ai.ApproveAiSuggestionCommand;
 import com.adren.travel.ai.AiSuggestedLineItem;
+import com.adren.travel.ai.GenerateAdCreativeCommand;
 import com.adren.travel.ai.GenerateItineraryCommand;
+import com.adren.travel.ai.NoViableAdCreative;
 import com.adren.travel.ai.NoViableSuggestion;
 import com.adren.travel.ai.PricingConfirmed;
 import com.adren.travel.ai.PricingStale;
+import com.adren.travel.ai.event.AdCreativeGeneratedEvent;
 import com.adren.travel.ai.event.AiPricingRevalidatedEvent;
 import com.adren.travel.ai.event.AiSuggestionGeneratedEvent;
 import com.adren.travel.security.CurrentPrincipal;
@@ -25,6 +31,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -85,24 +92,44 @@ class AiServiceImpl implements AiApi {
         {"selectedSupplierRateIds": ["<supplierRateId from the list>", ...], "viable": true|false, "reason": "<required if viable is false, else null>"}
         """;
 
+    // AI-12, PRD §14.4 — same belt-and-suspenders shape as SYSTEM_PROMPT
+    // above: the prompt instructs grounding, but groundAdCreativeVariants
+    // is what actually ENFORCES it, dropping any variant whose bodyText
+    // doesn't literally contain the real package name/price regardless of
+    // how plausible the copy otherwise reads.
+    private static final String AD_CREATIVE_SYSTEM_PROMPT = """
+        You are an advertising copywriter for a B2B travel booking platform.
+        You will be given a REAL travel package's exact name, description,
+        and current sell price. Generate the requested number of ad-creative
+        variants (a short headline and a body text) for this package. Every
+        variant's bodyText MUST literally include the package's exact name
+        and its exact current price as given — never invent, omit, or alter
+        either, and never reference any other price.
+
+        Respond with ONLY a JSON object of this exact shape, no other text:
+        {"variants": [{"headline": "...", "bodyText": "..."}, ...]}
+        """;
+
     private final GroqClient groqClient;
     private final SupplierSearchApi supplierSearchApi;
     private final AiSuggestionAuditLogRepository auditLogRepository;
     private final AiSuggestionAuditLogRecorder auditLogRecorder;
     private final AiSuggestionApprovalRepository approvalRepository;
+    private final AdCreativeAuditLogRecorder adCreativeAuditLogRecorder;
     private final GroqProperties groqProperties;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher events;
 
     AiServiceImpl(GroqClient groqClient, SupplierSearchApi supplierSearchApi,
                   AiSuggestionAuditLogRepository auditLogRepository, AiSuggestionAuditLogRecorder auditLogRecorder,
-                  AiSuggestionApprovalRepository approvalRepository, GroqProperties groqProperties,
-                  ObjectMapper objectMapper, ApplicationEventPublisher events) {
+                  AiSuggestionApprovalRepository approvalRepository, AdCreativeAuditLogRecorder adCreativeAuditLogRecorder,
+                  GroqProperties groqProperties, ObjectMapper objectMapper, ApplicationEventPublisher events) {
         this.groqClient = groqClient;
         this.supplierSearchApi = supplierSearchApi;
         this.auditLogRepository = auditLogRepository;
         this.auditLogRecorder = auditLogRecorder;
         this.approvalRepository = approvalRepository;
+        this.adCreativeAuditLogRecorder = adCreativeAuditLogRecorder;
         this.groqProperties = groqProperties;
         this.objectMapper = objectMapper;
         this.events = events;
@@ -254,6 +281,126 @@ class AiServiceImpl implements AiApi {
 
     /** Just enough of {@link GenerateItineraryCommand}'s original JSON to re-run the same search (extra fields ignored). */
     private record OriginalSearchParams(String locationCode, LocalDate checkIn, LocalDate checkOut) {
+    }
+
+    /**
+     * AI-12, PRD §14.4: unlike {@link #generateItinerary}, there is no
+     * supplier candidate list to select from — the grounding source IS the
+     * caller-supplied Package content itself ({@code
+     * ads.AdsApi.generateAdCreativeForPackage} resolves it via {@code
+     * BookingApi.findPackageById} before calling this). {@link
+     * #groundAdCreativeVariants} enforces that every returned variant's
+     * {@code bodyText} literally contains the real name/price — a variant
+     * that fails this is dropped, never "no viable" for the whole call
+     * unless EVERY variant fails.
+     */
+    @Override
+    @Transactional
+    public AdCreativeGenerationResult generateAdCreative(GenerateAdCreativeCommand command) {
+        UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(command.consultantId());
+        String requestInputJson = objectMapper.writeValueAsString(command);
+        String sourceSnapshotJson = objectMapper.writeValueAsString(
+            new PackageContentSnapshot(command.packageName(), command.packageDescription(), command.currentSellPrice()));
+
+        String rawOutput = callGroqForAdCreativeWithBoundedRetries(scopedConsultantId, command.packageId(),
+            requestInputJson, sourceSnapshotJson, buildAdCreativeUserPrompt(command));
+
+        List<AdCreativeVariant> grounded = groundAdCreativeVariants(rawOutput, command);
+        UUID auditLogId = UUID.randomUUID();
+        if (grounded.isEmpty()) {
+            adCreativeAuditLogRecorder.record(new AdCreativeAuditLog(auditLogId, scopedConsultantId,
+                command.packageId(), requestInputJson, sourceSnapshotJson, rawOutput,
+                AiSuggestionDisposition.NO_VIABLE_SUGGESTION));
+            events.publishEvent(new AdCreativeGeneratedEvent(auditLogId, command.packageId(), scopedConsultantId,
+                AiSuggestionDisposition.NO_VIABLE_SUGGESTION.name()));
+            return new NoViableAdCreative(auditLogId,
+                "No generated variant referenced the package's real name and exact current price");
+        }
+
+        adCreativeAuditLogRecorder.record(new AdCreativeAuditLog(auditLogId, scopedConsultantId, command.packageId(),
+            requestInputJson, sourceSnapshotJson, rawOutput, AiSuggestionDisposition.SUGGESTED));
+        events.publishEvent(new AdCreativeGeneratedEvent(auditLogId, command.packageId(), scopedConsultantId,
+            AiSuggestionDisposition.SUGGESTED.name()));
+        return new AdCreativeSuggestion(auditLogId, grounded);
+    }
+
+    private record PackageContentSnapshot(String packageName, String packageDescription, Money currentSellPrice) {
+    }
+
+    /**
+     * Server-side grounding enforcement for ad creative — never trusts the
+     * model's copy at face value. A variant whose {@code bodyText} doesn't
+     * literally contain the package's real name AND its exact current
+     * price (same string {@link #buildAdCreativeUserPrompt} gave the
+     * model) is dropped outright, regardless of how plausible the rest of
+     * the copy reads.
+     */
+    private List<AdCreativeVariant> groundAdCreativeVariants(String rawOutput, GenerateAdCreativeCommand command) {
+        GroqAdCreativeResponse parsed;
+        try {
+            parsed = objectMapper.readValue(rawOutput, GroqAdCreativeResponse.class);
+        } catch (RuntimeException e) {
+            return List.of();
+        }
+        if (parsed.variants() == null) {
+            return List.of();
+        }
+
+        String requiredName = command.packageName();
+        String requiredPrice = formatPrice(command.currentSellPrice());
+        List<AdCreativeVariant> grounded = new ArrayList<>();
+        for (GroqAdCreativeResponse.GroqAdCreativeVariantResponse variant : parsed.variants()) {
+            if (variant.headline() == null || variant.bodyText() == null) {
+                continue;
+            }
+            if (!variant.bodyText().contains(requiredName) || !variant.bodyText().contains(requiredPrice)) {
+                continue;
+            }
+            grounded.add(new AdCreativeVariant(variant.headline(), variant.bodyText()));
+        }
+        return grounded;
+    }
+
+    private static String formatPrice(Money money) {
+        return money.amount() + " " + money.currency();
+    }
+
+    private static String buildAdCreativeUserPrompt(GenerateAdCreativeCommand command) {
+        return "Package name: " + command.packageName() + "\n"
+            + "Description: " + command.packageDescription() + "\n"
+            + "Current price: " + formatPrice(command.currentSellPrice()) + "\n"
+            + "Generate " + command.variantCount() + " ad-creative variants.";
+    }
+
+    /**
+     * Same bounded-retry shape as {@link #callGroqWithBoundedRetries} (see
+     * that method's Javadoc for the full reasoning) — kept as a separate
+     * method rather than a shared/generalized one since it writes a
+     * different audit entity ({@link AdCreativeAuditLog}, package-scoped)
+     * to a different recorder.
+     */
+    private String callGroqForAdCreativeWithBoundedRetries(UUID consultantId, UUID packageId,
+                                                             String requestInputJson, String sourceSnapshotJson,
+                                                             String userPrompt) {
+        int maxAttempts = 1 + groqProperties.maxRetries();
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return groqClient.chatCompletion(AD_CREATIVE_SYSTEM_PROMPT, userPrompt, true);
+            } catch (GroqClient.GroqClientException e) {
+                UUID auditLogId = UUID.randomUUID();
+                adCreativeAuditLogRecorder.record(new AdCreativeAuditLog(auditLogId, consultantId, packageId,
+                    requestInputJson, sourceSnapshotJson, e.getMessage(), AiSuggestionDisposition.GROQ_ERROR));
+                events.publishEvent(new AdCreativeGeneratedEvent(auditLogId, packageId, consultantId,
+                    AiSuggestionDisposition.GROQ_ERROR.name()));
+                boolean retryable = e instanceof GroqClient.GroqTimeoutException
+                    || e instanceof GroqClient.GroqRateLimitException;
+                if (!retryable || attempt == maxAttempts) {
+                    throw e;
+                }
+            }
+        }
+        throw new IllegalStateException(
+            "callGroqForAdCreativeWithBoundedRetries exited its loop without returning or throwing");
     }
 
     /**

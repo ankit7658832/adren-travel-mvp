@@ -324,4 +324,17 @@ public interface BookingApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     Page<PackageView> findPublishedPackagesByConsultant(UUID consultantId, Pageable pageable);
+
+    /**
+     * A single published Package's content (PRD §14.4, AI-12) — the {@code
+     * ads} module uses this to ground AI ad-creative generation in the
+     * Package's REAL name/description/current price, never a stale/cached
+     * copy. Throws {@link IllegalStateException} if the package exists but
+     * isn't PUBLISHED yet (creative can only ever be grounded in what's
+     * actually live for sale, same "grounded generation only" principle
+     * {@link com.adren.travel.ai.AiApi#generateItinerary} already enforces).
+     * Same role shape as {@link #findPublishedPackagesByConsultant}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    PackageView findPackageById(UUID packageId);
 }

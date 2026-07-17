@@ -62,4 +62,23 @@ public interface AiApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     AiPricingRevalidationResult revalidateAiPricingAtBooking(UUID auditLogId);
+
+    /**
+     * Generates grounded ad-creative variants for a Package (PRD §14.4,
+     * AI-12) — invoked from {@code ads.AdsApi.generateAdCreativeForPackage},
+     * which resolves the REAL, live Package content via {@code
+     * BookingApi.findPackageById} and passes it in as {@link
+     * GenerateAdCreativeCommand}'s grounding fields (this method never
+     * reaches into {@code booking}'s data itself — same "caller supplies
+     * verified grounding input" shape {@link #generateItinerary} already
+     * uses). Every variant's {@code bodyText} is checked (server-side, not
+     * just prompted) to literally contain the package's real name and
+     * exact current sell price before being returned — a variant that
+     * fails this check is dropped, never surfaced. 100%-audit-logged, same
+     * transactional-gate shape as {@link #generateItinerary} (AI-07,
+     * backend-best-practices §7). Same tenant-scoping shape as {@link
+     * #generateItinerary}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    AdCreativeGenerationResult generateAdCreative(GenerateAdCreativeCommand command);
 }
