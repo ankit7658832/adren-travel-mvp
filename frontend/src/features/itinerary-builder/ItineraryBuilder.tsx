@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Badge } from "@/shared/design-system/Badge";
 import { Button } from "@/shared/design-system/Button";
+import { AiAssistPanel } from "./AiAssistPanel";
 import { useItineraryDraftStore, type ItineraryLineItem } from "./itineraryDraftStore";
 import { useAlternates, type AlternateOption } from "./useItineraryBuilder";
 
@@ -66,6 +67,8 @@ export function ItineraryBuilder() {
           onClose={() => setActivePanel(null)}
         />
       )}
+
+      {itineraryId && <AiAssistPanel itineraryId={itineraryId} />}
     </main>
   );
 }
