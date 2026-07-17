@@ -134,6 +134,16 @@ class BookingApiMethodSecurityTest {
         }
 
         @Bean
+        CancellationRequestRepository cancellationRequestRepository() {
+            return Mockito.mock(CancellationRequestRepository.class);
+        }
+
+        @Bean
+        DisputeTicketRepository disputeTicketRepository() {
+            return Mockito.mock(DisputeTicketRepository.class);
+        }
+
+        @Bean
         BookingApi bookingApi(ItineraryRepository repository, TravelerProfileRepository travelerProfileRepository,
                                HotelLineItemRepository hotelLineItemRepository, FlightLineItemRepository flightLineItemRepository,
                                TransferLineItemRepository transferLineItemRepository,
@@ -144,11 +154,13 @@ class BookingApiMethodSecurityTest {
                                VoucherService voucherService,
                                ApplicationEventPublisher publisher, WhitelabelApi whitelabelApi,
                                SupplierSearchApi supplierSearchApi, HotelDedupService hotelDedupService,
-                               PaymentsApi paymentsApi) {
+                               PaymentsApi paymentsApi, CancellationRequestRepository cancellationRequestRepository,
+                               DisputeTicketRepository disputeTicketRepository) {
             return new BookingServiceImpl(repository, travelerProfileRepository, hotelLineItemRepository,
                 flightLineItemRepository, transferLineItemRepository, cruiseLineItemRepository,
                 activityLineItemRepository, quotationRepository, travelPackageRepository, bookingRepository,
-                voucherService, publisher, whitelabelApi, supplierSearchApi, hotelDedupService, paymentsApi);
+                voucherService, publisher, whitelabelApi, supplierSearchApi, hotelDedupService, paymentsApi,
+                cancellationRequestRepository, disputeTicketRepository);
         }
     }
 

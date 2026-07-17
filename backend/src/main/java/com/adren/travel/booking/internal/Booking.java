@@ -65,6 +65,32 @@ class Booking {
         this.createdAt = Instant.now();
     }
 
+    /**
+     * A cancellation's refund has been processed (FIN-16, PRD §12.5) —
+     * only reachable from {@code CONFIRMED}, matching backend-best-practices
+     * §1's "throw on an invalid transition, never silently no-op" rule.
+     */
+    void markCancelled() {
+        if (status != BookingStatus.CONFIRMED) {
+            throw new IllegalStateException(
+                "Cannot cancel booking %s: status is %s, expected CONFIRMED".formatted(bookingId, status));
+        }
+        this.status = BookingStatus.CANCELLED;
+    }
+
+    /**
+     * A dispute has been flagged on this booking (FIN-16, PRD §12.5) —
+     * only reachable from {@code CONFIRMED}; a booking that's already been
+     * cancelled or is already disputed cannot be flagged again.
+     */
+    void markDisputed() {
+        if (status != BookingStatus.CONFIRMED) {
+            throw new IllegalStateException(
+                "Cannot flag booking %s as disputed: status is %s, expected CONFIRMED".formatted(bookingId, status));
+        }
+        this.status = BookingStatus.DISPUTED;
+    }
+
     UUID getBookingId() {
         return bookingId;
     }

@@ -1,12 +1,15 @@
 package com.adren.travel.booking;
 
+import com.adren.travel.booking.event.BookingCancelledEvent;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
+import com.adren.travel.booking.event.DisputeTicketCreatedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
 import com.adren.travel.booking.event.PackageCreatedEvent;
 import com.adren.travel.booking.event.PackagePublishedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.payments.ConfigureMarkupCommand;
+import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.MarkupType;
 import com.adren.travel.payments.PaymentsApi;
 import com.adren.travel.security.AdrenPrincipal;
@@ -158,6 +161,90 @@ class BookingModuleIntegrationTests {
             "SELECT COUNT(*) FROM wallet_ledger_entry WHERE related_booking_id = ? AND type = 'HOLD'",
             Long.class, bookingId);
         assertThat(pendingHoldsCount).isEqualTo(1);
+    }
+
+    @Test
+    void submitCancellationProcessesTheRefundImmediatelyForAPenaltyFreeCancellationFIN16(Scenario scenario) {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(UUID.randomUUID());
+        UUID bookingId = bookingApi.confirmBooking(quotationId, price);
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
+        var command = new CalculateCancellationRefundCommand(price, Instant.now().plusSeconds(3600), Instant.now(),
+            BigDecimal.valueOf(30), originalFxRateSnapshot);
+
+        scenario.stimulate(() -> bookingApi.submitCancellation(bookingId, command))
+            .andWaitForEventOfType(BookingCancelledEvent.class)
+            .matchingMappedValue(BookingCancelledEvent::bookingId, bookingId);
+
+        String bookingStatus = jdbcTemplate.queryForObject(
+            "SELECT status FROM booking WHERE booking_id = ?", String.class, bookingId);
+        assertThat(bookingStatus).isEqualTo("CANCELLED");
+
+        Long refundLedgerEntryCount = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM wallet_ledger_entry WHERE related_booking_id = ? AND type = 'REFUND'",
+            Long.class, bookingId);
+        assertThat(refundLedgerEntryCount).isEqualTo(1);
+
+        String cancellationRequestStatus = jdbcTemplate.queryForObject(
+            "SELECT status FROM cancellation_request WHERE booking_id = ?", String.class, bookingId);
+        assertThat(cancellationRequestStatus).isEqualTo("REFUNDED");
+    }
+
+    @Test
+    void submitCancellationPausesUntilApprovedThenApprovingProcessesTheRefundFIN16() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(UUID.randomUUID());
+        UUID bookingId = bookingApi.confirmBooking(quotationId, price);
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
+        // Deadline already past -> a penalty applies -> requires approval.
+        var command = new CalculateCancellationRefundCommand(price, Instant.now().minusSeconds(3600), Instant.now(),
+            BigDecimal.valueOf(30), originalFxRateSnapshot);
+
+        CancellationRequestView submitted = bookingApi.submitCancellation(bookingId, command);
+        assertThat(submitted.status()).isEqualTo("PENDING_APPROVAL");
+
+        String bookingStatusBeforeApproval = jdbcTemplate.queryForObject(
+            "SELECT status FROM booking WHERE booking_id = ?", String.class, bookingId);
+        assertThat(bookingStatusBeforeApproval).isEqualTo("CONFIRMED");
+        Long refundLedgerEntryCountBeforeApproval = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM wallet_ledger_entry WHERE related_booking_id = ? AND type = 'REFUND'",
+            Long.class, bookingId);
+        assertThat(refundLedgerEntryCountBeforeApproval).isZero();
+
+        CancellationRequestView approved = bookingApi.approveCancellation(submitted.cancellationRequestId());
+        assertThat(approved.status()).isEqualTo("REFUNDED");
+
+        String bookingStatusAfterApproval = jdbcTemplate.queryForObject(
+            "SELECT status FROM booking WHERE booking_id = ?", String.class, bookingId);
+        assertThat(bookingStatusAfterApproval).isEqualTo("CANCELLED");
+        Long refundLedgerEntryCountAfterApproval = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM wallet_ledger_entry WHERE related_booking_id = ? AND type = 'REFUND'",
+            Long.class, bookingId);
+        assertThat(refundLedgerEntryCountAfterApproval).isEqualTo(1);
+    }
+
+    @Test
+    void flaggingADisputeCreatesATrackedTicketAndMarksTheBookingDisputedFIN16(Scenario scenario) {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        authenticateAsSuperAdmin();
+        UUID quotationId = savedQuotationWithOneLineItem(UUID.randomUUID());
+        UUID bookingId = bookingApi.confirmBooking(quotationId, price);
+
+        scenario.stimulate(() -> bookingApi.flagDispute(bookingId, new FlagDisputeCommand("Wrong room type delivered")))
+            .andWaitForEventOfType(DisputeTicketCreatedEvent.class)
+            .matchingMappedValue(DisputeTicketCreatedEvent::bookingId, bookingId);
+
+        String bookingStatus = jdbcTemplate.queryForObject(
+            "SELECT status FROM booking WHERE booking_id = ?", String.class, bookingId);
+        assertThat(bookingStatus).isEqualTo("DISPUTED");
+
+        String reason = jdbcTemplate.queryForObject(
+            "SELECT reason FROM dispute_ticket WHERE booking_id = ?", String.class, bookingId);
+        assertThat(reason).isEqualTo("Wrong room type delivered");
     }
 
     /**

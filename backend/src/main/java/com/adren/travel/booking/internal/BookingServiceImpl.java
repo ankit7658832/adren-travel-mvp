@@ -8,13 +8,18 @@ import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.CalculateCancellationRefundCommand;
+import com.adren.travel.booking.CancellationRequestView;
 import com.adren.travel.booking.ConsolidateCheckoutTotalCommand;
 import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
+import com.adren.travel.booking.DisputeTicketView;
+import com.adren.travel.booking.FlagDisputeCommand;
 import com.adren.travel.booking.PackageView;
 import com.adren.travel.booking.event.ActivityLineItemAddedEvent;
+import com.adren.travel.booking.event.BookingCancelledEvent;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.CruiseLineItemAddedEvent;
+import com.adren.travel.booking.event.DisputeTicketCreatedEvent;
 import com.adren.travel.booking.event.FlightLineItemAddedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
@@ -88,11 +93,13 @@ class BookingServiceImpl implements BookingApi {
     private final SupplierSearchApi supplierSearchApi;
     private final HotelDedupService hotelDedupService;
     private final PaymentsApi paymentsApi;
+    private final CancellationRequestRepository cancellationRequestRepository;
+    private final DisputeTicketRepository disputeTicketRepository;
 
     // backend-best-practices §4 flags >4-5 constructor dependencies as a
     // decomposition signal — this one is well past that (pre-existing,
     // grew one line-item repo at a time across BOK-03..07). Not refactored
-    // here (BOK-19/BOK-20 are small additions, not the moment for that
+    // here (FIN-16 is a functional addition, not the moment for that
     // separate change) but worth flagging rather than silently adding
     // another param without comment.
     BookingServiceImpl(ItineraryRepository itineraryRepository, TravelerProfileRepository travelerProfileRepository,
@@ -105,7 +112,8 @@ class BookingServiceImpl implements BookingApi {
                         VoucherService voucherService,
                         ApplicationEventPublisher events, WhitelabelApi whitelabelApi,
                         SupplierSearchApi supplierSearchApi, HotelDedupService hotelDedupService,
-                        PaymentsApi paymentsApi) {
+                        PaymentsApi paymentsApi, CancellationRequestRepository cancellationRequestRepository,
+                        DisputeTicketRepository disputeTicketRepository) {
         this.itineraryRepository = itineraryRepository;
         this.travelerProfileRepository = travelerProfileRepository;
         this.hotelLineItemRepository = hotelLineItemRepository;
@@ -122,6 +130,8 @@ class BookingServiceImpl implements BookingApi {
         this.hotelDedupService = hotelDedupService;
         this.supplierSearchApi = supplierSearchApi;
         this.paymentsApi = paymentsApi;
+        this.cancellationRequestRepository = cancellationRequestRepository;
+        this.disputeTicketRepository = disputeTicketRepository;
     }
 
     @Override
@@ -506,6 +516,100 @@ class BookingServiceImpl implements BookingApi {
         return paymentsApi.calculateRefund(new CalculateRefundCommand(bookingId, booking.getConsultantId(),
             command.sellPrice(), command.cancellationDeadline(), command.cancelledAt(),
             command.postDeadlinePenaltyPercent(), command.originalFxRateSnapshot()));
+    }
+
+    @Override
+    @Transactional
+    public CancellationRequestView submitCancellation(UUID bookingId, CalculateCancellationRefundCommand command) {
+        Booking booking = bookingRepository.findById(bookingId)
+            .orElseThrow(() -> new IllegalArgumentException("No booking: " + bookingId));
+        CurrentPrincipal.resolveTenantScope(booking.getConsultantId());
+        requireActiveUnlessSuperAdmin(booking.getConsultantId());
+
+        RefundCalculation calculation = paymentsApi.calculateRefund(new CalculateRefundCommand(bookingId,
+            booking.getConsultantId(), command.sellPrice(), command.cancellationDeadline(), command.cancelledAt(),
+            command.postDeadlinePenaltyPercent(), command.originalFxRateSnapshot()));
+
+        CancellationRequest request = CancellationRequest.submit(UUID.randomUUID(), bookingId, booking.getConsultantId(),
+            calculation.refundAmount().amount(), calculation.refundAmount().currency(),
+            calculation.penaltyAmount().amount(), calculation.penaltyAmount().currency(),
+            calculation.requiresConsultantApproval());
+
+        if (!calculation.requiresConsultantApproval()) {
+            // FIN-16 AC: a penalty-free cancellation completes without an
+            // explicit approval step — process the refund and cancel the
+            // booking in this same transaction.
+            paymentsApi.processRefund(
+                new WalletHoldCommand(bookingId, booking.getConsultantId(), calculation.refundAmount()));
+            request.markRefunded();
+            booking.markCancelled();
+            bookingRepository.save(booking);
+            events.publishEvent(new BookingCancelledEvent(bookingId, booking.getConsultantId(),
+                calculation.refundAmount(), calculation.penaltyAmount()));
+        }
+
+        cancellationRequestRepository.save(request);
+        return toCancellationRequestView(request);
+    }
+
+    @Override
+    @Transactional
+    public CancellationRequestView approveCancellation(UUID cancellationRequestId) {
+        CancellationRequest request = cancellationRequestRepository.findById(cancellationRequestId)
+            .orElseThrow(() -> new IllegalArgumentException("No cancellation request: " + cancellationRequestId));
+        CurrentPrincipal.resolveTenantScope(request.getConsultantId());
+        requireActiveUnlessSuperAdmin(request.getConsultantId());
+
+        // PRD §12.5 AC: a penalized cancellation pauses HERE until a
+        // Consultant explicitly approves — approve() throws if this
+        // request isn't PENDING_APPROVAL (already approved/refunded, or
+        // never required approval in the first place).
+        request.approve();
+
+        Money refundAmount = new Money(request.getRefundAmount(), request.getRefundCurrency());
+        Money penaltyAmount = new Money(request.getPenaltyAmount(), request.getPenaltyCurrency());
+        paymentsApi.processRefund(new WalletHoldCommand(request.getBookingId(), request.getConsultantId(), refundAmount));
+        request.markRefunded();
+        cancellationRequestRepository.save(request);
+
+        Booking booking = bookingRepository.findById(request.getBookingId())
+            .orElseThrow(() -> new IllegalArgumentException("No booking: " + request.getBookingId()));
+        booking.markCancelled();
+        bookingRepository.save(booking);
+
+        events.publishEvent(new BookingCancelledEvent(request.getBookingId(), request.getConsultantId(),
+            refundAmount, penaltyAmount));
+
+        return toCancellationRequestView(request);
+    }
+
+    @Override
+    @Transactional
+    public DisputeTicketView flagDispute(UUID bookingId, FlagDisputeCommand command) {
+        Booking booking = bookingRepository.findById(bookingId)
+            .orElseThrow(() -> new IllegalArgumentException("No booking: " + bookingId));
+        CurrentPrincipal.resolveTenantScope(booking.getConsultantId());
+        requireActiveUnlessSuperAdmin(booking.getConsultantId());
+
+        booking.markDisputed();
+        bookingRepository.save(booking);
+
+        UUID disputeTicketId = UUID.randomUUID();
+        DisputeTicket ticket = new DisputeTicket(disputeTicketId, bookingId, booking.getConsultantId(), command.reason());
+        disputeTicketRepository.save(ticket);
+
+        events.publishEvent(
+            new DisputeTicketCreatedEvent(disputeTicketId, bookingId, booking.getConsultantId(), command.reason()));
+
+        return new DisputeTicketView(disputeTicketId, bookingId, ticket.getReason(), ticket.getStatus().name(),
+            ticket.getCreatedAt());
+    }
+
+    private static CancellationRequestView toCancellationRequestView(CancellationRequest request) {
+        return new CancellationRequestView(request.getCancellationRequestId(), request.getBookingId(),
+            new Money(request.getRefundAmount(), request.getRefundCurrency()),
+            new Money(request.getPenaltyAmount(), request.getPenaltyCurrency()),
+            request.getStatus().name());
     }
 
     @Override

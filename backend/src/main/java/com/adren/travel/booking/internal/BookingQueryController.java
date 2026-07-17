@@ -2,6 +2,9 @@ package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.CalculateCancellationRefundCommand;
+import com.adren.travel.booking.CancellationRequestView;
+import com.adren.travel.booking.DisputeTicketView;
+import com.adren.travel.booking.FlagDisputeCommand;
 import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.shared.Money;
@@ -64,5 +67,34 @@ class BookingQueryController {
         return bookingApi.calculateCancellationRefund(bookingId, new CalculateCancellationRefundCommand(
             new Money(request.sellPrice(), request.currency()), request.cancellationDeadline(),
             request.cancelledAt(), request.postDeadlinePenaltyPercent(), originalFxRateSnapshot));
+    }
+
+    /**
+     * PRD §12.5, FIN-16 — submits a cancellation, starting the tracked
+     * policy-check → refund-calculation → approval-if-penalized workflow.
+     * Unlike {@link #calculateCancellationRefund} (a pure preview), this
+     * persists a {@code CancellationRequest} and, for a penalty-free
+     * cancellation, processes the refund immediately.
+     */
+    @PostMapping("/{bookingId}/cancellation-requests")
+    CancellationRequestView submitCancellation(@PathVariable UUID bookingId,
+                                                @Valid @RequestBody CalculateCancellationRefundRequest request) {
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(request.originalSupplierCurrency(),
+            request.currency(), request.originalFxRate(), request.originalFxSnapshotAt());
+        return bookingApi.submitCancellation(bookingId, new CalculateCancellationRefundCommand(
+            new Money(request.sellPrice(), request.currency()), request.cancellationDeadline(),
+            request.cancelledAt(), request.postDeadlinePenaltyPercent(), originalFxRateSnapshot));
+    }
+
+    /** PRD §12.5, FIN-16 — a Consultant's explicit sign-off on a penalized cancellation, processing its refund. */
+    @PostMapping("/cancellation-requests/{cancellationRequestId}/approval")
+    CancellationRequestView approveCancellation(@PathVariable UUID cancellationRequestId) {
+        return bookingApi.approveCancellation(cancellationRequestId);
+    }
+
+    /** PRD §12.5, FIN-16 — flags a dispute on a booking, creating a tracked ticket rather than an email handoff. */
+    @PostMapping("/{bookingId}/disputes")
+    DisputeTicketView flagDispute(@PathVariable UUID bookingId, @Valid @RequestBody FlagDisputeRequest request) {
+        return bookingApi.flagDispute(bookingId, new FlagDisputeCommand(request.reason()));
     }
 }

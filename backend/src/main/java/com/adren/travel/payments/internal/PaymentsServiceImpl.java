@@ -30,6 +30,7 @@ import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
 import com.adren.travel.payments.event.IndiaGstTcsCalculatedEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
 import com.adren.travel.payments.event.RefundCalculatedEvent;
+import com.adren.travel.payments.event.RefundProcessedEvent;
 import com.adren.travel.payments.event.StripePaymentSucceededEvent;
 import com.adren.travel.payments.event.UkTomsVatCalculatedEvent;
 import com.adren.travel.payments.event.WalletTopUpReconciledEvent;
@@ -342,6 +343,24 @@ class PaymentsServiceImpl implements PaymentsApi {
 
         return new RefundCalculation(refundAmount, penaltyAmount, requiresConsultantApproval,
             refundAmountInSupplierCurrency);
+    }
+
+    @Override
+    @Transactional
+    public void processRefund(WalletHoldCommand command) {
+        if (walletLedgerEntryRepository.existsByRelatedBookingIdAndType(command.bookingId(), LedgerEntryType.REFUND)) {
+            return; // FIN-10: already recorded — idempotent no-op on a sequential retry.
+        }
+
+        Wallet wallet = walletRepository.findById(command.consultantId())
+            .orElseGet(() -> provisionWallet(command.consultantId()));
+        wallet.credit(command.amount().amount());
+
+        if (!tryRecordAndApply(command, LedgerEntryType.REFUND, wallet)) {
+            return; // FIN-10: lost a concurrent race — the other writer already recorded this refund.
+        }
+
+        events.publishEvent(new RefundProcessedEvent(command.bookingId(), command.consultantId(), command.amount()));
     }
 
     @Override

@@ -7,13 +7,19 @@ import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.CabinClass;
+import com.adren.travel.booking.CalculateCancellationRefundCommand;
+import com.adren.travel.booking.CancellationRequestView;
 import com.adren.travel.booking.ConsolidateCheckoutTotalCommand;
 import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
+import com.adren.travel.booking.DisputeTicketView;
+import com.adren.travel.booking.FlagDisputeCommand;
 import com.adren.travel.booking.MealPlan;
 import com.adren.travel.booking.event.ActivityLineItemAddedEvent;
+import com.adren.travel.booking.event.BookingCancelledEvent;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.booking.event.CruiseLineItemAddedEvent;
+import com.adren.travel.booking.event.DisputeTicketCreatedEvent;
 import com.adren.travel.booking.event.FlightLineItemAddedEvent;
 import com.adren.travel.booking.event.HotelLineItemAddedEvent;
 import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
@@ -25,7 +31,9 @@ import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
 import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.PaymentsApi;
+import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.payments.SellRateCalculation;
+import com.adren.travel.payments.WalletHoldCommand;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
@@ -126,6 +134,12 @@ class BookingServiceImplTest {
     @Mock
     PaymentsApi paymentsApi;
 
+    @Mock
+    CancellationRequestRepository cancellationRequestRepository;
+
+    @Mock
+    DisputeTicketRepository disputeTicketRepository;
+
     BookingServiceImpl service;
 
     @BeforeEach
@@ -133,7 +147,8 @@ class BookingServiceImplTest {
         service = new BookingServiceImpl(itineraryRepository, travelerProfileRepository, hotelLineItemRepository,
             flightLineItemRepository, transferLineItemRepository, cruiseLineItemRepository,
             activityLineItemRepository, quotationRepository, travelPackageRepository, bookingRepository,
-            voucherService, events, whitelabelApi, supplierSearchApi, hotelDedupService, paymentsApi);
+            voucherService, events, whitelabelApi, supplierSearchApi, hotelDedupService, paymentsApi,
+            cancellationRequestRepository, disputeTicketRepository);
     }
 
     // BOK-08: saveAsQuotation now requires at least one line item — stub a
@@ -546,6 +561,132 @@ class BookingServiceImplTest {
             new com.adren.travel.booking.CalculateCancellationRefundCommand(
                 new Money(BigDecimal.valueOf(1000), CurrencyCode.INR), Instant.now(), Instant.now(), BigDecimal.ZERO,
                 originalFxRateSnapshot)))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void submitCancellationProcessesTheRefundImmediatelyWhenNoPenaltyAppliesFIN16() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Booking booking = new Booking(bookingId, UUID.randomUUID(), consultantId, BigDecimal.valueOf(10_000),
+            CurrencyCode.INR, PaymentMethod.WALLET, "ABCD1234");
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
+        RefundCalculation calculation = new RefundCalculation(sellPrice, Money.zero(CurrencyCode.INR), false,
+            new Money(BigDecimal.valueOf(125), CurrencyCode.USD));
+        when(paymentsApi.calculateRefund(any())).thenReturn(calculation);
+
+        CancellationRequestView view = service.submitCancellation(bookingId,
+            new CalculateCancellationRefundCommand(sellPrice, Instant.now().plusSeconds(3600), Instant.now(),
+                BigDecimal.valueOf(30), originalFxRateSnapshot));
+
+        assertThat(view.status()).isEqualTo("REFUNDED");
+        verify(paymentsApi).processRefund(new WalletHoldCommand(bookingId, consultantId, sellPrice));
+        verify(bookingRepository).save(booking);
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+
+        ArgumentCaptor<BookingCancelledEvent> captor = ArgumentCaptor.forClass(BookingCancelledEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().bookingId()).isEqualTo(bookingId);
+    }
+
+    @Test
+    void submitCancellationPausesForApprovalWhenAPenaltyAppliesFIN16() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Booking booking = new Booking(bookingId, UUID.randomUUID(), consultantId, BigDecimal.valueOf(10_000),
+            CurrencyCode.INR, PaymentMethod.WALLET, "ABCD1234");
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+        Money sellPrice = new Money(BigDecimal.valueOf(10_000), CurrencyCode.INR);
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
+        RefundCalculation calculation = new RefundCalculation(new Money(BigDecimal.valueOf(7000), CurrencyCode.INR),
+            new Money(BigDecimal.valueOf(3000), CurrencyCode.INR), true,
+            new Money(BigDecimal.valueOf(87.50), CurrencyCode.USD));
+        when(paymentsApi.calculateRefund(any())).thenReturn(calculation);
+
+        CancellationRequestView view = service.submitCancellation(bookingId,
+            new CalculateCancellationRefundCommand(sellPrice, Instant.now().minusSeconds(3600), Instant.now(),
+                BigDecimal.valueOf(30), originalFxRateSnapshot));
+
+        assertThat(view.status()).isEqualTo("PENDING_APPROVAL");
+        verify(paymentsApi, org.mockito.Mockito.never()).processRefund(any());
+        verify(bookingRepository, org.mockito.Mockito.never()).save(any());
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+        verify(events, org.mockito.Mockito.never()).publishEvent(any(BookingCancelledEvent.class));
+        verify(cancellationRequestRepository).save(any());
+    }
+
+    @Test
+    void approveCancellationProcessesTheRefundAndCancelsTheBookingFIN16() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        UUID cancellationRequestId = UUID.randomUUID();
+        CancellationRequest request = CancellationRequest.submit(cancellationRequestId, bookingId, consultantId,
+            BigDecimal.valueOf(7000), CurrencyCode.INR, BigDecimal.valueOf(3000), CurrencyCode.INR, true);
+        when(cancellationRequestRepository.findById(cancellationRequestId)).thenReturn(Optional.of(request));
+        Booking booking = new Booking(bookingId, UUID.randomUUID(), consultantId, BigDecimal.valueOf(10_000),
+            CurrencyCode.INR, PaymentMethod.WALLET, "ABCD1234");
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+
+        CancellationRequestView view = service.approveCancellation(cancellationRequestId);
+
+        assertThat(view.status()).isEqualTo("REFUNDED");
+        verify(paymentsApi).processRefund(new WalletHoldCommand(bookingId, consultantId,
+            new Money(BigDecimal.valueOf(7000), CurrencyCode.INR)));
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+        verify(events).publishEvent(any(BookingCancelledEvent.class));
+    }
+
+    @Test
+    void approveCancellationFailsWhenNotPendingApprovalFIN16() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        UUID cancellationRequestId = UUID.randomUUID();
+        // requiresApproval=false starts life already APPROVED, never PENDING_APPROVAL.
+        CancellationRequest request = CancellationRequest.submit(cancellationRequestId, bookingId, consultantId,
+            BigDecimal.valueOf(10_000), CurrencyCode.INR, BigDecimal.ZERO, CurrencyCode.INR, false);
+        when(cancellationRequestRepository.findById(cancellationRequestId)).thenReturn(Optional.of(request));
+
+        assertThatThrownBy(() -> service.approveCancellation(cancellationRequestId))
+            .isInstanceOf(IllegalStateException.class);
+        verify(paymentsApi, org.mockito.Mockito.never()).processRefund(any());
+    }
+
+    @Test
+    void flagDisputeCreatesATrackedTicketMarksTheBookingDisputedAndPublishesAnEventFIN16() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Booking booking = new Booking(bookingId, UUID.randomUUID(), consultantId, BigDecimal.valueOf(10_000),
+            CurrencyCode.INR, PaymentMethod.WALLET, "ABCD1234");
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+
+        DisputeTicketView view = service.flagDispute(bookingId, new FlagDisputeCommand("Wrong hotel room type"));
+
+        assertThat(view.bookingId()).isEqualTo(bookingId);
+        assertThat(view.status()).isEqualTo("OPEN");
+        assertThat(booking.getStatus()).isEqualTo(BookingStatus.DISPUTED);
+        verify(disputeTicketRepository).save(any());
+
+        ArgumentCaptor<DisputeTicketCreatedEvent> captor = ArgumentCaptor.forClass(DisputeTicketCreatedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().bookingId()).isEqualTo(bookingId);
+        assertThat(captor.getValue().reason()).isEqualTo("Wrong hotel room type");
+    }
+
+    @Test
+    void flagDisputeFailsForAnUnknownBookingFIN16() {
+        UUID bookingId = UUID.randomUUID();
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.flagDispute(bookingId, new FlagDisputeCommand("reason")))
             .isInstanceOf(IllegalArgumentException.class);
     }
 

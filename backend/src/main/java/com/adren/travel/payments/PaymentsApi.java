@@ -180,6 +180,19 @@ public interface PaymentsApi {
     RefundCalculation calculateRefund(CalculateRefundCommand command);
 
     /**
+     * Credits a previously calculated refund ({@link #calculateRefund})
+     * back to a Consultant's wallet (PRD §12.5, FIN-16) — the actual money
+     * movement {@link #calculateRefund} deliberately never performs.
+     * Idempotent (FIN-10) the same way as {@link #placeHold}: retrying
+     * with the same {@code bookingId} is a no-op. Same internal-
+     * pricing-pipeline-step shape as {@link #calculateCommission} — no
+     * {@code @PreAuthorize}; invoked from {@code BookingApi}'s cancellation
+     * workflow (FIN-16) once a penalized refund has been explicitly
+     * approved, or immediately for a penalty-free refund.
+     */
+    void processRefund(WalletHoldCommand command);
+
+    /**
      * Calculates India GST/TCS on an outbound package (PRD §12.1 Worked
      * Example C, §17.2, §25 T24, FIN-17) — GST on the Consultant's margin
      * component, TCS on the full package value above the notified

@@ -69,6 +69,45 @@ public interface BookingApi {
     RefundCalculation calculateCancellationRefund(UUID bookingId, CalculateCancellationRefundCommand command);
 
     /**
+     * Submits a cancellation, starting FIN-16/PRD §12.5's tracked workflow
+     * — runs the same policy-check/refund-calculation {@link
+     * #calculateCancellationRefund} does, then persists a {@code
+     * CancellationRequest}. A penalty-free cancellation processes its
+     * refund immediately in this same call; a penalized one stops at
+     * {@code PENDING_APPROVAL} and waits for {@link #approveCancellation}
+     * — the refund is never processed without that explicit step. Same
+     * role shape as {@link #calculateCancellationRefund}, since submitting
+     * is part of the same "cancel my booking" action a User can take.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    CancellationRequestView submitCancellation(UUID bookingId, CalculateCancellationRefundCommand command);
+
+    /**
+     * A Consultant explicitly approves a penalized cancellation (PRD
+     * §12.5's AC), processing the refund in the same call. {@code
+     * CONSULTANT}-only (self-scoped) rather than the {@code
+     * CONSULTANT,USER} shape most of this Api uses — the same "a
+     * Consultant's own Users cannot [take this action] unless granted"
+     * reasoning {@code PaymentsApi.configureMarkup} documents, since
+     * approving a penalty is a financial sign-off, not a booking action.
+     * {@code SUPER_ADMIN} retains the usual oversight path.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT')")
+    CancellationRequestView approveCancellation(UUID cancellationRequestId);
+
+    /**
+     * Flags a dispute on a booking (PRD §12.5, FIN-16) — creates a tracked
+     * {@code DisputeTicket}, not just an email handoff. Publishes {@link
+     * com.adren.travel.booking.event.DisputeTicketCreatedEvent}, which
+     * {@code notification} reacts to independently (same fan-out shape as
+     * {@link #confirmBooking}'s {@code BookingConfirmedEvent}). Same role
+     * shape as {@link #calculateCancellationRefund} — flagging a problem
+     * with your own booking is part of the same access a User already has.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    DisputeTicketView flagDispute(UUID bookingId, FlagDisputeCommand command);
+
+    /**
      * Paginated per RULES.md §3.4 — never a bare {@code List<UUID>} at a
      * public Api boundary a controller might wire up unbounded, given a
      * Consultant can accumulate thousands of bookings over time.

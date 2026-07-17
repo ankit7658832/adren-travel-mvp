@@ -824,6 +824,58 @@ class PaymentsServiceImplTest {
     }
 
     @Test
+    void processRefundCreditsTheWalletAndPublishesTheEventFIN16() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Wallet wallet = new Wallet(consultantId, CurrencyCode.INR); // zero balance, zero credit limit
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.of(wallet));
+        Money amount = new Money(BigDecimal.valueOf(7_000), CurrencyCode.INR);
+
+        service.processRefund(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        assertThat(wallet.getAvailableBalance()).isEqualByComparingTo("7000");
+        verify(walletRepository).save(wallet);
+
+        ArgumentCaptor<WalletLedgerEntry> entryCaptor = ArgumentCaptor.forClass(WalletLedgerEntry.class);
+        verify(walletLedgerEntryRepository).saveAndFlush(entryCaptor.capture());
+        assertThat(entryCaptor.getValue().getType()).isEqualTo(LedgerEntryType.REFUND);
+        assertThat(entryCaptor.getValue().getRelatedBookingId()).isEqualTo(bookingId);
+
+        ArgumentCaptor<com.adren.travel.payments.event.RefundProcessedEvent> eventCaptor =
+            ArgumentCaptor.forClass(com.adren.travel.payments.event.RefundProcessedEvent.class);
+        verify(events).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().bookingId()).isEqualTo(bookingId);
+        assertThat(eventCaptor.getValue().amount()).isEqualTo(amount);
+    }
+
+    @Test
+    void processRefundAutoProvisionsAWalletWhenNoneExistsFIN16() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        when(walletRepository.findById(consultantId)).thenReturn(Optional.empty());
+        Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
+
+        service.processRefund(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        verify(walletRepository, org.mockito.Mockito.atLeastOnce()).save(any());
+    }
+
+    @Test
+    void processRefundIsANoOpWhenAnEntryAlreadyExistsForTheBookingFIN10() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        when(walletLedgerEntryRepository.existsByRelatedBookingIdAndType(bookingId, LedgerEntryType.REFUND))
+            .thenReturn(true);
+        Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
+
+        service.processRefund(new WalletHoldCommand(bookingId, consultantId, amount));
+
+        verifyNoInteractions(walletRepository);
+        verify(walletLedgerEntryRepository, org.mockito.Mockito.never()).saveAndFlush(any());
+        verifyNoInteractions(events);
+    }
+
+    @Test
     void calculateRefundReturnsAFullRefundWhenCancelledBeforeTheDeadlineFIN13() {
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
