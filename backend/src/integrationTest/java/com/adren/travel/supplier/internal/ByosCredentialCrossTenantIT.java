@@ -65,6 +65,9 @@ class ByosCredentialCrossTenantIT {
     ByosCredentialService byosCredentialService;
 
     @Autowired
+    SupplierCredentialResolver credentialResolver;
+
+    @Autowired
     CapturedEvents capturedEvents;
 
     @AfterEach
@@ -145,6 +148,27 @@ class ByosCredentialCrossTenantIT {
 
         authenticateAs(Role.CONSULTANT, consultantB);
         assertThat(byosCredentialService.readForCurrentConsultant(SupplierId.HOTELBEDS)).isEmpty();
+    }
+
+    /**
+     * The exact call {@code SupplierAggregationService.searchHotels} makes
+     * at the top of every search request — full real chain (Postgres + KMS),
+     * not just {@code ByosCredentialService} in isolation. Consultant B's
+     * search resolves no credential at all here (no Adren-owned Hotelbeds
+     * credential exists in this test's Postgres either) rather than ever
+     * falling through to Consultant A's BYOS row.
+     */
+    @Test
+    void credentialResolverNeverResolvesAnotherConsultantsByosCredentialDuringSearchDMC09() {
+        UUID consultantA = UUID.randomUUID();
+        UUID consultantB = UUID.randomUUID();
+
+        authenticateAs(Role.CONSULTANT, consultantA);
+        byosCredentialService.save(SupplierId.HOTELBEDS, "consultant-a-hotelbeds-key");
+        SecurityContextHolder.clearContext();
+
+        authenticateAs(Role.CONSULTANT, consultantB);
+        assertThat(credentialResolver.resolve(SupplierId.HOTELBEDS)).isEmpty();
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

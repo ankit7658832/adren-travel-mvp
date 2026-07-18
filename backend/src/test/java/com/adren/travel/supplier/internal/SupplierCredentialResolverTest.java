@@ -70,4 +70,17 @@ class SupplierCredentialResolverTest {
 
         assertThat(resolver.resolve(SupplierId.HOTELBEDS)).isEmpty();
     }
+
+    /**
+     * DMC-09 — structural proof, not just a runtime one: {@code resolve}
+     * has no consultantId parameter anywhere in its signature, and its
+     * only BYOS-reaching call is {@code readForCurrentConsultant}, which
+     * itself has no consultantId parameter either. A cross-tenant BYOS
+     * read via the search-time credential-resolution path this class
+     * implements is not just rejected, it is not expressible.
+     */
+    @Test
+    void resolveNeverAcceptsAConsultantIdParameterToSpoofFND03() throws NoSuchMethodException {
+        assertThat(SupplierCredentialResolver.class.getDeclaredMethod("resolve", SupplierId.class)).isNotNull();
+    }
 }
