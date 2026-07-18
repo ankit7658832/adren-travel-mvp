@@ -45,17 +45,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * package-private {@code StubWhatsAppClient}/{@code StubSmsClient} loggers
  * — there is no other observable side effect from these stubs.
  * {@code extraIncludes} widens the slice to {@code booking}'s own full
- * dependency tree ({@code payments}, {@code supplier}, {@code whitelabel})
- * plus {@code security} — unlike {@code BookingModuleIntegrationTests},
- * where {@code booking} itself is the module under test so
- * {@code DIRECT_DEPENDENCIES} cascades into its dependencies automatically,
- * here {@code notification} is the primary module, so booking's own
- * dependencies must be named explicitly. Mirrors
+ * dependency tree ({@code payments}, {@code supplier}, {@code whitelabel},
+ * {@code ai} — AI-02 added {@code BookingServiceImpl}'s constructor
+ * dependency on {@code AiApi}) plus {@code security} — unlike {@code
+ * BookingModuleIntegrationTests}, where {@code booking} itself is the
+ * module under test so {@code DIRECT_DEPENDENCIES} cascades into its
+ * dependencies automatically, here {@code notification} is the primary
+ * module, so booking's own dependencies must be named explicitly. Mirrors
  * {@code NotificationTraceIdPropagationTest}'s inverse-direction setup.
  */
 @ApplicationModuleTest(
     value = ApplicationModuleTest.BootstrapMode.DIRECT_DEPENDENCIES,
-    extraIncludes = {"booking", "payments", "supplier", "whitelabel", "security"})
+    extraIncludes = {"booking", "payments", "supplier", "whitelabel", "security", "ai"})
 class NotificationRegionRoutingIntegrationTest {
 
     /**

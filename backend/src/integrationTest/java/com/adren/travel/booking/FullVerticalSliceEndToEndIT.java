@@ -86,16 +86,6 @@ class FullVerticalSliceEndToEndIT {
             AtomicReference<BookingConfirmedEvent> capturedBookingConfirmedEvent) {
             return new BookingConfirmedEventCaptureListener(capturedBookingConfirmedEvent);
         }
-
-        /**
-         * The full app context doesn't auto-configure a {@code WebClient.Builder}
-         * bean — {@code supplier}'s {@code HotelbedsClient} needs one, same
-         * gap {@code BookingModuleIntegrationTests} works around.
-         */
-        @Bean
-        WebClient.Builder webClientBuilder() {
-            return WebClient.builder();
-        }
     }
 
     static class BookingConfirmedEventCaptureListener {

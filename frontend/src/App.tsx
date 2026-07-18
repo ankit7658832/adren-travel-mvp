@@ -49,6 +49,9 @@ const ConsultantOnboardingWizard = lazy(() =>
 const ConsultantList = lazy(() =>
   import("./features/consultant-management/ConsultantList").then((m) => ({ default: m.ConsultantList }))
 );
+const AiGovernanceLogViewer = lazy(() =>
+  import("./features/ai-governance-log/AiGovernanceLogViewer").then((m) => ({ default: m.AiGovernanceLogViewer }))
+);
 const UserManagement = lazy(() =>
   import("./features/user-management/UserManagement").then((m) => ({ default: m.UserManagement }))
 );
@@ -105,6 +108,7 @@ export default function App() {
         <Route path="/admin/consultants" element={routeElement(<ConsultantList />)} />
         <Route path="/users" element={routeElement(<UserManagement />)} />
         <Route path="/admin/suppliers" element={routeElement(<SupplierCredentialManagement />)} />
+        <Route path="/admin/ai-governance" element={routeElement(<AiGovernanceLogViewer />)} />
         <Route path="/wallet" element={routeElement(<WalletBilling />)} />
         <Route path="/campaigns/new" element={routeElement(<CampaignBuilder />)} />
         <Route path="/pnr" element={routeElement(<PnrSearch />)} />

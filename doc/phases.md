@@ -92,21 +92,21 @@ Every `⚠️ NEEDS CLARIFICATION` flag in the story catalogues, consolidated in
 
 This is the ongoing tracker, now backed by `doc/user-stories/mvp-mock/PROGRESS.md` (created in Stage 1; §5's "gap" note above predates it and is left as historical record). Update as stories close.
 
-### Mock phase (149 stories / 748 points, updated Stage 3 Batch 2 — 2026-07-17)
+### Mock phase (149 stories / 748 points, updated Stage 4 — 2026-07-18)
 
 | Epic | Stories | Points | Status |
 |---|---|---|---|
 | Foundation | 24 | 124 | 100% (24/24) |
 | Booking Core | 27 | 121 | **100% (27/27)** — completed Stage 3 Batch 2 |
 | Financial Layer | 18 | 95 | **100% (18/18)** — completed Stage 3 Batch 2 |
-| AI Layer | 13 | 72 | 0% (0/13) |
+| AI Layer | 13 | 72 | **100% (13/13)** — completed Stage 4 |
 | Local DMC + BYOS | 11 | 57 | 0% (0/11) |
 | Ads/Campaign Management | 15 | 80 | 0% (0/15) |
 | Hardening | 13 | 76 | 8% (1/13, 8 pts) |
 | Frontend Shell | 10 | 55 | 20% (2/10, 10 pts) |
 | DevOps/Infra | 9 | 30 | 0% (0/9) |
 | Test Infrastructure | 9 | 38 | 0% (0/9) |
-| **Total** | **149** | **748** | **48% (72/149 stories, 358/748 pts)** |
+| **Total** | **149** | **748** | **57% (85/149 stories, 430/748 pts)** |
 
 ## 7a. Stage 1 & Stage 2 actual velocity, and a revised remaining-timeline estimate (Stage 3, Step A)
 
@@ -148,6 +148,86 @@ Both `AI Layer` and `Local DMC + BYOS` are fully unblocked right now — every d
 3. **It's the platform's core product differentiator** (PRD §11's AI Itinerary Governance — grounded generation, 100%-logged suggestions, "AI states inability rather than substituting"), not a peripheral feature; landing it earlier gets the highest-uncertainty, most architecturally novel epic (governance/audit-log-gating a third-party LLM call, a pattern nothing built so far resembles) de-risked while Booking Core/Financial Layer context is still fresh.
 
 `Local DMC + BYOS` (11 stories, 57 points) is the natural epic after that — equally unblocked, self-contained (adds a new supplier channel + BYOS credential management), and doesn't block anything else, so it's a reasonable parallel-track candidate if a second work-stream is available, but not the recommended *next* single target.
+
+## 7c. Stage 3 actual velocity — a third data point, and a refined remaining-timeline estimate (Stage 4, pre-Step A — 2026-07-17)
+
+**Source:** same method as §7a — git commit timestamps, not estimates.
+
+**Stage 3** (`AD-stage3-capture-real-velocity-and-supplier-integration` + `AD-stage3-batch2-booking-core-financial-layer`, Step A through Step F):
+- Commits: `a063b0b` (2026-07-16 21:26:03, "Stage 3 Step A/B: real velocity capture, add BOK-21-BOK-27 supplier stories, implement BOK-21") through `149921a` (2026-07-17 22:04:16, the Batch-2-into-main merge commit).
+- Delivered **26 stories / 123 points**: `BOK-21,22,23,24,25,26,27` (7 stories, 23 pts — the supplier-stub gap Step B found and filled), `BOK-04,05,06,07,11,16,17,18,19,20` (10 stories, 47 pts), `FIN-08,09,12,13,14,15,16,17,18` (9 stories, 46 pts).
+- Calendar-day span: 2026-07-16 → 2026-07-17 (2 distinct dates). Wall-clock elapsed: ~24h38m.
+
+**Updated three-stage comparison:**
+
+| Stage | Stories | Points | Wall-clock | Wall-clock pts/day |
+|---|---|---|---|---|
+| Stage 1 | 26 | 134 | ~10h17m | 312.8 |
+| Stage 2 | 20 | 101 | ~14h54m | 162.7 |
+| Stage 3 | 26 | 123 | ~24h38m | 119.9 |
+
+**⚠️ The trend across all three stages is a consistent, non-noise decline in wall-clock velocity** (312.8 → 162.7 → 119.9 pts/day, each stage running at roughly 40–75% of the prior stage's rate) — not attributable to one outlier stage. The likely driver, visible in the work itself rather than guessed at: each stage added genuine integration surface the next stage has to keep working (Stage 2 built the first cross-module booking flow; Stage 3 built 9 interlocking Financial Layer stories culminating in `FIN-16`'s three-module cancellation workflow, *plus* Step E's adversarial re-validation against a real, executed HTTP+Postgres stack — the first time in this project that tier of verification actually ran end-to-end rather than compiling-only). More stories/epics built ⇒ more surface a later story can regress ⇒ more verification time per subsequent story, which is exactly the dynamic a real engineering team also experiences as a codebase grows, not an artifact unique to AI-assisted pace.
+
+**Combined actual delivery (all three stages):** 72 stories / **358 points**. Summing each stage's own active wall-clock (not the calendar span between stages, which includes idle gaps — e.g. ~20h elapsed between Stage 2's last commit and Stage 3's first): **10h17m + 14h54m + 24h38m ≈ 49h49m (≈2.08 days) of actual active work**, across 4 distinct calendar dates (2026-07-14 through 2026-07-17).
+
+| Basis | Elapsed | Points | Velocity |
+|---|---|---|---|
+| Summed active wall-clock | ~49.8h (2.08 days) | 358 | 172.5 pts/day → **~1,207.7 pts/week** |
+| Calendar-date count (crude) | 4 distinct dates | 358 | 89.5 pts/day → **~626.7 pts/week** |
+
+**Revised remaining-timeline estimate:** Remaining: **390 points** (748 total − 358 done). At the summed-active-wall-clock rate, 390 points ≈ **2.3 more days of active work** (calendar-date-count basis: ≈4.4 more calendar days). Given the declining-velocity trend above, the wall-clock figure is now a **more optimistic bound, not a stable rate** — a straight-line extrapolation from Stage 3's own 119.9 pts/day (the most recent, and lowest, observed rate) is more defensible than the cumulative average: 390 / 119.9 ≈ **3.25 more days of active work** at Stage 3's demonstrated pace, before accounting for whatever the AI Layer epic's own novelty (a first real external-LLM integration, no precedent in this codebase) does to that rate in either direction.
+
+## 7d. Stage 4 (AI Layer) completion, a fourth velocity data point, and the next-epic recommendation (Stage 4, Step D — 2026-07-18)
+
+**What landed:** All 13 AI Layer stories (72 points) — `AI-01` (Groq client wrapper) through `AI-13` (bounded-retry latency control), built in two checkpointed batches per the same per-story discipline as prior stages. Mock-phase total is now **85/149 stories, 430/748 points (57%)**. The `ai` module went from a package-info-only stub to real content; `ads` also got its first real content (`AI-12`'s ad-creative generation, ahead of the rest of that epic).
+
+**What building a real external LLM integration revealed:**
+
+- **Groq's actual latency/rate-limit behavior under PRD §9.6's 10-minute itinerary target remains genuinely unvalidated against a real successful completion.** No real `GROQ_API_KEY` was available in this environment (flagged and accepted going into Stage 4 — see the Batch 1 report), so every real Groq call this stage made genuinely reached `https://api.groq.com` and genuinely 401'd; the *architecture* bounds worst-case latency (`AI-13`'s bounded retry: max 3 attempts × `adren.ai.groq.timeout-seconds` = 45s worst case before failing, well inside a 10-minute budget), but the actual multi-second-scale generation latency of a real 70B-parameter completion, and Groq's real rate-limit thresholds under concurrent load, are **not proven, only architected for**. This is the single most concrete follow-up a real key would resolve — not a redesign, a validation gap.
+- **Prompt-grounding fragility is real but only unit-tested, not live-tested.** `validateAndGround`/`groundAdCreativeVariants`'s defensive handling (malformed JSON, hallucinated `supplierRateId`s, budget violations) was exercised only against hand-constructed mock Groq responses — never against a genuine model's actual tendency to wrap JSON in markdown fences, add explanatory prose despite an explicit "respond with ONLY JSON" instruction, or otherwise drift from the requested shape. The defensive posture (treat unparseable output as a grounding failure, never a crash) is architecturally sound, but its real-world trigger *frequency* is unknown until a real key is configured.
+- **The most concrete, actually-validated revelation had nothing to do with AI specifically: this was the first time in the project that the full application was ever really started end-to-end** (`./gradlew bootRun`, not a module-slice test context). Step C's adversarial validation surfaced two genuine production-blocking bugs that had been silently masked since earlier stages by every test class's own `@TestConfiguration` workarounds — a missing production `WebClient.Builder` bean (the app couldn't start at all) and a Spring Security gap where any unmapped exception anywhere in the app was disguised as a misleading 401 (an existing comment in `BookingControllerAdvice` shows this exact class of bug was hit and patched case-by-case once before, without the root cause being recognized). Both are fixed now (commit `3719383`), but the lesson generalizes past AI Layer: **a real `bootRun` smoke test should be a standard verification step for future epics**, not an ad hoc adversarial add-on — module-slice test contexts and mocked-bean workarounds can hide real startup/wiring bugs indefinitely.
+
+**Stage 4 velocity** (same method as §7a/§7c — git commit timestamps):
+- Commits: `301f9ac` (2026-07-17 22:10:15) through `3719383` (2026-07-18 13:15:24, the Step C bugfix commit).
+- Delivered **13 stories / 72 points** — the entire AI Layer epic — plus Step C's adversarial validation and two real production bugfixes (no story points, but real hardening work included in the elapsed time below).
+- Calendar-day span: 2026-07-17 → 2026-07-18 (2 distinct dates). Raw wall-clock span: ~15h5m.
+- **Methodology note, flagged rather than smoothed over:** this span contains one clear, identifiable idle gap — ~9h11m between the `AI-10` commit (01:30) and the `AI-11` commit (10:41), a genuine session break (visible in this conversation's own history as a context-compaction boundary), unlike anything explicitly excluded from Stages 1–3's reported spans. Excluding it gives an **active-only** wall-clock of ~5h54m; *not* excluding it (the same raw-span method §7a/§7c used) gives ~15h5m. Both are reported below rather than picking whichever makes the trend look better.
+
+| Basis | Elapsed | Points | Velocity |
+|---|---|---|---|
+| Raw span (consistent with Stages 1–3's method) | ~15.09h | 72 | 114.6 pts/day |
+| Active-only (excludes the ~9h11m session break) | ~5.91h | 72 | 292.5 pts/day |
+
+**Updated four-stage comparison (raw-span basis, for apples-to-apples comparison with Stages 1–3):**
+
+| Stage | Stories | Points | Wall-clock | Wall-clock pts/day |
+|---|---|---|---|---|
+| Stage 1 | 26 | 134 | ~10h17m | 312.8 |
+| Stage 2 | 20 | 101 | ~14h54m | 162.7 |
+| Stage 3 | 26 | 123 | ~24h38m | 119.9 |
+| Stage 4 | 13 | 72 | ~15h5m | 114.6 |
+
+**The decline continues but flattens sharply** — Stage 3→4 dropped only ~4.5% (119.9→114.6) versus Stage 2→3's ~26% drop and Stage 1→2's ~48% drop. A plausible reason, visible in the work itself: AI Layer is a mostly self-contained new module with exactly one integration point into an existing one (`booking`, plus `ads` for `AI-12`), unlike Financial Layer's deep interleaving across every existing module — less pre-existing surface for a new story to regress is consistent with the surface-accumulation explanation §7c already gave for the decline itself.
+
+**Combined actual delivery (all four stages):** 85 stories / **430 points**. Summing each stage's own raw wall-clock span: 10h17m + 14h54m + 24h38m + 15h5m ≈ **64h54m (≈2.70 days)**, across 5 distinct calendar dates (2026-07-14 through 2026-07-18).
+
+| Basis | Elapsed | Points | Velocity |
+|---|---|---|---|
+| Summed wall-clock | ~64.9h (2.70 days) | 430 | 159.0 pts/day → **~1,113 pts/week** |
+| Calendar-date count (crude) | 5 distinct dates | 430 | 86.0 pts/day → **~602 pts/week** |
+
+**Revised remaining-timeline estimate:** Remaining: **318 points** (748 total − 430 done). At Stage 4's own demonstrated rate (114.6 pts/day, the most recent and most defensible single-stage figure per §7c's same reasoning), 318 points ≈ **2.8 more days of active work**. At the cumulative summed-wall-clock rate (159.0 pts/day), ≈2.0 more days — a narrower gap between the two bases than Stage 3's report showed, consistent with the flattening trend above.
+
+**Recommendation: build Local DMC + BYOS next (11 stories, 57 points).**
+
+Verified directly against the dependency graph (every `DMC-*`/`ADS-*`/`HRD-*` story's `dependencies:` frontmatter), not just cited from PRD §8's stated order:
+
+1. **Local DMC + BYOS is fully unblocked — all 11 stories buildable top-to-bottom right now.** Every dependency resolves to `FND-*` (Foundation, done), `BOK-16` (Booking Core, done), or an earlier `DMC-*` story in its own chain (`DMC-01→02→{03→10→11, 04→05}`, `DMC-06→07→08→09`). Zero cross-epic blockers.
+2. **Ads/Campaign Management is genuinely blocked, 13 of its 15 stories deep.** `ADS-01`/`ADS-02` are unblocked, but `ADS-03` depends on `FES-08` ("adopt React Hook Form + Zod as the form validation standard") — confirmed **not done** (`PROGRESS.md`: only `FES-01`/`FES-03` are checked off) — and everything from `ADS-04` through `ADS-15` chains off `ADS-03`. `AI-12` (this stage's own work) already unblocked `ADS-04` specifically, but that was never the epic's only gate.
+3. **Hardening is partially blocked** — 9 of 13 stories (`HRD-02` through `HRD-08`, `HRD-12`, `HRD-13`) are unblocked now that Booking Core/Financial Layer/AI Layer are all done, but `HRD-09` depends on `ADS-09` (Ads/Campaign, not done), and `HRD-10`/`HRD-11` chain off `HRD-09` — so Hardening can't fully close without Ads/Campaign finishing first either.
+4. **This also matches PRD §8's stated order** ("AI layer → Local DMC+BYOS → Ads/Campaign → Hardening") — not a re-derivation, confirmation that the derived order and the PRD's own intent agree, same cross-check §7b already made for AI Layer.
+
+Local DMC + BYOS is self-contained (adds a new supplier channel + BYOS credential management, PRD §10.2.9/§13) and doesn't block anything else discovered in this check — a clean, low-risk next target. **Stopping here per Step D's own instruction — not starting Local DMC + BYOS without an explicit go-ahead.**
 
 ### Production phase (83 stories / 476 points)
 

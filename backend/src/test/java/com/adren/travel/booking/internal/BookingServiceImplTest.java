@@ -6,6 +6,7 @@ import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
+import com.adren.travel.booking.ApproveAiSuggestionCommand;
 import com.adren.travel.booking.CabinClass;
 import com.adren.travel.booking.CalculateCancellationRefundCommand;
 import com.adren.travel.booking.CancellationRequestView;
@@ -14,6 +15,7 @@ import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.DisputeTicketView;
 import com.adren.travel.booking.FlagDisputeCommand;
+import com.adren.travel.booking.GenerateAiSuggestionCommand;
 import com.adren.travel.booking.MealPlan;
 import com.adren.travel.booking.event.ActivityLineItemAddedEvent;
 import com.adren.travel.booking.event.BookingCancelledEvent;
@@ -140,6 +142,9 @@ class BookingServiceImplTest {
     @Mock
     DisputeTicketRepository disputeTicketRepository;
 
+    @Mock
+    com.adren.travel.ai.AiApi aiApi;
+
     BookingServiceImpl service;
 
     @BeforeEach
@@ -148,7 +153,7 @@ class BookingServiceImplTest {
             flightLineItemRepository, transferLineItemRepository, cruiseLineItemRepository,
             activityLineItemRepository, quotationRepository, travelPackageRepository, bookingRepository,
             voucherService, events, whitelabelApi, supplierSearchApi, hotelDedupService, paymentsApi,
-            cancellationRequestRepository, disputeTicketRepository);
+            cancellationRequestRepository, disputeTicketRepository, aiApi);
     }
 
     // BOK-08: saveAsQuotation now requires at least one line item — stub a
@@ -185,6 +190,177 @@ class BookingServiceImplTest {
         verify(events).publishEvent(captor.capture());
         assertThat(captor.getValue().itineraryId()).isEqualTo(itineraryId);
         assertThat(captor.getValue().consultantId()).isEqualTo(consultantId);
+    }
+
+    @Test
+    void generatingAnAiSuggestionMarksTheItineraryAiGeneratedFIN02() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        UUID auditLogId = UUID.randomUUID();
+        com.adren.travel.ai.AiItinerarySuggestion suggestion = new com.adren.travel.ai.AiItinerarySuggestion(
+            auditLogId, List.of());
+        when(aiApi.generateItinerary(any())).thenReturn(suggestion);
+
+        var result = service.generateAiItinerarySuggestion(itineraryId, new GenerateAiSuggestionCommand(
+            "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "A relaxing trip", null));
+
+        assertThat(result).isSameAs(suggestion);
+        assertThat(draft.isAiGenerated()).isTrue();
+        assertThat(draft.getAiAuditLogId()).isEqualTo(auditLogId);
+        assertThat(draft.isAiApproved()).isFalse();
+        verify(itineraryRepository).save(draft);
+    }
+
+    @Test
+    void generatingANoViableSuggestionNeverMarksTheItineraryAiGeneratedFIN05() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(aiApi.generateItinerary(any()))
+            .thenReturn(new com.adren.travel.ai.NoViableSuggestion(UUID.randomUUID(), "No inventory available"));
+
+        service.generateAiItinerarySuggestion(itineraryId, new GenerateAiSuggestionCommand(
+            "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "A relaxing trip", null));
+
+        assertThat(draft.isAiGenerated()).isFalse();
+        verify(itineraryRepository, org.mockito.Mockito.never()).save(draft);
+    }
+
+    @Test
+    void completeItineraryWithAiPassesHasExistingHotelSelectionTrueWhenAHotelIsAlreadyOnTheItineraryAI03() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(aiApi.generateItinerary(any()))
+            .thenReturn(new com.adren.travel.ai.NoViableSuggestion(UUID.randomUUID(), "already selected"));
+
+        service.completeItineraryWithAi(itineraryId, new GenerateAiSuggestionCommand(
+            "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "Fill in the rest", null));
+
+        ArgumentCaptor<com.adren.travel.ai.GenerateItineraryCommand> captor =
+            ArgumentCaptor.forClass(com.adren.travel.ai.GenerateItineraryCommand.class);
+        verify(aiApi).generateItinerary(captor.capture());
+        assertThat(captor.getValue().hasExistingHotelSelection()).isTrue();
+    }
+
+    @Test
+    void completeItineraryWithAiPassesHasExistingHotelSelectionFalseWhenNoHotelExistsYetAI03() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        when(hotelLineItemRepository.findByItineraryId(itineraryId)).thenReturn(List.of());
+        authenticateAs(Role.CONSULTANT, consultantId);
+        UUID auditLogId = UUID.randomUUID();
+        com.adren.travel.ai.AiItinerarySuggestion suggestion =
+            new com.adren.travel.ai.AiItinerarySuggestion(auditLogId, List.of());
+        when(aiApi.generateItinerary(any())).thenReturn(suggestion);
+
+        var result = service.completeItineraryWithAi(itineraryId, new GenerateAiSuggestionCommand(
+            "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "Fill in the rest", null));
+
+        ArgumentCaptor<com.adren.travel.ai.GenerateItineraryCommand> captor =
+            ArgumentCaptor.forClass(com.adren.travel.ai.GenerateItineraryCommand.class);
+        verify(aiApi).generateItinerary(captor.capture());
+        assertThat(captor.getValue().hasExistingHotelSelection()).isFalse();
+        assertThat(result).isSameAs(suggestion);
+        assertThat(draft.isAiGenerated()).isTrue();
+    }
+
+    @Test
+    void generateAiItinerarySuggestionAlwaysPassesHasExistingHotelSelectionFalseUnlikeCompleteAI03() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        // AI-02's "generate fresh" endpoint never even queries
+        // hotelLineItemRepository — only completeItineraryWithAi does.
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(aiApi.generateItinerary(any()))
+            .thenReturn(new com.adren.travel.ai.NoViableSuggestion(UUID.randomUUID(), "no viable option"));
+
+        service.generateAiItinerarySuggestion(itineraryId, new GenerateAiSuggestionCommand(
+            "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "A relaxing trip", null));
+
+        ArgumentCaptor<com.adren.travel.ai.GenerateItineraryCommand> captor =
+            ArgumentCaptor.forClass(com.adren.travel.ai.GenerateItineraryCommand.class);
+        verify(aiApi).generateItinerary(captor.capture());
+        assertThat(captor.getValue().hasExistingHotelSelection()).isFalse();
+    }
+
+    @Test
+    void savingAsQuotationBlocksAnUnapprovedAiGeneratedItineraryFIN06() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        draft.markAiGenerated(UUID.randomUUID());
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        assertThatThrownBy(() -> service.saveAsQuotation(itineraryId))
+            .isInstanceOf(com.adren.travel.booking.AiApprovalRequiredException.class);
+        assertThat(draft.getStatus()).isEqualTo(ItineraryStatus.DRAFT);
+    }
+
+    @Test
+    void savingAsQuotationSucceedsOnceTheAiSuggestionIsApprovedFIN06() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        draft.markAiGenerated(UUID.randomUUID());
+        draft.markAiApproved();
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        stubExistingHotelLineItem(itineraryId);
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        service.saveAsQuotation(itineraryId);
+
+        assertThat(draft.getStatus()).isEqualTo(ItineraryStatus.QUOTATION);
+    }
+
+    @Test
+    void approveAiSuggestionMarksTheItineraryApprovedFIN06() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        draft.markAiGenerated(auditLogId);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        List<com.adren.travel.ai.AiSuggestedLineItem> finalLineItems = List.of(new com.adren.travel.ai.AiSuggestedLineItem(
+            com.adren.travel.supplier.SupplierId.HOTELBEDS, "rate-1", "Taj Palace", "Deluxe Room",
+            new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), Instant.now()));
+
+        service.approveAiSuggestion(itineraryId, new ApproveAiSuggestionCommand(auditLogId, finalLineItems));
+
+        assertThat(draft.isAiApproved()).isTrue();
+        verify(itineraryRepository).save(draft);
+        verify(aiApi).approveAiSuggestion(any());
+    }
+
+    @Test
+    void approvingWithNoAiSuggestionEverGeneratedThrowsFIN06() {
+        UUID itineraryId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Itinerary draft = new Itinerary(itineraryId, consultantId, null);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(draft));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        List<com.adren.travel.ai.AiSuggestedLineItem> finalLineItems = List.of(new com.adren.travel.ai.AiSuggestedLineItem(
+            com.adren.travel.supplier.SupplierId.HOTELBEDS, "rate-1", "Taj Palace", "Deluxe Room",
+            new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), Instant.now()));
+
+        assertThatThrownBy(() -> service.approveAiSuggestion(itineraryId,
+            new ApproveAiSuggestionCommand(UUID.randomUUID(), finalLineItems)))
+            .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
@@ -319,6 +495,56 @@ class BookingServiceImplTest {
         // any() binds to the wrong overload since BookingConfirmedEvent
         // isn't an ApplicationEvent, causing a false "not invoked" failure.
         verify(events).publishEvent(any(BookingConfirmedEvent.class));
+        verify(aiApi, org.mockito.Mockito.never()).revalidateAiPricingAtBooking(any());
+    }
+
+    @Test
+    void confirmBookingBlocksWithStalePricingBeforeTouchingTheWalletAI09() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        UUID consultantId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        UUID quotationId = stubAiGeneratedQuotationResolvingTo(consultantId, auditLogId);
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(aiApi.revalidateAiPricingAtBooking(auditLogId))
+            .thenReturn(new com.adren.travel.ai.PricingStale("Live price has changed — please confirm"));
+
+        assertThatThrownBy(() -> service.confirmBooking(quotationId, price))
+            .isInstanceOf(com.adren.travel.booking.AiPricingStaleException.class);
+
+        verify(paymentsApi, org.mockito.Mockito.never()).placeHold(any());
+        verify(events, org.mockito.Mockito.never()).publishEvent(any(BookingConfirmedEvent.class));
+    }
+
+    @Test
+    void confirmBookingProceedsWhenAiPricingIsStillConfirmedAI09() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        UUID consultantId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        UUID quotationId = stubAiGeneratedQuotationResolvingTo(consultantId, auditLogId);
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(aiApi.revalidateAiPricingAtBooking(auditLogId))
+            .thenReturn(new com.adren.travel.ai.PricingConfirmed());
+
+        UUID bookingId = service.confirmBooking(quotationId, price);
+
+        assertThat(bookingId).isNotNull();
+        verify(events).publishEvent(any(BookingConfirmedEvent.class));
+    }
+
+    @Test
+    void confirmBookingOnAccountAlsoBlocksWithStalePricingAI09() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+        UUID consultantId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        UUID quotationId = stubAiGeneratedQuotationResolvingTo(consultantId, auditLogId);
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(aiApi.revalidateAiPricingAtBooking(auditLogId))
+            .thenReturn(new com.adren.travel.ai.PricingStale("Live price has changed — please confirm"));
+
+        assertThatThrownBy(() -> service.confirmBookingOnAccount(quotationId, price))
+            .isInstanceOf(com.adren.travel.booking.AiPricingStaleException.class);
+
+        verify(paymentsApi, org.mockito.Mockito.never()).payOnAccount(any());
     }
 
     @Test
@@ -404,6 +630,20 @@ class BookingServiceImplTest {
         // which requires QUOTATION (not the constructor's default DRAFT) —
         // a quotation's source itinerary is always past DRAFT by definition.
         Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        itinerary.markAsQuotation();
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+        return quotationId;
+    }
+
+    /** AI-09: same as {@link #stubQuotationResolvingTo} but the itinerary is AI-generated/approved. */
+    private UUID stubAiGeneratedQuotationResolvingTo(UUID consultantId, UUID auditLogId) {
+        UUID itineraryId = UUID.randomUUID();
+        UUID quotationId = UUID.randomUUID();
+        when(quotationRepository.findById(quotationId)).thenReturn(
+            Optional.of(new Quotation(quotationId, itineraryId, Instant.now().plusSeconds(3600))));
+        Itinerary itinerary = new Itinerary(itineraryId, consultantId, null);
+        itinerary.markAiGenerated(auditLogId);
+        itinerary.markAiApproved();
         itinerary.markAsQuotation();
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
         return quotationId;

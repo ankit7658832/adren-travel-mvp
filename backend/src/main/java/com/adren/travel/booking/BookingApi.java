@@ -1,5 +1,6 @@
 package com.adren.travel.booking;
 
+import com.adren.travel.ai.AiItineraryGenerationResult;
 import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.shared.Money;
 import org.springframework.data.domain.Page;
@@ -33,6 +34,48 @@ public interface BookingApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     UUID saveAsQuotation(UUID itineraryId);
+
+    /**
+     * Generates a grounded AI itinerary suggestion for a DRAFT itinerary
+     * (PRD §11.1/§11.2, AI-02) — delegates to {@code AiApi.generateItinerary}
+     * with the owned itinerary's resolved consultantId, then records the
+     * result on the itinerary itself ({@code Itinerary.markAiGenerated})
+     * so {@link #saveAsQuotation}'s AI-06 approval gate has something to
+     * check. Same role shape as {@link #saveAsQuotation} — generating a
+     * suggestion is part of the same "build an itinerary" access every
+     * role already has.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    AiItineraryGenerationResult generateAiItinerarySuggestion(UUID itineraryId, GenerateAiSuggestionCommand command);
+
+    /**
+     * The persistent "Complete with AI" entry point on an
+     * ALREADY-STARTED itinerary (PRD §9.1 Flow A step 7/§21.2, AI-03) —
+     * same delegation shape as {@link #generateAiItinerarySuggestion},
+     * except this method itself computes whether the itinerary already
+     * has a hotel line item and passes that as {@code
+     * GenerateItineraryCommand.hasExistingHotelSelection}, so the AI
+     * module never proposes a replacement for a category the Consultant
+     * already filled in — only the remaining gaps. Same role shape as
+     * {@link #generateAiItinerarySuggestion}, since "complete" is the same
+     * "build an itinerary" access, not a separate capability.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    AiItineraryGenerationResult completeItineraryWithAi(UUID itineraryId, GenerateAiSuggestionCommand command);
+
+    /**
+     * A Consultant/permitted User explicitly approves the itinerary's
+     * current AI suggestion (AI-06/AI-08, PRD §11.2 principle 3, §23.3
+     * Edge Case #8) — the only way {@link #saveAsQuotation}'s AI gate
+     * ({@code Itinerary.markAsQuotation}) can ever be satisfied for an
+     * AI-generated itinerary. Also delegates to {@code
+     * AiApi.approveAiSuggestion} so the audit trail captures whatever the
+     * Consultant is actually approving (edited or not) alongside the
+     * original, never overwriting it. Same role shape as {@link
+     * #generateAiItinerarySuggestion}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    void approveAiSuggestion(UUID itineraryId, ApproveAiSuggestionCommand command);
 
     /**
      * Confirms a booking from a Quotation or Package after payment succeeds.
@@ -281,4 +324,17 @@ public interface BookingApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     Page<PackageView> findPublishedPackagesByConsultant(UUID consultantId, Pageable pageable);
+
+    /**
+     * A single published Package's content (PRD §14.4, AI-12) — the {@code
+     * ads} module uses this to ground AI ad-creative generation in the
+     * Package's REAL name/description/current price, never a stale/cached
+     * copy. Throws {@link IllegalStateException} if the package exists but
+     * isn't PUBLISHED yet (creative can only ever be grounded in what's
+     * actually live for sale, same "grounded generation only" principle
+     * {@link com.adren.travel.ai.AiApi#generateItinerary} already enforces).
+     * Same role shape as {@link #findPublishedPackagesByConsultant}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    PackageView findPackageById(UUID packageId);
 }

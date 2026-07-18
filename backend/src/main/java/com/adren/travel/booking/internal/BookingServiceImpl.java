@@ -1,6 +1,13 @@
 package com.adren.travel.booking.internal;
 
+import com.adren.travel.ai.AiApi;
+import com.adren.travel.ai.AiItineraryGenerationResult;
+import com.adren.travel.ai.AiItinerarySuggestion;
+import com.adren.travel.ai.AiPricingRevalidationResult;
+import com.adren.travel.ai.PricingStale;
 import com.adren.travel.booking.AddActivityLineItemCommand;
+import com.adren.travel.booking.AiPricingStaleException;
+import com.adren.travel.booking.ApproveAiSuggestionCommand;
 import com.adren.travel.booking.AddCruiseLineItemCommand;
 import com.adren.travel.booking.AddFlightLineItemCommand;
 import com.adren.travel.booking.AddHotelLineItemCommand;
@@ -14,6 +21,7 @@ import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.DisputeTicketView;
 import com.adren.travel.booking.FlagDisputeCommand;
+import com.adren.travel.booking.GenerateAiSuggestionCommand;
 import com.adren.travel.booking.PackageView;
 import com.adren.travel.booking.event.ActivityLineItemAddedEvent;
 import com.adren.travel.booking.event.BookingCancelledEvent;
@@ -95,11 +103,12 @@ class BookingServiceImpl implements BookingApi {
     private final PaymentsApi paymentsApi;
     private final CancellationRequestRepository cancellationRequestRepository;
     private final DisputeTicketRepository disputeTicketRepository;
+    private final AiApi aiApi;
 
     // backend-best-practices §4 flags >4-5 constructor dependencies as a
     // decomposition signal — this one is well past that (pre-existing,
     // grew one line-item repo at a time across BOK-03..07). Not refactored
-    // here (FIN-16 is a functional addition, not the moment for that
+    // here (AI-02 is a functional addition, not the moment for that
     // separate change) but worth flagging rather than silently adding
     // another param without comment.
     BookingServiceImpl(ItineraryRepository itineraryRepository, TravelerProfileRepository travelerProfileRepository,
@@ -113,7 +122,7 @@ class BookingServiceImpl implements BookingApi {
                         ApplicationEventPublisher events, WhitelabelApi whitelabelApi,
                         SupplierSearchApi supplierSearchApi, HotelDedupService hotelDedupService,
                         PaymentsApi paymentsApi, CancellationRequestRepository cancellationRequestRepository,
-                        DisputeTicketRepository disputeTicketRepository) {
+                        DisputeTicketRepository disputeTicketRepository, AiApi aiApi) {
         this.itineraryRepository = itineraryRepository;
         this.travelerProfileRepository = travelerProfileRepository;
         this.hotelLineItemRepository = hotelLineItemRepository;
@@ -128,6 +137,7 @@ class BookingServiceImpl implements BookingApi {
         this.events = events;
         this.whitelabelApi = whitelabelApi;
         this.hotelDedupService = hotelDedupService;
+        this.aiApi = aiApi;
         this.supplierSearchApi = supplierSearchApi;
         this.paymentsApi = paymentsApi;
         this.cancellationRequestRepository = cancellationRequestRepository;
@@ -173,10 +183,66 @@ class BookingServiceImpl implements BookingApi {
 
     @Override
     @Transactional
+    public AiItineraryGenerationResult generateAiItinerarySuggestion(UUID itineraryId, GenerateAiSuggestionCommand command) {
+        Itinerary itinerary = requireOwnedDraftItinerary(itineraryId);
+
+        AiItineraryGenerationResult result = aiApi.generateItinerary(new com.adren.travel.ai.GenerateItineraryCommand(
+            itinerary.getConsultantId(), itineraryId, command.locationCode(), command.checkIn(), command.checkOut(),
+            command.naturalLanguageRequest(), command.budgetLimit(), false));
+
+        // AI-06's approval gate (Itinerary.markAsQuotation) checks
+        // aiGenerated/aiApproved — only record aiGenerated on an actual
+        // suggestion, never on a NoViableSuggestion outcome (nothing was
+        // suggested, so nothing needs approval before Quotation).
+        if (result instanceof AiItinerarySuggestion suggestion) {
+            itinerary.markAiGenerated(suggestion.auditLogId());
+            itineraryRepository.save(itinerary);
+        }
+        return result;
+    }
+
+    @Override
+    @Transactional
+    public AiItineraryGenerationResult completeItineraryWithAi(UUID itineraryId, GenerateAiSuggestionCommand command) {
+        Itinerary itinerary = requireOwnedDraftItinerary(itineraryId);
+
+        // AI-03: the only signal the ai module needs to respect an
+        // existing selection — computed here since booking is the only
+        // module that can see the itinerary's line items.
+        boolean hasExistingHotelSelection = !hotelLineItemRepository.findByItineraryId(itineraryId).isEmpty();
+
+        AiItineraryGenerationResult result = aiApi.generateItinerary(new com.adren.travel.ai.GenerateItineraryCommand(
+            itinerary.getConsultantId(), itineraryId, command.locationCode(), command.checkIn(), command.checkOut(),
+            command.naturalLanguageRequest(), command.budgetLimit(), hasExistingHotelSelection));
+
+        if (result instanceof AiItinerarySuggestion suggestion) {
+            itinerary.markAiGenerated(suggestion.auditLogId());
+            itineraryRepository.save(itinerary);
+        }
+        return result;
+    }
+
+    @Override
+    @Transactional
+    public void approveAiSuggestion(UUID itineraryId, ApproveAiSuggestionCommand command) {
+        Itinerary itinerary = requireOwnedDraftItinerary(itineraryId);
+        UUID approvedByUserId = CurrentPrincipal.get().userId();
+        aiApi.approveAiSuggestion(new com.adren.travel.ai.ApproveAiSuggestionCommand(
+            command.auditLogId(), approvedByUserId, command.finalLineItems()));
+        itinerary.markAiApproved();
+        itineraryRepository.save(itinerary);
+    }
+
+    @Override
+    @Transactional
     public UUID confirmBooking(UUID quotationOrPackageId, Money totalSellPrice) {
         ConfirmationTarget target = resolveConfirmationTargetFor(quotationOrPackageId);
         CurrentPrincipal.resolveTenantScope(target.consultantId());
         requireActiveUnlessSuperAdmin(target.consultantId());
+
+        // AI-09, PRD §11.3: re-validate BEFORE the concurrency lock — no
+        // point winning the booking race only to fail on stale pricing.
+        requireFreshAiPricingIfApplicable(target.itineraryId());
 
         // BOK-16, PRD §23.1 Edge Case #1: two concurrent confirmBooking
         // calls for the SAME itinerary must not both succeed — this
@@ -208,6 +274,11 @@ class BookingServiceImpl implements BookingApi {
         ConfirmationTarget target = resolveConfirmationTargetFor(quotationOrPackageId);
         CurrentPrincipal.resolveTenantScope(target.consultantId());
         requireActiveUnlessSuperAdmin(target.consultantId());
+
+        // AI-09, PRD §11.3: same re-validation as the wallet path — the
+        // payment method never changes whether stale AI pricing blocks
+        // confirmation.
+        requireFreshAiPricingIfApplicable(target.itineraryId());
 
         // BOK-16, PRD §23.1 Edge Case #1: same concurrency guard as the
         // wallet path — the last available inventory unit can't be
@@ -257,6 +328,26 @@ class BookingServiceImpl implements BookingApi {
             itineraryRepository.saveAndFlush(itinerary);
         } catch (ObjectOptimisticLockingFailureException e) {
             throw new InventoryNoLongerAvailableException(itineraryId);
+        }
+    }
+
+    /**
+     * AI-09, PRD §11.3 — a no-op for any itinerary that was never
+     * AI-generated ({@code Itinerary.isAiGenerated()} false); scoped to
+     * {@code confirmBooking}/{@code confirmBookingOnAccount} same as
+     * {@code lockForBooking}'s own scoping note explains for BOK-16 (the
+     * Stripe-webhook path runs from an async, unauthenticated listener
+     * context this check is a separate, deliberate follow-up for).
+     */
+    private void requireFreshAiPricingIfApplicable(UUID itineraryId) {
+        Itinerary itinerary = itineraryRepository.findById(itineraryId)
+            .orElseThrow(() -> new IllegalArgumentException("No itinerary: " + itineraryId));
+        if (!itinerary.isAiGenerated()) {
+            return;
+        }
+        AiPricingRevalidationResult result = aiApi.revalidateAiPricingAtBooking(itinerary.getAiAuditLogId());
+        if (result instanceof PricingStale stale) {
+            throw new AiPricingStaleException(itineraryId, stale.reason());
         }
     }
 
@@ -762,10 +853,22 @@ class BookingServiceImpl implements BookingApi {
             .map(BookingServiceImpl::toPackageView);
     }
 
+    @Override
+    public PackageView findPackageById(UUID packageId) {
+        TravelPackage travelPackage = travelPackageRepository.findById(packageId)
+            .orElseThrow(() -> new IllegalArgumentException("No package: " + packageId));
+        CurrentPrincipal.resolveTenantScope(travelPackage.getConsultantId());
+        if (travelPackage.getStatus() != PackageStatus.PUBLISHED) {
+            throw new IllegalStateException("Package " + packageId + " is not published");
+        }
+        return toPackageView(travelPackage);
+    }
+
     private static PackageView toPackageView(TravelPackage travelPackage) {
         return new PackageView(travelPackage.getPackageId(), travelPackage.getSourceItineraryId(),
-            travelPackage.getName(), travelPackage.getDescription(), travelPackage.getValidityStart(),
-            travelPackage.getValidityEnd(), travelPackage.getBasePrice(), travelPackage.getMarkupPrice(),
-            travelPackage.getCurrency(), travelPackage.getMaxPax(), travelPackage.isPromotedViaAds());
+            travelPackage.getConsultantId(), travelPackage.getName(), travelPackage.getDescription(),
+            travelPackage.getValidityStart(), travelPackage.getValidityEnd(), travelPackage.getBasePrice(),
+            travelPackage.getMarkupPrice(), travelPackage.getCurrency(), travelPackage.getMaxPax(),
+            travelPackage.isPromotedViaAds());
     }
 }

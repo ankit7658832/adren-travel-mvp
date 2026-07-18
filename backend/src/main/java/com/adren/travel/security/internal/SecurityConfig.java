@@ -28,7 +28,22 @@ import tools.jackson.databind.ObjectMapper;
 class SecurityConfig {
 
     private static final String[] PUBLIC_ENDPOINTS = {
-        "/actuator/health", "/actuator/health/**", "/actuator/info"
+        "/actuator/health", "/actuator/health/**", "/actuator/info",
+        // Stage 4 Step C adversarial finding: an authenticated request that
+        // throws an unmapped exception (e.g. a real Groq failure with no
+        // matching @ExceptionHandler) triggers Spring's internal ERROR
+        // dispatch forward to /error — which this filter chain's own
+        // `anyRequest().authenticated()` was ALSO re-applying to, since a
+        // servlet FORWARD dispatch doesn't automatically carry the original
+        // request's authentication across. The client-visible result was a
+        // misleading 401 "bearer token required" for what was actually an
+        // internal/business failure that had nothing to do with auth,
+        // masking the real error on every unmapped exception in the whole
+        // app, not just AI/Groq ones. /error itself performs no privileged
+        // action — it only renders whatever status/body the original
+        // (already-authorized) request's failure produced — so permitting
+        // it here doesn't weaken authorization anywhere else.
+        "/error"
     };
 
     @Bean
