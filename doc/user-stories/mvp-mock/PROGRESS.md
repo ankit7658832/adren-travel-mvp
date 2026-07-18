@@ -112,7 +112,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **DMC-07** — make the supplier integration layer credential source agnostic
 - [ ] **DMC-08** — merge byos inventory into search results using standard normalization and default selection
 - [ ] **DMC-09** — scope byos inventory and credentials strictly to the owning consultant
-- [ ] **DMC-10** — manage local dmc inventory items after onboarding crud
+- [x] **DMC-10** — manage local dmc inventory items after onboarding crud
 - [ ] **DMC-11** — alert on stale local dmc inventory beyond a defined threshold
 
 ## Ads/Campaign Management (15)

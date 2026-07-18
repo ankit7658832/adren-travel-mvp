@@ -6,12 +6,15 @@ import { LocalDmcBulkUpload } from "./LocalDmcBulkUpload";
 import { apiClient } from "@/shared/api/apiClient";
 
 vi.mock("@/shared/api/apiClient", () => ({
-  apiClient: { post: vi.fn() },
+  apiClient: { post: vi.fn(), get: vi.fn(), patch: vi.fn() },
 }));
 
 const LOCAL_DMC_ID = "11111111-1111-1111-1111-111111111111";
 
 function renderWithProviders() {
+  vi.mocked(apiClient.get).mockResolvedValue({
+    data: { content: [], page: 0, size: 50, totalElements: 0, totalPages: 0 },
+  });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
@@ -33,6 +36,8 @@ function selectCsvFile(content: string, name = "inventory.csv") {
 describe("LocalDmcBulkUpload", () => {
   beforeEach(() => {
     vi.mocked(apiClient.post).mockReset();
+    vi.mocked(apiClient.get).mockReset();
+    vi.mocked(apiClient.patch).mockReset();
   });
 
   it("default state: the Upload button is disabled until a file is chosen", () => {

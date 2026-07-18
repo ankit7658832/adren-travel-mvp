@@ -22,6 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -56,12 +57,15 @@ class LocalDmcServiceTest {
     @Mock
     LocalDmcInventoryCsvParser csvParser;
 
+    @Mock
+    ApplicationEventPublisher events;
+
     LocalDmcService service;
 
     @BeforeEach
     void setUp() {
         LocalDmcQualityThresholds thresholds = new LocalDmcQualityThresholds(new BigDecimal("0.2"), 3, 30);
-        service = new LocalDmcService(repository, thresholds, inventoryRepository, csvParser);
+        service = new LocalDmcService(repository, thresholds, inventoryRepository, csvParser, events);
     }
 
     @AfterEach
@@ -210,6 +214,74 @@ class LocalDmcServiceTest {
 
         assertThatThrownBy(() -> service.bulkUploadLocalDmcInventory(localDmcId, "csv-content"))
             .isInstanceOf(AccessDeniedException.class);
+        verify(inventoryRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void updateLocalDmcInventoryItemAppliesTheEditsAndPublishesTheEventDMC10() {
+        UUID consultantId = UUID.randomUUID();
+        UUID localDmcId = UUID.randomUUID();
+        UUID itemId = UUID.randomUUID();
+        LocalDmcRecord dmc = new LocalDmcRecord(localDmcId, consultantId, "Goa Local Tours", "TRANSFER", "x", "y");
+        when(repository.findById(localDmcId)).thenReturn(Optional.of(dmc));
+        LocalDmcInventoryItem item = new LocalDmcInventoryItem(itemId, localDmcId, "City Tour", ProductCategory.ACTIVITY,
+            new BigDecimal("2000"), CurrencyCode.INR, "Free cancellation",
+            java.time.LocalDate.of(2026, 8, 1), java.time.LocalDate.of(2026, 12, 31));
+        when(inventoryRepository.findById(itemId)).thenReturn(Optional.of(item));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        LocalDmcInventoryItemCommand command = new LocalDmcInventoryItemCommand("City Tour (updated)",
+            ProductCategory.ACTIVITY, new BigDecimal("2500"), CurrencyCode.INR, "No refunds",
+            java.time.LocalDate.of(2026, 9, 1), java.time.LocalDate.of(2027, 1, 31));
+
+        service.updateLocalDmcInventoryItem(localDmcId, itemId, command);
+
+        assertThat(item.getProductName()).isEqualTo("City Tour (updated)");
+        assertThat(item.getNetRate()).isEqualByComparingTo("2500");
+        verify(inventoryRepository).save(item);
+        ArgumentCaptor<com.adren.travel.supplier.event.LocalDmcInventoryItemUpdatedEvent> captor =
+            ArgumentCaptor.forClass(com.adren.travel.supplier.event.LocalDmcInventoryItemUpdatedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().itemId()).isEqualTo(itemId);
+        assertThat(captor.getValue().localDmcId()).isEqualTo(localDmcId);
+        assertThat(captor.getValue().consultantId()).isEqualTo(consultantId);
+    }
+
+    @Test
+    void updateLocalDmcInventoryItemRejectsAConsultantEditingAnotherConsultantsDmcFND03() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID localDmcId = UUID.randomUUID();
+        UUID itemId = UUID.randomUUID();
+        LocalDmcRecord dmc = new LocalDmcRecord(localDmcId, ownerConsultantId, "Goa Local Tours", "TRANSFER", "x", "y");
+        when(repository.findById(localDmcId)).thenReturn(Optional.of(dmc));
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        LocalDmcInventoryItemCommand command = new LocalDmcInventoryItemCommand("City Tour", ProductCategory.ACTIVITY,
+            new BigDecimal("2000"), CurrencyCode.INR, "Free cancellation",
+            java.time.LocalDate.of(2026, 8, 1), java.time.LocalDate.of(2026, 12, 31));
+
+        assertThatThrownBy(() -> service.updateLocalDmcInventoryItem(localDmcId, itemId, command))
+            .isInstanceOf(AccessDeniedException.class);
+        verify(inventoryRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void updateLocalDmcInventoryItemRejectsAnItemThatBelongsToADifferentDmc() {
+        UUID consultantId = UUID.randomUUID();
+        UUID localDmcId = UUID.randomUUID();
+        UUID otherDmcId = UUID.randomUUID();
+        UUID itemId = UUID.randomUUID();
+        LocalDmcRecord dmc = new LocalDmcRecord(localDmcId, consultantId, "Goa Local Tours", "TRANSFER", "x", "y");
+        when(repository.findById(localDmcId)).thenReturn(Optional.of(dmc));
+        LocalDmcInventoryItem item = new LocalDmcInventoryItem(itemId, otherDmcId, "City Tour", ProductCategory.ACTIVITY,
+            new BigDecimal("2000"), CurrencyCode.INR, "Free cancellation",
+            java.time.LocalDate.of(2026, 8, 1), java.time.LocalDate.of(2026, 12, 31));
+        when(inventoryRepository.findById(itemId)).thenReturn(Optional.of(item));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        LocalDmcInventoryItemCommand command = new LocalDmcInventoryItemCommand("City Tour", ProductCategory.ACTIVITY,
+            new BigDecimal("2000"), CurrencyCode.INR, "Free cancellation",
+            java.time.LocalDate.of(2026, 8, 1), java.time.LocalDate.of(2026, 12, 31));
+
+        assertThatThrownBy(() -> service.updateLocalDmcInventoryItem(localDmcId, itemId, command))
+            .isInstanceOf(IllegalArgumentException.class);
         verify(inventoryRepository, org.mockito.Mockito.never()).save(any());
     }
 

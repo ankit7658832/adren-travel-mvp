@@ -8,10 +8,12 @@ import com.adren.travel.supplier.LocalDmcInventoryItemView;
 import com.adren.travel.supplier.LocalDmcInventoryUploadResult;
 import com.adren.travel.supplier.LocalDmcView;
 import com.adren.travel.supplier.SubmitLocalDmcCommand;
+import com.adren.travel.supplier.event.LocalDmcInventoryItemUpdatedEvent;
 import com.adren.travel.supplier.internal.localdmc.LocalDmcInventoryItem;
 import com.adren.travel.supplier.internal.localdmc.LocalDmcInventoryItemRepository;
 import com.adren.travel.supplier.internal.localdmc.LocalDmcRecord;
 import com.adren.travel.supplier.internal.localdmc.LocalDmcRecordRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
@@ -51,13 +53,16 @@ class LocalDmcService {
     private final LocalDmcQualityThresholds thresholds;
     private final LocalDmcInventoryItemRepository inventoryRepository;
     private final LocalDmcInventoryCsvParser csvParser;
+    private final ApplicationEventPublisher events;
 
     LocalDmcService(LocalDmcRecordRepository repository, LocalDmcQualityThresholds thresholds,
-                    LocalDmcInventoryItemRepository inventoryRepository, LocalDmcInventoryCsvParser csvParser) {
+                    LocalDmcInventoryItemRepository inventoryRepository, LocalDmcInventoryCsvParser csvParser,
+                    ApplicationEventPublisher events) {
         this.repository = repository;
         this.thresholds = thresholds;
         this.inventoryRepository = inventoryRepository;
         this.csvParser = csvParser;
+        this.events = events;
     }
 
     @Transactional
@@ -152,6 +157,21 @@ class LocalDmcService {
     Page<LocalDmcInventoryItemView> findLocalDmcInventory(UUID localDmcId, Pageable pageable) {
         findOwned(localDmcId);
         return inventoryRepository.findByLocalDmcId(localDmcId, pageable).map(LocalDmcService::toInventoryView);
+    }
+
+    /** DMC-10: edit a previously-uploaded inventory item's rate/details. */
+    @Transactional
+    void updateLocalDmcInventoryItem(UUID localDmcId, UUID itemId, LocalDmcInventoryItemCommand command) {
+        LocalDmcRecord dmc = findOwned(localDmcId);
+        LocalDmcInventoryItem item = inventoryRepository.findById(itemId)
+            .orElseThrow(() -> new IllegalArgumentException("No inventory item: " + itemId));
+        if (!item.getLocalDmcId().equals(localDmcId)) {
+            throw new IllegalArgumentException("No inventory item: " + itemId);
+        }
+        item.update(command.productName(), command.category(), command.netRate(), command.netRateCurrency(),
+            command.cancellationPolicyText(), command.availableFrom(), command.availableTo());
+        inventoryRepository.save(item);
+        events.publishEvent(new LocalDmcInventoryItemUpdatedEvent(itemId, localDmcId, dmc.getConsultantId()));
     }
 
     private static LocalDmcInventoryItemView toInventoryView(LocalDmcInventoryItem item) {

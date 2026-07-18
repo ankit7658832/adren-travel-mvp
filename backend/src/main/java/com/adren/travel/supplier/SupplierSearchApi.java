@@ -80,6 +80,13 @@ public interface SupplierSearchApi {
     Page<LocalDmcInventoryItemView> findLocalDmcInventory(UUID localDmcId, Pageable pageable);
 
     /**
+     * Edits a previously-uploaded Local DMC inventory item's rate/details
+     * (PRD §10.2.8, DMC-10) — publishes {@code LocalDmcInventoryItemUpdatedEvent}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT')")
+    void updateLocalDmcInventoryItem(UUID localDmcId, UUID itemId, LocalDmcInventoryItemCommand command);
+
+    /**
      * Records that a booking was made against a Local DMC product (PRD
      * §10.3 step 5, DMC-04) — the denominator for its rolling cancellation
      * rate. {@code SUPER_ADMIN}-only: unlike every other method here, this

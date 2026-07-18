@@ -2,6 +2,7 @@ package com.adren.travel.supplier.internal;
 
 import com.adren.travel.shared.PageResponse;
 import com.adren.travel.supplier.ActivateLocalDmcCommand;
+import com.adren.travel.supplier.LocalDmcInventoryItemCommand;
 import com.adren.travel.supplier.LocalDmcInventoryItemView;
 import com.adren.travel.supplier.LocalDmcInventoryUploadResult;
 import com.adren.travel.supplier.LocalDmcView;
@@ -11,6 +12,7 @@ import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -63,5 +65,13 @@ class LocalDmcController {
     @GetMapping("/{localDmcId}/inventory")
     PageResponse<LocalDmcInventoryItemView> findInventory(@PathVariable UUID localDmcId, Pageable pageable) {
         return PageResponse.of(supplierSearchApi.findLocalDmcInventory(localDmcId, pageable));
+    }
+
+    @PatchMapping("/{localDmcId}/inventory/{itemId}")
+    void updateInventoryItem(@PathVariable UUID localDmcId, @PathVariable UUID itemId,
+                              @Valid @RequestBody UpdateLocalDmcInventoryItemRequest request) {
+        supplierSearchApi.updateLocalDmcInventoryItem(localDmcId, itemId, new LocalDmcInventoryItemCommand(
+            request.productName(), request.category(), request.netRate(), request.netRateCurrency(),
+            request.cancellationPolicyText(), request.availableFrom(), request.availableTo()));
     }
 }

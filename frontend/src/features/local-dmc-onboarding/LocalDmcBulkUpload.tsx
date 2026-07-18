@@ -2,6 +2,7 @@ import { useState, type ChangeEvent } from "react";
 import { useParams } from "react-router-dom";
 import { Button } from "@/shared/design-system/Button";
 import { useLocalDmcBulkUpload } from "./useLocalDmcBulkUpload";
+import { LocalDmcInventoryManagement } from "./LocalDmcInventoryManagement";
 
 /**
  * PRD §10.2.8, DMC-03 — bulk-upload a Local DMC's inventory catalogue from
@@ -86,6 +87,9 @@ export function LocalDmcBulkUpload() {
           </ul>
         </div>
       )}
+
+      <hr className="my-8 border-neutral-200" />
+      <LocalDmcInventoryManagement />
     </section>
   );
 }

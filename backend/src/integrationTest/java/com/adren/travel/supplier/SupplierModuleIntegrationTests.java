@@ -195,6 +195,54 @@ class SupplierModuleIntegrationTests {
     }
 
     @Test
+    void updateLocalDmcInventoryItemPersistsTheEditsAndIsReflectedOnRereadDMC10() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        UUID localDmcId = supplierSearchApi.submitLocalDmc(new SubmitLocalDmcCommand(
+            "Goa Local Tours", List.of("TRANSFER"), "x", "y"));
+        String csv = "productName,category,netRate,netRateCurrency,cancellationPolicyText,availableFrom,availableTo\n"
+            + "City Tour,ACTIVITY,2000,INR,Free cancellation,2026-08-01,2026-12-31\n";
+        supplierSearchApi.bulkUploadLocalDmcInventory(localDmcId, csv);
+        UUID itemId = jdbcTemplate.queryForObject(
+            "SELECT item_id FROM local_dmc_inventory_item WHERE local_dmc_id = ?", UUID.class, localDmcId);
+
+        supplierSearchApi.updateLocalDmcInventoryItem(localDmcId, itemId, new LocalDmcInventoryItemCommand(
+            "City Tour (revised)", com.adren.travel.shared.ProductCategory.ACTIVITY, new java.math.BigDecimal("2500"),
+            com.adren.travel.shared.CurrencyCode.INR, "No refunds",
+            java.time.LocalDate.of(2026, 9, 1), java.time.LocalDate.of(2027, 1, 31)));
+
+        var row = jdbcTemplate.queryForMap(
+            "SELECT product_name, net_rate, cancellation_policy_text FROM local_dmc_inventory_item WHERE item_id = ?", itemId);
+        assertThat(row.get("product_name")).isEqualTo("City Tour (revised)");
+        assertThat(((java.math.BigDecimal) row.get("net_rate"))).isEqualByComparingTo("2500");
+        assertThat(row.get("cancellation_policy_text")).isEqualTo("No refunds");
+
+        var page = supplierSearchApi.findLocalDmcInventory(localDmcId, PageRequest.of(0, 20));
+        assertThat(page.getContent()).extracting(LocalDmcInventoryItemView::productName).containsExactly("City Tour (revised)");
+    }
+
+    @Test
+    void aConsultantCannotUpdateAnotherConsultantsInventoryItemFND03() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, ownerConsultantId);
+        UUID localDmcId = supplierSearchApi.submitLocalDmc(new SubmitLocalDmcCommand(
+            "Goa Local Tours", List.of("TRANSFER"), "x", "y"));
+        String csv = "productName,category,netRate,netRateCurrency,cancellationPolicyText,availableFrom,availableTo\n"
+            + "City Tour,ACTIVITY,2000,INR,Free cancellation,2026-08-01,2026-12-31\n";
+        supplierSearchApi.bulkUploadLocalDmcInventory(localDmcId, csv);
+        UUID itemId = jdbcTemplate.queryForObject(
+            "SELECT item_id FROM local_dmc_inventory_item WHERE local_dmc_id = ?", UUID.class, localDmcId);
+        SecurityContextHolder.clearContext();
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> supplierSearchApi.updateLocalDmcInventoryItem(localDmcId, itemId,
+            new LocalDmcInventoryItemCommand("Hacked", com.adren.travel.shared.ProductCategory.ACTIVITY,
+                new java.math.BigDecimal("1"), com.adren.travel.shared.CurrencyCode.INR, "x",
+                java.time.LocalDate.of(2026, 8, 1), java.time.LocalDate.of(2026, 12, 31))))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
     void findLocalDmcsScopesAConsultantToTheirOwnRecordsOnlyFND03() {
         UUID consultantA = UUID.randomUUID();
         UUID consultantB = UUID.randomUUID();
