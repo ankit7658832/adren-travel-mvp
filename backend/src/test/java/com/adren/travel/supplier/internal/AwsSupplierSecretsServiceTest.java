@@ -10,6 +10,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 import software.amazon.awssdk.services.secretsmanager.model.CreateSecretRequest;
 import software.amazon.awssdk.services.secretsmanager.model.CreateSecretResponse;
+import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRequest;
+import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueResponse;
 import software.amazon.awssdk.services.secretsmanager.model.PutSecretValueRequest;
 import software.amazon.awssdk.services.secretsmanager.model.PutSecretValueResponse;
 import software.amazon.awssdk.services.secretsmanager.model.ResourceExistsException;
@@ -65,5 +67,17 @@ class AwsSupplierSecretsServiceTest {
         verify(secretsManagerClient).putSecretValue(captor.capture());
         assertThat(captor.getValue().secretId()).isEqualTo("adren/supplier-credentials/HOTELBEDS");
         assertThat(captor.getValue().secretString()).isEqualTo("rotated-secret-value");
+    }
+
+    @Test
+    void getSecretValueResolvesTheRawValueByArnDMC07() {
+        String arn = "arn:aws:secretsmanager:ap-south-1:000000000000:secret:adren/supplier-credentials/HOTELBEDS";
+        when(secretsManagerClient.getSecretValue(any(GetSecretValueRequest.class)))
+            .thenReturn(GetSecretValueResponse.builder().secretString("adren-own-secret-value").build());
+
+        assertThat(service.getSecretValue(arn)).isEqualTo("adren-own-secret-value");
+        ArgumentCaptor<GetSecretValueRequest> captor = ArgumentCaptor.forClass(GetSecretValueRequest.class);
+        verify(secretsManagerClient).getSecretValue(captor.capture());
+        assertThat(captor.getValue().secretId()).isEqualTo(arn);
     }
 }

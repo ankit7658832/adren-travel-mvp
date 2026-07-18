@@ -92,7 +92,7 @@ Every `⚠️ NEEDS CLARIFICATION` flag in the story catalogues, consolidated in
 
 This is the ongoing tracker, now backed by `doc/user-stories/mvp-mock/PROGRESS.md` (created in Stage 1; §5's "gap" note above predates it and is left as historical record). Update as stories close.
 
-### Mock phase (149 stories / 748 points, updated Stage 4 — 2026-07-18)
+### Mock phase (149 stories / 748 points, updated Stage 5 — 2026-07-18)
 
 | Epic | Stories | Points | Status |
 |---|---|---|---|
@@ -100,13 +100,13 @@ This is the ongoing tracker, now backed by `doc/user-stories/mvp-mock/PROGRESS.m
 | Booking Core | 27 | 121 | **100% (27/27)** — completed Stage 3 Batch 2 |
 | Financial Layer | 18 | 95 | **100% (18/18)** — completed Stage 3 Batch 2 |
 | AI Layer | 13 | 72 | **100% (13/13)** — completed Stage 4 |
-| Local DMC + BYOS | 11 | 57 | 0% (0/11) |
+| Local DMC + BYOS | 11 | 57 | **100% (11/11)** — completed Stage 5 |
 | Ads/Campaign Management | 15 | 80 | 0% (0/15) |
 | Hardening | 13 | 76 | 8% (1/13, 8 pts) |
 | Frontend Shell | 10 | 55 | 20% (2/10, 10 pts) |
 | DevOps/Infra | 9 | 30 | 0% (0/9) |
 | Test Infrastructure | 9 | 38 | 0% (0/9) |
-| **Total** | **149** | **748** | **57% (85/149 stories, 430/748 pts)** |
+| **Total** | **149** | **748** | **64% (96/149 stories, 487/748 pts)** |
 
 ## 7a. Stage 1 & Stage 2 actual velocity, and a revised remaining-timeline estimate (Stage 3, Step A)
 
@@ -228,6 +228,48 @@ Verified directly against the dependency graph (every `DMC-*`/`ADS-*`/`HRD-*` st
 4. **This also matches PRD §8's stated order** ("AI layer → Local DMC+BYOS → Ads/Campaign → Hardening") — not a re-derivation, confirmation that the derived order and the PRD's own intent agree, same cross-check §7b already made for AI Layer.
 
 Local DMC + BYOS is self-contained (adds a new supplier channel + BYOS credential management, PRD §10.2.9/§13) and doesn't block anything else discovered in this check — a clean, low-risk next target. **Stopping here per Step D's own instruction — not starting Local DMC + BYOS without an explicit go-ahead.**
+
+## 7e. Stage 5 (Local DMC + BYOS) completion, a fifth velocity data point, and the next-epic recommendation (Stage 5, Step D — 2026-07-18)
+
+**What landed:** All 11 Local DMC + BYOS stories (57 points) across two checkpointed batches — Batch 1 (`DMC-01, 02, 03, 04, 05, 10, 11` — Local DMC onboarding, vetting, CSV bulk-upload, quality-signal tracking, threshold flagging, per-item inventory editing, staleness alerting; 34 points) and Batch 2 (`DMC-06, 07, 08, 09` — BYOS credential entry, credential-source-agnostic supplier layer, search-merge, tenant scoping; 23 points). Mock-phase total is now **96/149 stories, 487/748 points (64%)**.
+
+**What this stage revealed, flagged rather than smoothed over:**
+
+- **A large fraction of Batch 2's foundational work already existed before this stage started.** `FND-12` (row-level KMS-encrypted BYOS credential storage — `ByosCredential` entity, `KmsEnvelopeEncryptionService`, `ByosCredentialService#save/read`, a full Testcontainers cross-tenant-denial test) had been built in an earlier stage and never wired into a public API, REST endpoint, or the search fan-out — DMC-06 through DMC-09 were substantially "build the surface on top of an existing, already-correct foundation" rather than new mechanism from scratch. This is the single biggest driver of this stage's velocity figure below, and is exactly the kind of thing a raw points/time number hides unless stated explicitly.
+- **Local DMC's own schema-upfront discipline (established in Stage 5 Batch 1's `DMC-03` commit) paid off directly in `DMC-10`.** `LocalDmcInventoryItem.update(...)` was already fully built, anticipating the exact CRUD story that came 4 commits later — `DMC-10`'s actual new work was three thin delegation layers (service → API → controller) plus a domain event and frontend, not a new mutation method.
+- **Testcontainers-backed integration tests remain non-executable in this sandbox** (confirmed pre-existing, not something this stage broke — an untouched, already-existing test file, `CreditLimitBreachIT`, fails with the identical `docker-java` API-version-negotiation error against this environment's Rancher-Desktop-backed Docker daemon: "client version 1.32 is too old, minimum supported API version is 1.41"). Every Testcontainers-tier test this stage wrote (`ByosCredentialCrossTenantIT`'s DMC-06/DMC-09 additions) is code-complete and compiles clean but unverified end-to-end in this environment; the mocked-KMS unit tier and the real-Postgres `@ApplicationModuleTest` tier (`SupplierModuleIntegrationTests`) carried the actual verification load instead. Worth a dedicated OPS-tier fix (Docker client/API-version compatibility) before a future stage that depends more heavily on this tier.
+
+**Stage 5 velocity** (same method as §7a/§7c/§7d — git commit timestamps, `AD-stage5-local-dmc-byos` branch):
+- Commits: `4f079c8` (2026-07-18 14:05:25) through `99a6340` (2026-07-18 16:12:06).
+- Delivered **11 stories / 57 points** — the entire Local DMC + BYOS epic.
+- Calendar-day span: 2026-07-18 only (1 distinct date). Wall-clock elapsed: ~2h7m.
+
+| Basis | Elapsed | Points | Velocity |
+|---|---|---|---|
+| Wall-clock hours | ~2.11h (0.088 days) | 57 | 648.1 pts/day → **~4,537 pts/week** |
+
+**⚠️ This is not a genuine 5.7x acceleration over Stage 4 — treat it as an outlier explained by the pre-existing-foundation effect above, not a new sustainable rate.** Unlike Stages 1–4's steady decline (312.8 → 162.7 → 119.9 → 114.6 pts/day), Stage 5 reverses the trend sharply upward, and the reason is identifiable in the work itself (FND-12 was already built) rather than a genuine improvement in this stage's own build discipline. Averaging it into the cumulative rate below would materially overstate what to expect from a future epic that doesn't have a comparable head start.
+
+**Combined actual delivery (all five stages):** 96 stories / **487 points**. Summing each stage's own raw wall-clock span: 10h17m + 14h54m + 24h38m + 15h5m + 2h7m ≈ **67h1m (≈2.79 days)**, across 5 distinct calendar dates (2026-07-14 through 2026-07-18, Stage 4 and Stage 5 sharing 2026-07-18).
+
+| Basis | Elapsed | Points | Velocity |
+|---|---|---|---|
+| Summed wall-clock | ~67.0h (2.79 days) | 487 | 174.7 pts/day → **~1,223 pts/week** |
+| Calendar-date count (crude) | 5 distinct dates | 487 | 97.4 pts/day → **~682 pts/week** |
+
+**Revised remaining-timeline estimate:** Remaining: **261 points** (748 total − 487 done). Given Stage 5's figure is flagged above as an outlier, Stage 4's own demonstrated rate (114.6 pts/day, per §7d's reasoning — the most recent *non-outlier* single-stage figure) remains the more defensible basis: 261 / 114.6 ≈ **2.3 more days of active work**. The cumulative summed-wall-clock rate (174.7 pts/day, inflated by Stage 5) gives a more optimistic ≈1.5 days — reported for completeness, not recommended as the planning number.
+
+**Recommendation: build Frontend Shell next (8 remaining stories, 45 points), not the PRD §8-stated Ads/Campaign Management.**
+
+Verified directly against the dependency graph (every `FES-*`/`ADS-*`/`HRD-*`/`TST-*` story's `dependencies:` frontmatter), not just cited from PRD §8:
+
+1. **Ads/Campaign Management is still genuinely blocked, exactly as §7d already found before Local DMC + BYOS was built.** `ADS-01`/`ADS-02` are unblocked, but `ADS-03` depends on `FES-08` ("adopt React Hook Form + Zod as the form validation standard") — confirmed **still not done** (`PROGRESS.md`: only `FES-01`/`FES-03` checked off, unchanged since §7d) — and `ADS-04` through `ADS-15` chain off `ADS-03`. Local DMC + BYOS finishing did not touch this blocker at all; it was never on the blocking path.
+2. **Frontend Shell's remaining 8 stories (`FES-02, 04, 05, 06, 07, 08, 09, 10`) are fully unblocked, buildable top-to-bottom, right now.** Every dependency resolves to `FND-*` (Foundation, 100% done) or an earlier `FES-*` story in its own chain (`FES-04→FES-08→FES-09`) — verified by reading all 10 `FES-*` files' `dependencies:` frontmatter directly, not inferred.
+3. **Building it unblocks two other epics at once, not just one.** `FES-08` is `ADS-03`'s specific gate (per point 1) — closing it reopens the PRD-stated next epic. It's also `TST-04`'s gate (`TST-04` depends on `FES-08`; `TST-05` chains off `TST-04`) — Test Infrastructure is otherwise still 0/9 and partially blocked by the same story. No other single epic in this catalogue unblocks two others simultaneously.
+4. **This deviates from PRD §8's literal epic-label order** ("... → Local DMC+BYOS → Ads/Campaign → Hardening" — Frontend Shell isn't named as a phase in that list at all), but not from its intent: PRD §8 describes feature-epic sequencing, not the tooling/scaffolding work those epics assume already exists. §2's own derived build order already treats `Frontend Shell` as interleaved with `Foundation` at the start, not a separate later phase — the same "this is infrastructure the named epics depend on, not a competing epic" reasoning applies here to its remaining 8 stories.
+5. **Hardening (9/13 stories: `HRD-02` through `HRD-08`, `HRD-12`, `HRD-13`) is the other fully-available option** — genuinely unblocked now that Booking Core/Financial Layer/AI Layer/Local DMC+BYOS are all done, and could run as a parallel track if a second work-stream exists. It's not the primary recommendation because it doesn't unblock anything else (`HRD-09/10/11` still need `ADS-09`, so even finishing all 9 available Hardening stories leaves the epic at 10/13, still gated on Ads/Campaign) — lower leverage than Frontend Shell's double-unblock.
+
+**Stopping here per Step D's own instruction — not starting Frontend Shell without an explicit go-ahead.**
 
 ### Production phase (83 stories / 476 points)
 

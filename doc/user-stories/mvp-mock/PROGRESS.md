@@ -103,17 +103,17 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 
 ## Local DMC + BYOS (11)
 
-- [ ] **DMC-01** — submit a new local dmc for onboarding
-- [ ] **DMC-02** — run the local dmc pending active vetting workflow
-- [ ] **DMC-03** — bulk upload local dmc inventory via a validated csv template tool
-- [ ] **DMC-04** — track local dmc quality signal cancellation rate and complaint count
-- [ ] **DMC-05** — flag a local dmc to both the onboarding consultant and super admin on threshold breach
-- [ ] **DMC-06** — let a consultant enter their own supplier api credentials byos
-- [ ] **DMC-07** — make the supplier integration layer credential source agnostic
-- [ ] **DMC-08** — merge byos inventory into search results using standard normalization and default selection
-- [ ] **DMC-09** — scope byos inventory and credentials strictly to the owning consultant
-- [ ] **DMC-10** — manage local dmc inventory items after onboarding crud
-- [ ] **DMC-11** — alert on stale local dmc inventory beyond a defined threshold
+- [x] **DMC-01** — submit a new local dmc for onboarding
+- [x] **DMC-02** — run the local dmc pending active vetting workflow
+- [x] **DMC-03** — bulk upload local dmc inventory via a validated csv template tool
+- [x] **DMC-04** — track local dmc quality signal cancellation rate and complaint count
+- [x] **DMC-05** — flag a local dmc to both the onboarding consultant and super admin on threshold breach
+- [x] **DMC-06** — let a consultant enter their own supplier api credentials byos
+- [x] **DMC-07** — make the supplier integration layer credential source agnostic
+- [x] **DMC-08** — merge byos inventory into search results using standard normalization and default selection
+- [x] **DMC-09** — scope byos inventory and credentials strictly to the owning consultant
+- [x] **DMC-10** — manage local dmc inventory items after onboarding crud
+- [x] **DMC-11** — alert on stale local dmc inventory beyond a defined threshold
 
 ## Ads/Campaign Management (15)
 

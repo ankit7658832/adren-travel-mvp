@@ -1,6 +1,14 @@
 package com.adren.travel.supplier.internal;
 
 import com.adren.travel.security.CurrentPrincipal;
+import com.adren.travel.supplier.ActivateLocalDmcCommand;
+import com.adren.travel.supplier.ByosCredentialSummary;
+import com.adren.travel.supplier.LocalDmcInventoryItemCommand;
+import com.adren.travel.supplier.LocalDmcInventoryItemView;
+import com.adren.travel.supplier.LocalDmcInventoryUploadResult;
+import com.adren.travel.supplier.LocalDmcView;
+import com.adren.travel.supplier.SaveByosCredentialCommand;
+import com.adren.travel.supplier.SubmitLocalDmcCommand;
 import com.adren.travel.supplier.SupplierCredentialSummary;
 import com.adren.travel.supplier.SupplierId;
 import com.adren.travel.supplier.SupplierSearchApi;
@@ -9,6 +17,8 @@ import com.adren.travel.supplier.UpdateSupplierCredentialCommand;
 import com.adren.travel.supplier.internal.hotelbeds.HotelbedsClient;
 import com.adren.travel.supplier.internal.stuba.StubaClient;
 import com.adren.travel.supplier.internal.tbo.TboClient;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,16 +48,17 @@ class SupplierAggregationService implements SupplierSearchApi {
     private final SupplierCredentialRepository credentialRepository;
     private final SupplierCredentialAuditLogRepository auditLogRepository;
     private final SupplierSecretsService supplierSecretsService;
-    // TODO: inject LocalDmcRepository, ByosClient as each is built out,
-    // following the HotelbedsClient/StubaClient/TboClient pattern
-    // (PRD Section 10.2.8 - 10.2.9).
+    private final LocalDmcService localDmcService;
+    private final ByosCredentialService byosCredentialService;
+    private final SupplierCredentialResolver credentialResolver;
 
     SupplierAggregationService(HotelbedsClient hotelbedsClient, StubaClient stubaClient, TboClient tboClient,
                                SupplierCircuitBreakerGateway circuitBreakerGateway,
                                SupplierContentCacheRepository contentCacheRepository,
                                SupplierCredentialRepository credentialRepository,
                                SupplierCredentialAuditLogRepository auditLogRepository,
-                               SupplierSecretsService supplierSecretsService) {
+                               SupplierSecretsService supplierSecretsService, LocalDmcService localDmcService,
+                               ByosCredentialService byosCredentialService, SupplierCredentialResolver credentialResolver) {
         this.hotelbedsClient = hotelbedsClient;
         this.stubaClient = stubaClient;
         this.tboClient = tboClient;
@@ -56,12 +67,20 @@ class SupplierAggregationService implements SupplierSearchApi {
         this.credentialRepository = credentialRepository;
         this.auditLogRepository = auditLogRepository;
         this.supplierSecretsService = supplierSecretsService;
+        this.localDmcService = localDmcService;
+        this.byosCredentialService = byosCredentialService;
+        this.credentialResolver = credentialResolver;
     }
 
     @Override
     public List<SupplierSearchResult> searchHotels(String locationCode, LocalDate checkIn, LocalDate checkOut) {
+        // Resolved ONCE, here, on the calling request thread — CurrentPrincipal
+        // reads SecurityContextHolder's ThreadLocal, which does not propagate
+        // into the CompletableFuture.supplyAsync worker thread below (DMC-07's
+        // "invoked once per request, injected downstream" sub-task).
+        String hotelbedsCredential = credentialResolver.resolve(SupplierId.HOTELBEDS).orElse(null);
         List<CompletableFuture<List<SupplierSearchResult>>> futures = List.of(
-            searchAsync(SupplierId.HOTELBEDS, () -> hotelbedsClient.search(locationCode, checkIn, checkOut)),
+            searchAsync(SupplierId.HOTELBEDS, () -> hotelbedsClient.search(locationCode, checkIn, checkOut, hotelbedsCredential)),
             searchAsync(SupplierId.STUBA, () -> stubaClient.search(locationCode, checkIn, checkOut)),
             // TBO's TraceId is itinerary-draft-scoped (PRD §10.2.3); passing
             // null here starts a fresh search-session TraceId each call —
@@ -69,9 +88,10 @@ class SupplierAggregationService implements SupplierSearchApi {
             // work once the itinerary-builder search flow calls this method.
             searchAsync(SupplierId.TBO, () -> tboClient.search(locationCode, checkIn, checkOut, null).results())
         );
-        // TODO: merge Local DMC/BYOS results here too, then apply
-        // deduplication (BOK-20) + the Default Selection Algorithm
-        // (PRD Section 9.2, 9.4).
+        // TODO: merge Local DMC results here too (BYOS Hotelbeds is already
+        // merged above — DMC-08 — via credentialResolver, not a second
+        // fan-out entry), then apply deduplication (BOK-20) + the Default
+        // Selection Algorithm (PRD Section 9.2, 9.4).
         return futures.stream()
             .map(CompletableFuture::join)
             .flatMap(List::stream)
@@ -126,5 +146,60 @@ class SupplierAggregationService implements SupplierSearchApi {
         return credentialRepository.findAll().stream()
             .map(c -> new SupplierCredentialSummary(c.getSupplierId(), true, c.getLastModifiedByUserId(), c.getLastModifiedAt()))
             .toList();
+    }
+
+    @Override
+    public UUID submitLocalDmc(SubmitLocalDmcCommand command) {
+        return localDmcService.submitLocalDmc(command);
+    }
+
+    @Override
+    public void activateLocalDmc(UUID localDmcId, ActivateLocalDmcCommand command) {
+        localDmcService.activateLocalDmc(localDmcId, command);
+    }
+
+    @Override
+    public Page<LocalDmcView> findLocalDmcs(UUID consultantId, Pageable pageable) {
+        return localDmcService.findLocalDmcs(consultantId, pageable);
+    }
+
+    @Override
+    public LocalDmcInventoryUploadResult bulkUploadLocalDmcInventory(UUID localDmcId, String csvContent) {
+        return localDmcService.bulkUploadLocalDmcInventory(localDmcId, csvContent);
+    }
+
+    @Override
+    public Page<LocalDmcInventoryItemView> findLocalDmcInventory(UUID localDmcId, Pageable pageable) {
+        return localDmcService.findLocalDmcInventory(localDmcId, pageable);
+    }
+
+    @Override
+    public void updateLocalDmcInventoryItem(UUID localDmcId, UUID itemId, LocalDmcInventoryItemCommand command) {
+        localDmcService.updateLocalDmcInventoryItem(localDmcId, itemId, command);
+    }
+
+    @Override
+    public void recordLocalDmcBooking(UUID localDmcId) {
+        localDmcService.recordBooking(localDmcId);
+    }
+
+    @Override
+    public void recordLocalDmcCancellation(UUID localDmcId) {
+        localDmcService.recordCancellation(localDmcId);
+    }
+
+    @Override
+    public void recordLocalDmcComplaint(UUID localDmcId) {
+        localDmcService.recordComplaint(localDmcId);
+    }
+
+    @Override
+    public void saveByosCredential(SaveByosCredentialCommand command) {
+        byosCredentialService.save(command.supplierId(), command.secretValue());
+    }
+
+    @Override
+    public List<ByosCredentialSummary> findByosCredentials() {
+        return byosCredentialService.findByosCredentialsForCurrentConsultant();
     }
 }

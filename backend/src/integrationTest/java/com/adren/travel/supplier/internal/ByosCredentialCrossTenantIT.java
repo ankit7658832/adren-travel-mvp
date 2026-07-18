@@ -3,11 +3,16 @@ package com.adren.travel.supplier.internal;
 import com.adren.travel.infra.TestInfrastructure;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
+import com.adren.travel.supplier.ByosCredentialSummary;
 import com.adren.travel.supplier.SupplierId;
+import com.adren.travel.supplier.event.ByosCredentialSavedEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.event.EventListener;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
@@ -17,6 +22,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ContextConfiguration;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -38,12 +44,36 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @ContextConfiguration(initializers = TestInfrastructure.class)
 class ByosCredentialCrossTenantIT {
 
+    @TestConfiguration
+    static class CapturedEventsConfig {
+        @Bean
+        CapturedEvents capturedEvents() {
+            return new CapturedEvents();
+        }
+    }
+
+    static class CapturedEvents {
+        final List<ByosCredentialSavedEvent> received = new ArrayList<>();
+
+        @EventListener
+        void on(ByosCredentialSavedEvent event) {
+            received.add(event);
+        }
+    }
+
     @Autowired
     ByosCredentialService byosCredentialService;
+
+    @Autowired
+    SupplierCredentialResolver credentialResolver;
+
+    @Autowired
+    CapturedEvents capturedEvents;
 
     @AfterEach
     void clearSecurityContext() {
         SecurityContextHolder.clearContext();
+        capturedEvents.received.clear();
     }
 
     @Test
@@ -68,6 +98,77 @@ class ByosCredentialCrossTenantIT {
         authenticateAs(Role.CONSULTANT, consultantB);
         assertThatThrownBy(() -> byosCredentialService.read(consultantA, SupplierId.HOTELBEDS))
             .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void savingAByosCredentialPublishesTheSavedEventDMC06() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        byosCredentialService.save(SupplierId.HOTELBEDS, "consultant-own-hotelbeds-api-key");
+
+        assertThat(capturedEvents.received).containsExactly(new ByosCredentialSavedEvent(consultantId, SupplierId.HOTELBEDS));
+    }
+
+    @Test
+    void findByosCredentialsForCurrentConsultantListsOnlyTheCallersOwnConfiguredSuppliersDMC06() {
+        UUID consultantA = UUID.randomUUID();
+        UUID consultantB = UUID.randomUUID();
+
+        authenticateAs(Role.CONSULTANT, consultantA);
+        byosCredentialService.save(SupplierId.HOTELBEDS, "consultant-a-hotelbeds-key");
+        byosCredentialService.save(SupplierId.STUBA, "consultant-a-stuba-key");
+        SecurityContextHolder.clearContext();
+
+        authenticateAs(Role.CONSULTANT, consultantB);
+        byosCredentialService.save(SupplierId.TBO, "consultant-b-tbo-key");
+
+        authenticateAs(Role.CONSULTANT, consultantA);
+        List<ByosCredentialSummary> summaries = byosCredentialService.findByosCredentialsForCurrentConsultant();
+
+        assertThat(summaries).extracting(ByosCredentialSummary::supplierId)
+            .containsExactlyInAnyOrder(SupplierId.HOTELBEDS, SupplierId.STUBA);
+    }
+
+    /**
+     * DMC-09's core proof for the credential-resolution path a search
+     * request runs through: {@link ByosCredentialService#readForCurrentConsultant}
+     * takes no consultantId parameter at all, so Consultant B's own search
+     * can never resolve Consultant A's BYOS credential — there is no input
+     * through which A's tenant could even be requested.
+     */
+    @Test
+    void readForCurrentConsultantNeverResolvesAnotherConsultantsCredentialDMC09() {
+        UUID consultantA = UUID.randomUUID();
+        UUID consultantB = UUID.randomUUID();
+
+        authenticateAs(Role.CONSULTANT, consultantA);
+        byosCredentialService.save(SupplierId.HOTELBEDS, "consultant-a-hotelbeds-key");
+        SecurityContextHolder.clearContext();
+
+        authenticateAs(Role.CONSULTANT, consultantB);
+        assertThat(byosCredentialService.readForCurrentConsultant(SupplierId.HOTELBEDS)).isEmpty();
+    }
+
+    /**
+     * The exact call {@code SupplierAggregationService.searchHotels} makes
+     * at the top of every search request — full real chain (Postgres + KMS),
+     * not just {@code ByosCredentialService} in isolation. Consultant B's
+     * search resolves no credential at all here (no Adren-owned Hotelbeds
+     * credential exists in this test's Postgres either) rather than ever
+     * falling through to Consultant A's BYOS row.
+     */
+    @Test
+    void credentialResolverNeverResolvesAnotherConsultantsByosCredentialDuringSearchDMC09() {
+        UUID consultantA = UUID.randomUUID();
+        UUID consultantB = UUID.randomUUID();
+
+        authenticateAs(Role.CONSULTANT, consultantA);
+        byosCredentialService.save(SupplierId.HOTELBEDS, "consultant-a-hotelbeds-key");
+        SecurityContextHolder.clearContext();
+
+        authenticateAs(Role.CONSULTANT, consultantB);
+        assertThat(credentialResolver.resolve(SupplierId.HOTELBEDS)).isEmpty();
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

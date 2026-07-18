@@ -87,14 +87,33 @@ class SupplierSearchApiMethodSecurityTest {
         }
 
         @Bean
+        LocalDmcService localDmcService() {
+            return Mockito.mock(LocalDmcService.class);
+        }
+
+        @Bean
+        ByosCredentialService byosCredentialService() {
+            return Mockito.mock(ByosCredentialService.class);
+        }
+
+        @Bean
+        SupplierCredentialResolver credentialResolver() {
+            return Mockito.mock(SupplierCredentialResolver.class);
+        }
+
+        @Bean
         SupplierSearchApi supplierSearchApi(HotelbedsClient hotelbedsClient, StubaClient stubaClient,
                                              TboClient tboClient, SupplierCircuitBreakerGateway circuitBreakerGateway,
                                              SupplierContentCacheRepository contentCacheRepository,
                                              SupplierCredentialRepository repo,
                                              SupplierCredentialAuditLogRepository auditRepo,
-                                             SupplierSecretsService supplierSecretsService) {
+                                             SupplierSecretsService supplierSecretsService,
+                                             LocalDmcService localDmcService,
+                                             ByosCredentialService byosCredentialService,
+                                             SupplierCredentialResolver credentialResolver) {
             return new SupplierAggregationService(hotelbedsClient, stubaClient, tboClient, circuitBreakerGateway,
-                contentCacheRepository, repo, auditRepo, supplierSecretsService);
+                contentCacheRepository, repo, auditRepo, supplierSecretsService, localDmcService, byosCredentialService,
+                credentialResolver);
         }
     }
 
@@ -131,6 +150,56 @@ class SupplierSearchApiMethodSecurityTest {
         authenticateAs(Role.CONSULTANT);
 
         assertThatThrownBy(() -> supplierSearchApi.listSupplierCredentials())
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void aConsultantCannotRecordALocalDmcBookingDMC04() {
+        authenticateAs(Role.CONSULTANT);
+
+        assertThatThrownBy(() -> supplierSearchApi.recordLocalDmcBooking(UUID.randomUUID()))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void aConsultantCannotRecordALocalDmcCancellationDMC04() {
+        authenticateAs(Role.CONSULTANT);
+
+        assertThatThrownBy(() -> supplierSearchApi.recordLocalDmcCancellation(UUID.randomUUID()))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void aConsultantCannotRecordALocalDmcComplaintDMC04() {
+        authenticateAs(Role.CONSULTANT);
+
+        assertThatThrownBy(() -> supplierSearchApi.recordLocalDmcComplaint(UUID.randomUUID()))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void aSuperAdminCannotSaveAByosCredentialDMC06() {
+        authenticateAs(Role.SUPER_ADMIN);
+
+        assertThatThrownBy(() -> supplierSearchApi.saveByosCredential(
+            new com.adren.travel.supplier.SaveByosCredentialCommand(SupplierId.HOTELBEDS, "secret")))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void aUserCannotSaveAByosCredentialDMC06() {
+        authenticateAs(Role.USER);
+
+        assertThatThrownBy(() -> supplierSearchApi.saveByosCredential(
+            new com.adren.travel.supplier.SaveByosCredentialCommand(SupplierId.HOTELBEDS, "secret")))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void aSuperAdminCannotListByosCredentialsDMC06() {
+        authenticateAs(Role.SUPER_ADMIN);
+
+        assertThatThrownBy(supplierSearchApi::findByosCredentials)
             .isInstanceOf(AccessDeniedException.class);
     }
 

@@ -4,6 +4,7 @@ import com.adren.travel.supplier.SupplierId;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
 import software.amazon.awssdk.services.secretsmanager.model.CreateSecretRequest;
+import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRequest;
 import software.amazon.awssdk.services.secretsmanager.model.PutSecretValueRequest;
 import software.amazon.awssdk.services.secretsmanager.model.ResourceExistsException;
 
@@ -40,5 +41,12 @@ class AwsSupplierSecretsService implements SupplierSecretsService {
                 .secretString(secretValue)
                 .build()).arn();
         }
+    }
+
+    @Override
+    public String getSecretValue(String secretArn) {
+        return secretsManagerClient.getSecretValue(GetSecretValueRequest.builder()
+            .secretId(secretArn)
+            .build()).secretString();
     }
 }

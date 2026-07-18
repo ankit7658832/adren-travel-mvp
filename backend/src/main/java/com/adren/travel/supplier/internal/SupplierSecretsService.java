@@ -12,4 +12,7 @@ interface SupplierSecretsService {
 
     /** Creates or rotates the secret for {@code supplierId}, returning its ARN. */
     String storeSecret(SupplierId supplierId, String secretValue);
+
+    /** DMC-07 — resolves Adren's own credential value by its Secrets Manager ARN. */
+    String getSecretValue(String secretArn);
 }
