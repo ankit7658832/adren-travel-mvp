@@ -228,6 +228,33 @@ class SupplierAggregationServiceTest {
         assertThat(results.get(0).rating()).isEqualTo(4.3);
     }
 
+    /**
+     * DMC-08's actual acceptance criterion, proven at the boundary that
+     * matters: content-cache enrichment (BOK-27) is applied identically
+     * whether the underlying Hotelbeds call used a BYOS or an Adren-owned
+     * credential — {@link #enrichWithCachedContent} runs over the returned
+     * {@link SupplierSearchResult} list without ever knowing which source
+     * produced it, since {@code SupplierSearchResult} carries no
+     * credential-source field at all.
+     */
+    @Test
+    void byosSourcedHotelbedsResultsGoThroughTheSameNormalizationAndEnrichmentPipelineDMC08() {
+        when(credentialResolver.resolve(SupplierId.HOTELBEDS)).thenReturn(Optional.of("consultant-own-hotelbeds-key"));
+        when(hotelbedsClient.search("BOM", checkIn(), checkOut(), "consultant-own-hotelbeds-key"))
+            .thenReturn(List.of(hotelResult(SupplierId.HOTELBEDS)));
+        when(stubaClient.search("BOM", checkIn(), checkOut())).thenReturn(List.of());
+        when(tboClient.search("BOM", checkIn(), checkOut(), null)).thenReturn(new TboClient.TboSearchResponse(List.of(), "trace-id"));
+        SupplierContentCache cached = new SupplierContentCache(SupplierId.HOTELBEDS, "rate-id-HOTELBEDS");
+        cached.refresh("Cached Hotel Name", 4.3);
+        when(contentCacheRepository.findBySupplierIdAndSupplierContentId(SupplierId.HOTELBEDS, "rate-id-HOTELBEDS"))
+            .thenReturn(Optional.of(cached));
+
+        List<SupplierSearchResult> results = service.searchHotels("BOM", checkIn(), checkOut());
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).rating()).isEqualTo(4.3);
+    }
+
     @Test
     void saveByosCredentialDelegatesToByosCredentialServiceDMC06() {
         var command = new com.adren.travel.supplier.SaveByosCredentialCommand(SupplierId.HOTELBEDS, "raw-secret");
