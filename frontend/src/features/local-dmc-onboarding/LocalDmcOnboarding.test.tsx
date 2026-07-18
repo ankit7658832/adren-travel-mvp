@@ -77,6 +77,71 @@ describe("LocalDmcOnboarding", () => {
     expect(screen.getByText("PENDING")).toBeInTheDocument();
   });
 
+  it("shows a flag badge for a Local DMC whose quality threshold was exceeded DMC05", async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: {
+        content: [
+          {
+            localDmcId: "dmc-1",
+            consultantId: "consultant-1",
+            businessName: "Goa Local Tours",
+            productCategories: ["TRANSFER"],
+            sampleRatesSummary: "x",
+            referencesInfo: "y",
+            status: "ACTIVE",
+            verificationNotes: "Checked",
+            cancellationRate: 0.5,
+            complaintCount: 0,
+            flagged: true,
+            inventoryStale: false,
+            createdAt: "2026-07-01T10:00:00Z",
+          },
+        ],
+        page: 0,
+        size: 50,
+        totalElements: 1,
+        totalPages: 1,
+      },
+    });
+    renderWithProviders();
+
+    await waitFor(() => {
+      expect(screen.getByText(/flagged: quality threshold exceeded/i)).toBeInTheDocument();
+    });
+  });
+
+  it("shows no flag badge for a Local DMC that has not been flagged", async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: {
+        content: [
+          {
+            localDmcId: "dmc-1",
+            consultantId: "consultant-1",
+            businessName: "Goa Local Tours",
+            productCategories: ["TRANSFER"],
+            sampleRatesSummary: "x",
+            referencesInfo: "y",
+            status: "ACTIVE",
+            verificationNotes: "Checked",
+            cancellationRate: 0,
+            complaintCount: 0,
+            flagged: false,
+            inventoryStale: false,
+            createdAt: "2026-07-01T10:00:00Z",
+          },
+        ],
+        page: 0,
+        size: 50,
+        totalElements: 1,
+        totalPages: 1,
+      },
+    });
+    renderWithProviders();
+
+    await waitFor(() => expect(screen.getByText("Goa Local Tours")).toBeInTheDocument());
+    expect(screen.queryByText(/flagged: quality threshold exceeded/i)).not.toBeInTheDocument();
+  });
+
   it("error state: shows a retry option when the list fetch fails", async () => {
     vi.mocked(apiClient.get).mockRejectedValue(new Error("network error"));
     renderWithProviders();

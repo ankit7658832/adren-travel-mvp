@@ -140,6 +140,30 @@ class SupplierSearchApiMethodSecurityTest {
             .isInstanceOf(AccessDeniedException.class);
     }
 
+    @Test
+    void aConsultantCannotRecordALocalDmcBookingDMC04() {
+        authenticateAs(Role.CONSULTANT);
+
+        assertThatThrownBy(() -> supplierSearchApi.recordLocalDmcBooking(UUID.randomUUID()))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void aConsultantCannotRecordALocalDmcCancellationDMC04() {
+        authenticateAs(Role.CONSULTANT);
+
+        assertThatThrownBy(() -> supplierSearchApi.recordLocalDmcCancellation(UUID.randomUUID()))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void aConsultantCannotRecordALocalDmcComplaintDMC04() {
+        authenticateAs(Role.CONSULTANT);
+
+        assertThatThrownBy(() -> supplierSearchApi.recordLocalDmcComplaint(UUID.randomUUID()))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
     private static void authenticateAs(Role role) {
         AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), role,
             role == Role.SUPER_ADMIN ? null : UUID.randomUUID());

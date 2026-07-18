@@ -161,4 +161,19 @@ class SupplierAggregationService implements SupplierSearchApi {
     public Page<LocalDmcInventoryItemView> findLocalDmcInventory(UUID localDmcId, Pageable pageable) {
         return localDmcService.findLocalDmcInventory(localDmcId, pageable);
     }
+
+    @Override
+    public void recordLocalDmcBooking(UUID localDmcId) {
+        localDmcService.recordBooking(localDmcId);
+    }
+
+    @Override
+    public void recordLocalDmcCancellation(UUID localDmcId) {
+        localDmcService.recordCancellation(localDmcId);
+    }
+
+    @Override
+    public void recordLocalDmcComplaint(UUID localDmcId) {
+        localDmcService.recordComplaint(localDmcId);
+    }
 }

@@ -126,7 +126,10 @@ export function LocalDmcOnboarding() {
                   <p className="text-base text-neutral-900">{dmc.businessName}</p>
                   <p className="text-sm text-neutral-600">{dmc.productCategories.join(", ")}</p>
                 </div>
-                <Badge tone={dmc.status === "ACTIVE" ? "success" : "neutral"}>{dmc.status}</Badge>
+                <div className="flex items-center gap-2">
+                  {dmc.flagged && <Badge tone="error">Flagged: quality threshold exceeded</Badge>}
+                  <Badge tone={dmc.status === "ACTIVE" ? "success" : "neutral"}>{dmc.status}</Badge>
+                </div>
               </li>
             ))}
           </ul>

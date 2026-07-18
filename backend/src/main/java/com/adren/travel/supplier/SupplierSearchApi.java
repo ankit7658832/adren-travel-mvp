@@ -78,4 +78,34 @@ public interface SupplierSearchApi {
     /** Browses one Local DMC's inventory items (PRD §10.2.8, DMC-03/10/11). */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT')")
     Page<LocalDmcInventoryItemView> findLocalDmcInventory(UUID localDmcId, Pageable pageable);
+
+    /**
+     * Records that a booking was made against a Local DMC product (PRD
+     * §10.3 step 5, DMC-04) — the denominator for its rolling cancellation
+     * rate. {@code SUPER_ADMIN}-only: unlike every other method here, this
+     * isn't a Consultant-initiated action — it's the correct, real,
+     * testable hook a future search→booking integration would call once
+     * Local DMC inventory is actually wired into a bookable line item (it
+     * isn't yet anywhere in this story catalogue, unlike BYOS/DMC-08) — see
+     * {@code LocalDmcService}'s Javadoc for the full reasoning.
+     */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    void recordLocalDmcBooking(UUID localDmcId);
+
+    /**
+     * Records a cancellation against a Local DMC product (PRD §10.3 step
+     * 5, DMC-04) — recalculates the rolling cancellation rate and, once it
+     * exceeds the configured threshold, flags the record (DMC-05). Same
+     * scope/reasoning as {@link #recordLocalDmcBooking}.
+     */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    void recordLocalDmcCancellation(UUID localDmcId);
+
+    /**
+     * Records a customer complaint against a Local DMC (PRD §10.3 step 5,
+     * DMC-04) — once the count reaches the configured threshold, flags the
+     * record (DMC-05). Same scope/reasoning as {@link #recordLocalDmcBooking}.
+     */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    void recordLocalDmcComplaint(UUID localDmcId);
 }

@@ -149,6 +149,52 @@ class SupplierModuleIntegrationTests {
     }
 
     @Test
+    void recordingBookingsAndACancellationRecalculatesTheRollingRateDMC04() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        UUID localDmcId = supplierSearchApi.submitLocalDmc(new SubmitLocalDmcCommand(
+            "Goa Local Tours", List.of("TRANSFER"), "x", "y"));
+        SecurityContextHolder.clearContext();
+        authenticateAs(Role.SUPER_ADMIN, null);
+
+        supplierSearchApi.recordLocalDmcBooking(localDmcId);
+        supplierSearchApi.recordLocalDmcBooking(localDmcId);
+        supplierSearchApi.recordLocalDmcBooking(localDmcId);
+        supplierSearchApi.recordLocalDmcBooking(localDmcId);
+        supplierSearchApi.recordLocalDmcCancellation(localDmcId);
+
+        var row = jdbcTemplate.queryForMap(
+            "SELECT total_bookings_count, cancelled_bookings_count, cancellation_rate FROM local_dmc_record WHERE local_dmc_id = ?",
+            localDmcId);
+        assertThat(row.get("total_bookings_count")).isEqualTo(4);
+        assertThat(row.get("cancelled_bookings_count")).isEqualTo(1);
+        assertThat(((java.math.BigDecimal) row.get("cancellation_rate"))).isEqualByComparingTo("0.2500");
+    }
+
+    @Test
+    void exceedingTheCancellationRateThresholdFlagsTheRealPersistedRecordDMC05() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        UUID localDmcId = supplierSearchApi.submitLocalDmc(new SubmitLocalDmcCommand(
+            "Goa Local Tours", List.of("TRANSFER"), "x", "y"));
+        SecurityContextHolder.clearContext();
+        authenticateAs(Role.SUPER_ADMIN, null);
+
+        // Default threshold (application.yml) is 20% — one booking, one
+        // cancellation is 100%, well past it.
+        supplierSearchApi.recordLocalDmcBooking(localDmcId);
+        supplierSearchApi.recordLocalDmcCancellation(localDmcId);
+
+        Boolean flagged = jdbcTemplate.queryForObject(
+            "SELECT flagged FROM local_dmc_record WHERE local_dmc_id = ?", Boolean.class, localDmcId);
+        assertThat(flagged).isTrue();
+
+        // Visible via the real findLocalDmcs read path too, not just the raw column.
+        var page = supplierSearchApi.findLocalDmcs(consultantId, PageRequest.of(0, 20));
+        assertThat(page.getContent()).extracting(LocalDmcView::flagged).containsExactly(true);
+    }
+
+    @Test
     void findLocalDmcsScopesAConsultantToTheirOwnRecordsOnlyFND03() {
         UUID consultantA = UUID.randomUUID();
         UUID consultantB = UUID.randomUUID();
