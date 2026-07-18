@@ -202,6 +202,43 @@ class AiModuleIntegrationTests {
     }
 
     @Test
+    void findAuditLogAsSuperAdminSeesEntriesAcrossConsultantsAI11() {
+        UUID consultantA = UUID.randomUUID();
+        UUID consultantB = UUID.randomUUID();
+        UUID auditLogA = UUID.randomUUID();
+        UUID auditLogB = UUID.randomUUID();
+        AiSuggestedLineItem lineItem = new AiSuggestedLineItem(SupplierId.HOTELBEDS, "stub-rate-key",
+            "Stub Hotel", "Deluxe Room", new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), Instant.now());
+        seedSuggestedAuditLog(auditLogA, consultantA, UUID.randomUUID(), lineItem);
+        seedSuggestedAuditLog(auditLogB, consultantB, UUID.randomUUID(), lineItem);
+        authenticateAs(Role.SUPER_ADMIN, null);
+
+        var page = aiApi.findAuditLog(null, org.springframework.data.domain.PageRequest.of(0, 100));
+
+        assertThat(page.getContent()).extracting(AiAuditLogEntryView::auditLogId)
+            .contains(auditLogA, auditLogB);
+    }
+
+    @Test
+    void findAuditLogFilteredByConsultantOnlyReturnsThatConsultantsEntriesAI11() {
+        UUID consultantA = UUID.randomUUID();
+        UUID consultantB = UUID.randomUUID();
+        UUID auditLogA = UUID.randomUUID();
+        UUID auditLogB = UUID.randomUUID();
+        AiSuggestedLineItem lineItem = new AiSuggestedLineItem(SupplierId.HOTELBEDS, "stub-rate-key",
+            "Stub Hotel", "Deluxe Room", new Money(BigDecimal.valueOf(5000), CurrencyCode.INR), Instant.now());
+        seedSuggestedAuditLog(auditLogA, consultantA, UUID.randomUUID(), lineItem);
+        seedSuggestedAuditLog(auditLogB, consultantB, UUID.randomUUID(), lineItem);
+        authenticateAs(Role.SUPER_ADMIN, null);
+
+        var page = aiApi.findAuditLog(consultantA, org.springframework.data.domain.PageRequest.of(0, 100));
+
+        assertThat(page.getContent()).extracting(AiAuditLogEntryView::auditLogId).contains(auditLogA)
+            .doesNotContain(auditLogB);
+        assertThat(page.getContent()).allSatisfy(entry -> assertThat(entry.consultantId()).isEqualTo(consultantA));
+    }
+
+    @Test
     void aConsultantCannotGenerateASuggestionForAnotherConsultantFND03() {
         UUID ownConsultantId = UUID.randomUUID();
         UUID otherConsultantId = UUID.randomUUID();

@@ -2,6 +2,7 @@ package com.adren.travel.ai.internal;
 
 import com.adren.travel.ai.AdCreativeGenerationResult;
 import com.adren.travel.ai.AdCreativeSuggestion;
+import com.adren.travel.ai.AiAuditLogEntryView;
 import com.adren.travel.ai.AiItineraryGenerationResult;
 import com.adren.travel.ai.AiItinerarySuggestion;
 import com.adren.travel.ai.AiPricingRevalidationResult;
@@ -684,6 +685,38 @@ class AiServiceImplTest {
         assertThatThrownBy(() -> service.generateAdCreative(new GenerateAdCreativeCommand(
             otherConsultantId, UUID.randomUUID(), "Goa Beach Escape", "A relaxing beach package", price, 1)))
             .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void findAuditLogFiltersByConsultantWhenOneIsGivenAI11() {
+        UUID consultantId = UUID.randomUUID();
+        UUID itineraryId = UUID.randomUUID();
+        UUID auditLogId = UUID.randomUUID();
+        AiSuggestionAuditLog log = new AiSuggestionAuditLog(auditLogId, UUID.randomUUID(), 1, consultantId,
+            itineraryId, "{}", "[]", "{}", null, AiSuggestionDisposition.SUGGESTED);
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        when(auditLogRepository.findByConsultantIdOrderByCreatedAtDesc(consultantId, pageable))
+            .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(log)));
+
+        AiAuditLogEntryView view = service.findAuditLog(consultantId, pageable).getContent().get(0);
+
+        assertThat(view.auditLogId()).isEqualTo(auditLogId);
+        assertThat(view.consultantId()).isEqualTo(consultantId);
+        assertThat(view.itineraryId()).isEqualTo(itineraryId);
+        assertThat(view.disposition()).isEqualTo("SUGGESTED");
+        verify(auditLogRepository, org.mockito.Mockito.never()).findAllByOrderByCreatedAtDesc(any());
+    }
+
+    @Test
+    void findAuditLogBrowsesEveryConsultantWhenNoneIsGivenAI11() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        when(auditLogRepository.findAllByOrderByCreatedAtDesc(pageable))
+            .thenReturn(org.springframework.data.domain.Page.empty());
+
+        service.findAuditLog(null, pageable);
+
+        verify(auditLogRepository).findAllByOrderByCreatedAtDesc(pageable);
+        verify(auditLogRepository, org.mockito.Mockito.never()).findByConsultantIdOrderByCreatedAtDesc(any(), any());
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

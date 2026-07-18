@@ -1,5 +1,7 @@
 package com.adren.travel.ai;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.UUID;
@@ -81,4 +83,16 @@ public interface AiApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     AdCreativeGenerationResult generateAdCreative(GenerateAdCreativeCommand command);
+
+    /**
+     * Browses the full AI suggestion audit trail (PRD §6 — "View AI
+     * governance/audit logs (Yes, all)", §21.6, AI-11), every input/
+     * source-data/output/disposition, optionally filtered to one
+     * Consultant. {@code SUPER_ADMIN}-only — unlike every other method on
+     * this Api, a Consultant/User has no equivalent "my own" view here;
+     * PRD §6 grants this company-wide visibility to Super Admin alone, not
+     * a self-scoped subset the way most of this Api's methods work.
+     */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    Page<AiAuditLogEntryView> findAuditLog(UUID consultantId, Pageable pageable);
 }

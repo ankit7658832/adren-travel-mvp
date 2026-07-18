@@ -4,6 +4,7 @@ import com.adren.travel.ai.AdCreativeGenerationResult;
 import com.adren.travel.ai.AdCreativeSuggestion;
 import com.adren.travel.ai.AdCreativeVariant;
 import com.adren.travel.ai.AiApi;
+import com.adren.travel.ai.AiAuditLogEntryView;
 import com.adren.travel.ai.AiItineraryGenerationResult;
 import com.adren.travel.ai.AiItinerarySuggestion;
 import com.adren.travel.ai.AiPricingRevalidationResult;
@@ -22,6 +23,8 @@ import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.Money;
 import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.supplier.SupplierSearchResult;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -209,6 +212,27 @@ class AiServiceImpl implements AiApi {
 
         approvalRepository.saveAndFlush(new AiSuggestionApproval(UUID.randomUUID(), command.auditLogId(),
             command.approvedByUserId(), finalVersionJson, wasEdited));
+    }
+
+    /**
+     * AI-11, PRD §6/§21.6 — SUPER_ADMIN-only, enforced by {@link AiApi}'s
+     * own {@code @PreAuthorize} (never a self-scoped {@code
+     * CurrentPrincipal.resolveTenantScope} check the way every other
+     * method here uses, since this is the one company-wide view PRD §6
+     * grants).
+     */
+    @Override
+    public Page<AiAuditLogEntryView> findAuditLog(UUID consultantId, Pageable pageable) {
+        Page<AiSuggestionAuditLog> page = consultantId != null
+            ? auditLogRepository.findByConsultantIdOrderByCreatedAtDesc(consultantId, pageable)
+            : auditLogRepository.findAllByOrderByCreatedAtDesc(pageable);
+        return page.map(AiServiceImpl::toAuditLogEntryView);
+    }
+
+    private static AiAuditLogEntryView toAuditLogEntryView(AiSuggestionAuditLog log) {
+        return new AiAuditLogEntryView(log.getAuditLogId(), log.getCorrelationId(), log.getAttemptNumber(),
+            log.getConsultantId(), log.getItineraryId(), log.getRequestInputJson(), log.getSourceDataSnapshotJson(),
+            log.getAiOutputJson(), log.getDisposition().name(), log.getCreatedAt());
     }
 
     /**

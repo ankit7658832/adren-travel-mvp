@@ -97,7 +97,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **AI-08** — capture both the original ai suggestion and the consultant s edited final version in the audit trail
 - [x] **AI-09** — re validate ai suggested pricing at booking time if it has gone stale
 - [x] **AI-10** — build the complete with ai entry point with source availability badges
-- [ ] **AI-11** — build the ai governance audit log viewer in the super admin console
+- [x] **AI-11** — build the ai governance audit log viewer in the super admin console
 - [x] **AI-12** — generate ai ad creative variants grounded in package content and live pricing
 - [x] **AI-13** — bound ai response latency to protect the 10 minute itinerary target
 
