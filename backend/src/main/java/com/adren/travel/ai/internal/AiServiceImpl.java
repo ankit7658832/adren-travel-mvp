@@ -5,6 +5,7 @@ import com.adren.travel.ai.AdCreativeSuggestion;
 import com.adren.travel.ai.AdCreativeVariant;
 import com.adren.travel.ai.AiApi;
 import com.adren.travel.ai.AiAuditLogEntryView;
+import com.adren.travel.ai.AiServiceUnavailableException;
 import com.adren.travel.ai.AiItineraryGenerationResult;
 import com.adren.travel.ai.AiItinerarySuggestion;
 import com.adren.travel.ai.AiPricingRevalidationResult;
@@ -419,7 +420,11 @@ class AiServiceImpl implements AiApi {
                 boolean retryable = e instanceof GroqClient.GroqTimeoutException
                     || e instanceof GroqClient.GroqRateLimitException;
                 if (!retryable || attempt == maxAttempts) {
-                    throw e;
+                    // Never let ai.internal.GroqClient's exception type
+                    // cross this module's public boundary (RULES.md §4.1)
+                    // — see AiServiceUnavailableException's Javadoc for the
+                    // real client-visible-error bug this closed.
+                    throw new AiServiceUnavailableException();
                 }
             }
         }
@@ -521,7 +526,11 @@ class AiServiceImpl implements AiApi {
                 boolean retryable = e instanceof GroqClient.GroqTimeoutException
                     || e instanceof GroqClient.GroqRateLimitException;
                 if (!retryable || attempt == maxAttempts) {
-                    throw e;
+                    // Never let ai.internal.GroqClient's exception type
+                    // cross this module's public boundary (RULES.md §4.1)
+                    // — see AiServiceUnavailableException's Javadoc for the
+                    // real client-visible-error bug this closed.
+                    throw new AiServiceUnavailableException();
                 }
             }
         }

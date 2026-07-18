@@ -213,21 +213,27 @@ class AiServiceImplTest {
     }
 
     @Test
-    void logsTheGroqFailureAndRethrowsRatherThanFabricatingASuggestion() {
+    void logsTheGroqFailureAndThrowsAPublicUnavailableExceptionRatherThanFabricatingASuggestion() {
         UUID consultantId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
         when(supplierSearchApi.searchHotels(anyString(), any(), any())).thenReturn(List.of(TAJ));
         GroqClient.GroqAuthenticationException groqFailure = new GroqClient.GroqAuthenticationException(401, null);
         when(groqClient.chatCompletion(anyString(), anyString(), anyBoolean())).thenThrow(groqFailure);
 
+        // AiServiceUnavailableException, not the raw internal GroqClientException
+        // — see that class's Javadoc (Stage 4 Step C adversarial finding: the
+        // internal type must never cross ai's public boundary, RULES.md §4.1).
         assertThatThrownBy(() -> service.generateItinerary(new GenerateItineraryCommand(
             consultantId, UUID.randomUUID(), "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
             "Anything", null, false)))
-            .isSameAs(groqFailure);
+            .isInstanceOf(com.adren.travel.ai.AiServiceUnavailableException.class);
 
         ArgumentCaptor<AiSuggestionAuditLog> captor = ArgumentCaptor.forClass(AiSuggestionAuditLog.class);
         verify(auditLogRecorder).record(captor.capture());
         assertThat(captor.getValue().getDisposition()).isEqualTo(AiSuggestionDisposition.GROQ_ERROR);
+        // The real Groq error detail is still fully captured in the audit
+        // trail even though the client-facing exception is now generic.
+        assertThat(captor.getValue().getAiOutputJson()).isEqualTo(groqFailure.getMessage());
     }
 
     @Test
@@ -243,7 +249,7 @@ class AiServiceImplTest {
         assertThatThrownBy(() -> service.generateItinerary(new GenerateItineraryCommand(
             consultantId, UUID.randomUUID(), "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
             "Anything", null, false)))
-            .isSameAs(timeout);
+            .isInstanceOf(com.adren.travel.ai.AiServiceUnavailableException.class);
 
         verify(groqClient, times(3)).chatCompletion(any(), any(), anyBoolean());
         ArgumentCaptor<AiSuggestionAuditLog> captor = ArgumentCaptor.forClass(AiSuggestionAuditLog.class);
@@ -298,7 +304,7 @@ class AiServiceImplTest {
         assertThatThrownBy(() -> service.generateItinerary(new GenerateItineraryCommand(
             consultantId, UUID.randomUUID(), "GOA", LocalDate.now().plusDays(30), LocalDate.now().plusDays(34),
             "Anything", null, false)))
-            .isSameAs(authFailure);
+            .isInstanceOf(com.adren.travel.ai.AiServiceUnavailableException.class);
 
         // Rate limit (attempt 1) is retryable, so a 2nd attempt happens;
         // that 2nd attempt hits an auth failure, which is NOT retryable,
@@ -658,7 +664,7 @@ class AiServiceImplTest {
     }
 
     @Test
-    void generateAdCreativeLogsTheGroqFailureAndRethrowsRatherThanFabricatingCopyAI12() {
+    void generateAdCreativeLogsTheGroqFailureAndThrowsAPublicUnavailableExceptionRatherThanFabricatingCopyAI12() {
         UUID consultantId = UUID.randomUUID();
         UUID packageId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
@@ -668,7 +674,7 @@ class AiServiceImplTest {
 
         assertThatThrownBy(() -> service.generateAdCreative(new GenerateAdCreativeCommand(
             consultantId, packageId, "Goa Beach Escape", "A relaxing beach package", price, 2)))
-            .isSameAs(groqFailure);
+            .isInstanceOf(com.adren.travel.ai.AiServiceUnavailableException.class);
 
         ArgumentCaptor<AdCreativeAuditLog> captor = ArgumentCaptor.forClass(AdCreativeAuditLog.class);
         verify(adCreativeAuditLogRecorder).record(captor.capture());
