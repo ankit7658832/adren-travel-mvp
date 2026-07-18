@@ -64,4 +64,18 @@ public interface SupplierSearchApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT')")
     Page<LocalDmcView> findLocalDmcs(UUID consultantId, Pageable pageable);
+
+    /**
+     * Bulk-uploads a Local DMC's inventory catalogue from a CSV (PRD
+     * §10.2.8, DMC-03) — all-or-nothing: any row missing a required field
+     * (product name, category, net rate, currency, cancellation policy
+     * text, or availability dates) rejects the WHOLE upload with row-level,
+     * field-level errors, never a partial silent import.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT')")
+    LocalDmcInventoryUploadResult bulkUploadLocalDmcInventory(UUID localDmcId, String csvContent);
+
+    /** Browses one Local DMC's inventory items (PRD §10.2.8, DMC-03/10/11). */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT')")
+    Page<LocalDmcInventoryItemView> findLocalDmcInventory(UUID localDmcId, Pageable pageable);
 }

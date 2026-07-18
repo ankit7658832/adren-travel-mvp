@@ -3,8 +3,13 @@ package com.adren.travel.supplier.internal;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.supplier.ActivateLocalDmcCommand;
+import com.adren.travel.supplier.LocalDmcInventoryItemCommand;
+import com.adren.travel.supplier.LocalDmcInventoryItemView;
+import com.adren.travel.supplier.LocalDmcInventoryUploadResult;
 import com.adren.travel.supplier.LocalDmcView;
 import com.adren.travel.supplier.SubmitLocalDmcCommand;
+import com.adren.travel.supplier.internal.localdmc.LocalDmcInventoryItem;
+import com.adren.travel.supplier.internal.localdmc.LocalDmcInventoryItemRepository;
 import com.adren.travel.supplier.internal.localdmc.LocalDmcRecord;
 import com.adren.travel.supplier.internal.localdmc.LocalDmcRecordRepository;
 import org.springframework.data.domain.Page;
@@ -12,7 +17,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -45,10 +49,15 @@ class LocalDmcService {
 
     private final LocalDmcRecordRepository repository;
     private final LocalDmcQualityThresholds thresholds;
+    private final LocalDmcInventoryItemRepository inventoryRepository;
+    private final LocalDmcInventoryCsvParser csvParser;
 
-    LocalDmcService(LocalDmcRecordRepository repository, LocalDmcQualityThresholds thresholds) {
+    LocalDmcService(LocalDmcRecordRepository repository, LocalDmcQualityThresholds thresholds,
+                    LocalDmcInventoryItemRepository inventoryRepository, LocalDmcInventoryCsvParser csvParser) {
         this.repository = repository;
         this.thresholds = thresholds;
+        this.inventoryRepository = inventoryRepository;
+        this.csvParser = csvParser;
     }
 
     @Transactional
@@ -117,6 +126,38 @@ class LocalDmcService {
 
     List<LocalDmcRecord> findAllActive() {
         return repository.findByStatus(com.adren.travel.supplier.internal.localdmc.LocalDmcStatus.ACTIVE);
+    }
+
+    /**
+     * DMC-03: all-or-nothing — a single invalid row rejects the WHOLE
+     * upload with every row's field errors; only a fully-clean CSV
+     * persists anything, per the story's own "not a partial silent
+     * import" AC.
+     */
+    @Transactional
+    LocalDmcInventoryUploadResult bulkUploadLocalDmcInventory(UUID localDmcId, String csvContent) {
+        findOwned(localDmcId);
+        LocalDmcInventoryCsvParser.ParseResult parsed = csvParser.parse(csvContent);
+        if (!parsed.errors().isEmpty()) {
+            return new LocalDmcInventoryUploadResult(0, parsed.errors());
+        }
+        for (LocalDmcInventoryItemCommand row : parsed.validRows()) {
+            inventoryRepository.save(new LocalDmcInventoryItem(UUID.randomUUID(), localDmcId, row.productName(),
+                row.category(), row.netRate(), row.netRateCurrency(), row.cancellationPolicyText(),
+                row.availableFrom(), row.availableTo()));
+        }
+        return new LocalDmcInventoryUploadResult(parsed.validRows().size(), List.of());
+    }
+
+    Page<LocalDmcInventoryItemView> findLocalDmcInventory(UUID localDmcId, Pageable pageable) {
+        findOwned(localDmcId);
+        return inventoryRepository.findByLocalDmcId(localDmcId, pageable).map(LocalDmcService::toInventoryView);
+    }
+
+    private static LocalDmcInventoryItemView toInventoryView(LocalDmcInventoryItem item) {
+        return new LocalDmcInventoryItemView(item.getItemId(), item.getLocalDmcId(), item.getProductName(),
+            item.getCategory().name(), item.getNetRate(), item.getNetRateCurrency().name(),
+            item.getCancellationPolicyText(), item.getAvailableFrom(), item.getAvailableTo(), item.getUpdatedAt());
     }
 
     private static LocalDmcView toView(LocalDmcRecord record) {

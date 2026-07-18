@@ -2,6 +2,8 @@ package com.adren.travel.supplier.internal;
 
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.supplier.ActivateLocalDmcCommand;
+import com.adren.travel.supplier.LocalDmcInventoryItemView;
+import com.adren.travel.supplier.LocalDmcInventoryUploadResult;
 import com.adren.travel.supplier.LocalDmcView;
 import com.adren.travel.supplier.SubmitLocalDmcCommand;
 import com.adren.travel.supplier.SupplierCredentialSummary;
@@ -148,5 +150,15 @@ class SupplierAggregationService implements SupplierSearchApi {
     @Override
     public Page<LocalDmcView> findLocalDmcs(UUID consultantId, Pageable pageable) {
         return localDmcService.findLocalDmcs(consultantId, pageable);
+    }
+
+    @Override
+    public LocalDmcInventoryUploadResult bulkUploadLocalDmcInventory(UUID localDmcId, String csvContent) {
+        return localDmcService.bulkUploadLocalDmcInventory(localDmcId, csvContent);
+    }
+
+    @Override
+    public Page<LocalDmcInventoryItemView> findLocalDmcInventory(UUID localDmcId, Pageable pageable) {
+        return localDmcService.findLocalDmcInventory(localDmcId, pageable);
     }
 }

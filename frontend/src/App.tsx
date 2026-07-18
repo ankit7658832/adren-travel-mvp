@@ -55,6 +55,9 @@ const AiGovernanceLogViewer = lazy(() =>
 const LocalDmcOnboarding = lazy(() =>
   import("./features/local-dmc-onboarding/LocalDmcOnboarding").then((m) => ({ default: m.LocalDmcOnboarding }))
 );
+const LocalDmcBulkUpload = lazy(() =>
+  import("./features/local-dmc-onboarding/LocalDmcBulkUpload").then((m) => ({ default: m.LocalDmcBulkUpload }))
+);
 const UserManagement = lazy(() =>
   import("./features/user-management/UserManagement").then((m) => ({ default: m.UserManagement }))
 );
@@ -113,6 +116,7 @@ export default function App() {
         <Route path="/admin/suppliers" element={routeElement(<SupplierCredentialManagement />)} />
         <Route path="/admin/ai-governance" element={routeElement(<AiGovernanceLogViewer />)} />
         <Route path="/local-dmc" element={routeElement(<LocalDmcOnboarding />)} />
+        <Route path="/local-dmc/:id/inventory" element={routeElement(<LocalDmcBulkUpload />)} />
         <Route path="/wallet" element={routeElement(<WalletBilling />)} />
         <Route path="/campaigns/new" element={routeElement(<CampaignBuilder />)} />
         <Route path="/pnr" element={routeElement(<PnrSearch />)} />

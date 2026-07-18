@@ -111,6 +111,44 @@ class SupplierModuleIntegrationTests {
     }
 
     @Test
+    void bulkUploadPersistsEveryRowOfAFullyValidCsvDMC03() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        UUID localDmcId = supplierSearchApi.submitLocalDmc(new SubmitLocalDmcCommand(
+            "Goa Local Tours", List.of("TRANSFER"), "x", "y"));
+        String csv = "productName,category,netRate,netRateCurrency,cancellationPolicyText,availableFrom,availableTo\n"
+            + "City Tour,ACTIVITY,2000,INR,\"Free cancellation, up to 24 hours before\",2026-08-01,2026-12-31\n"
+            + "Airport Transfer,TRANSFER,1500,INR,No refunds,2026-08-01,2026-12-31\n";
+
+        var result = supplierSearchApi.bulkUploadLocalDmcInventory(localDmcId, csv);
+
+        assertThat(result.successCount()).isEqualTo(2);
+        assertThat(result.errors()).isEmpty();
+        Long persistedCount = jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM local_dmc_inventory_item WHERE local_dmc_id = ?", Long.class, localDmcId);
+        assertThat(persistedCount).isEqualTo(2);
+    }
+
+    @Test
+    void bulkUploadWithAnInvalidRowPersistsNothingAtAllDMC03() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        UUID localDmcId = supplierSearchApi.submitLocalDmc(new SubmitLocalDmcCommand(
+            "Goa Local Tours", List.of("TRANSFER"), "x", "y"));
+        String csv = "productName,category,netRate,netRateCurrency,cancellationPolicyText,availableFrom,availableTo\n"
+            + "City Tour,ACTIVITY,2000,INR,Free cancellation,2026-08-01,2026-12-31\n"
+            + "Bad Row,ACTIVITY,not-a-number,INR,Free cancellation,2026-08-01,2026-12-31\n";
+
+        var result = supplierSearchApi.bulkUploadLocalDmcInventory(localDmcId, csv);
+
+        assertThat(result.successCount()).isZero();
+        assertThat(result.errors()).hasSize(1);
+        Long persistedCount = jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM local_dmc_inventory_item WHERE local_dmc_id = ?", Long.class, localDmcId);
+        assertThat(persistedCount).isZero();
+    }
+
+    @Test
     void findLocalDmcsScopesAConsultantToTheirOwnRecordsOnlyFND03() {
         UUID consultantA = UUID.randomUUID();
         UUID consultantB = UUID.randomUUID();

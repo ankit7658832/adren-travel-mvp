@@ -2,6 +2,8 @@ package com.adren.travel.supplier.internal;
 
 import com.adren.travel.shared.PageResponse;
 import com.adren.travel.supplier.ActivateLocalDmcCommand;
+import com.adren.travel.supplier.LocalDmcInventoryItemView;
+import com.adren.travel.supplier.LocalDmcInventoryUploadResult;
 import com.adren.travel.supplier.LocalDmcView;
 import com.adren.travel.supplier.SubmitLocalDmcCommand;
 import com.adren.travel.supplier.SupplierSearchApi;
@@ -50,5 +52,16 @@ class LocalDmcController {
     @GetMapping
     PageResponse<LocalDmcView> findAll(@RequestParam(required = false) UUID consultantId, Pageable pageable) {
         return PageResponse.of(supplierSearchApi.findLocalDmcs(consultantId, pageable));
+    }
+
+    @PostMapping("/{localDmcId}/inventory/bulk-upload")
+    LocalDmcInventoryUploadResult bulkUploadInventory(@PathVariable UUID localDmcId,
+                                                        @Valid @RequestBody BulkUploadLocalDmcInventoryRequest request) {
+        return supplierSearchApi.bulkUploadLocalDmcInventory(localDmcId, request.csvContent());
+    }
+
+    @GetMapping("/{localDmcId}/inventory")
+    PageResponse<LocalDmcInventoryItemView> findInventory(@PathVariable UUID localDmcId, Pageable pageable) {
+        return PageResponse.of(supplierSearchApi.findLocalDmcInventory(localDmcId, pageable));
     }
 }

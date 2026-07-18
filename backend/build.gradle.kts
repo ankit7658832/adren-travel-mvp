@@ -96,6 +96,13 @@ dependencies {
     // wiring (resilience4j-spring-boot3) needed for this.
     implementation("io.github.resilience4j:resilience4j-circuitbreaker:2.2.0")
 
+    // --- CSV parsing for DMC-03's Local DMC bulk-inventory-upload tool ---
+    // Real business text fields (cancellation policy text) can genuinely
+    // contain commas, so a hand-rolled comma-split parser would silently
+    // misparse rows — commons-csv is a small, dependency-free, well-tested
+    // RFC4180 parser, not a heavier "spreadsheet" library.
+    implementation("org.apache.commons:commons-csv:1.12.0")
+
     // --- Test ---
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     // Spring Boot 4 split web MVC's test-slice support (@WebMvcTest) out of

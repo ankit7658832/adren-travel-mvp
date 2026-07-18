@@ -2,10 +2,16 @@ package com.adren.travel.supplier.internal;
 
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
+import com.adren.travel.shared.CurrencyCode;
+import com.adren.travel.shared.ProductCategory;
 import com.adren.travel.supplier.ActivateLocalDmcCommand;
+import com.adren.travel.supplier.LocalDmcInventoryItemCommand;
+import com.adren.travel.supplier.LocalDmcInventoryRowError;
+import com.adren.travel.supplier.LocalDmcInventoryUploadResult;
 import com.adren.travel.supplier.LocalDmcVerificationRequiredException;
 import com.adren.travel.supplier.LocalDmcView;
 import com.adren.travel.supplier.SubmitLocalDmcCommand;
+import com.adren.travel.supplier.internal.localdmc.LocalDmcInventoryItem;
 import com.adren.travel.supplier.internal.localdmc.LocalDmcRecord;
 import com.adren.travel.supplier.internal.localdmc.LocalDmcRecordRepository;
 import com.adren.travel.supplier.internal.localdmc.LocalDmcStatus;
@@ -44,12 +50,18 @@ class LocalDmcServiceTest {
     @Mock
     LocalDmcRecordRepository repository;
 
+    @Mock
+    com.adren.travel.supplier.internal.localdmc.LocalDmcInventoryItemRepository inventoryRepository;
+
+    @Mock
+    LocalDmcInventoryCsvParser csvParser;
+
     LocalDmcService service;
 
     @BeforeEach
     void setUp() {
         LocalDmcQualityThresholds thresholds = new LocalDmcQualityThresholds(new BigDecimal("0.2"), 3, 30);
-        service = new LocalDmcService(repository, thresholds);
+        service = new LocalDmcService(repository, thresholds, inventoryRepository, csvParser);
     }
 
     @AfterEach
@@ -141,6 +153,64 @@ class LocalDmcServiceTest {
 
         assertThat(result.getContent()).hasSize(1);
         verify(repository, org.mockito.Mockito.never()).findByConsultantId(any(), any());
+    }
+
+    @Test
+    void bulkUploadPersistsEveryValidRowWhenTheParserReportsNoErrorsDMC03() {
+        UUID consultantId = UUID.randomUUID();
+        UUID localDmcId = UUID.randomUUID();
+        LocalDmcRecord record = new LocalDmcRecord(localDmcId, consultantId, "Goa Local Tours", "TRANSFER", "x", "y");
+        when(repository.findById(localDmcId)).thenReturn(Optional.of(record));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        LocalDmcInventoryItemCommand row = new LocalDmcInventoryItemCommand("City Tour", ProductCategory.ACTIVITY,
+            new BigDecimal("2000"), CurrencyCode.INR, "Free cancellation",
+            java.time.LocalDate.of(2026, 8, 1), java.time.LocalDate.of(2026, 12, 31));
+        when(csvParser.parse("csv-content"))
+            .thenReturn(new LocalDmcInventoryCsvParser.ParseResult(List.of(row), List.of()));
+
+        LocalDmcInventoryUploadResult result = service.bulkUploadLocalDmcInventory(localDmcId, "csv-content");
+
+        assertThat(result.successCount()).isEqualTo(1);
+        assertThat(result.errors()).isEmpty();
+        ArgumentCaptor<LocalDmcInventoryItem> captor = ArgumentCaptor.forClass(LocalDmcInventoryItem.class);
+        verify(inventoryRepository).save(captor.capture());
+        assertThat(captor.getValue().getProductName()).isEqualTo("City Tour");
+        assertThat(captor.getValue().getLocalDmcId()).isEqualTo(localDmcId);
+    }
+
+    @Test
+    void bulkUploadPersistsNothingWhenAnyRowHasErrorsDMC03() {
+        UUID consultantId = UUID.randomUUID();
+        UUID localDmcId = UUID.randomUUID();
+        LocalDmcRecord record = new LocalDmcRecord(localDmcId, consultantId, "Goa Local Tours", "TRANSFER", "x", "y");
+        when(repository.findById(localDmcId)).thenReturn(Optional.of(record));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        LocalDmcInventoryItemCommand validRow = new LocalDmcInventoryItemCommand("City Tour", ProductCategory.ACTIVITY,
+            new BigDecimal("2000"), CurrencyCode.INR, "Free cancellation",
+            java.time.LocalDate.of(2026, 8, 1), java.time.LocalDate.of(2026, 12, 31));
+        LocalDmcInventoryRowError rowError = new LocalDmcInventoryRowError(2, List.of("netRate is required"));
+        when(csvParser.parse("csv-content"))
+            .thenReturn(new LocalDmcInventoryCsvParser.ParseResult(List.of(validRow), List.of(rowError)));
+
+        LocalDmcInventoryUploadResult result = service.bulkUploadLocalDmcInventory(localDmcId, "csv-content");
+
+        assertThat(result.successCount()).isZero();
+        assertThat(result.errors()).containsExactly(rowError);
+        // All-or-nothing: NOT even the otherwise-valid row is persisted.
+        verify(inventoryRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void bulkUploadRejectsAConsultantUploadingToAnotherConsultantsDmcFND03() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID localDmcId = UUID.randomUUID();
+        LocalDmcRecord record = new LocalDmcRecord(localDmcId, ownerConsultantId, "Goa Local Tours", "TRANSFER", "x", "y");
+        when(repository.findById(localDmcId)).thenReturn(Optional.of(record));
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> service.bulkUploadLocalDmcInventory(localDmcId, "csv-content"))
+            .isInstanceOf(AccessDeniedException.class);
+        verify(inventoryRepository, org.mockito.Mockito.never()).save(any());
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {
