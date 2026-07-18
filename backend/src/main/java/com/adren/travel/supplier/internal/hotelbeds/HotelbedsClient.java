@@ -21,6 +21,13 @@ import java.util.List;
  * This is a stub — replace the body of {@link #search} with the real
  * Hotelbeds Booking API call once sandbox credentials are available. The
  * shape (normalized return type, error contract) should not change.
+ * <p>
+ * <b>Credential-source-agnostic (PRD §10.2.9, DMC-07):</b> {@code search}
+ * takes the resolved credential value as a plain parameter — supplied by
+ * {@code SupplierCredentialResolver}, which decides once, upstream,
+ * whether it's a Consultant's BYOS credential or Adren's own. This class
+ * contains no {@code if (isByos)} branch and never will; it has no idea
+ * where the credential came from, by design.
  */
 @Component
 public class HotelbedsClient {
@@ -32,14 +39,20 @@ public class HotelbedsClient {
     }
 
     /**
+     * @param credential the resolved API credential to authenticate this
+     *        call with (BYOS or Adren's own — this method cannot tell and
+     *        does not need to) — {@code null} means no credential was
+     *        configured for either source, which the stub tolerates today
+     *        but a real call would reject before ever reaching the wire.
      * @throws HotelbedsRateExpiredException if a previously-returned rateKey
      *         is no longer valid at booking time (PRD 10.2.1 error table:
      *         "RATE_STALE" -> force new search, do not silently re-price).
      */
-    public List<SupplierSearchResult> search(String locationCode, LocalDate checkIn, LocalDate checkOut) {
-        // TODO: real call — sign request per PRD 10.2.1, map response fields
-        // per the Hotelbeds field-mapping table (hotelCode, rateKey,
-        // hotelName, boardName, net, cancellationPolicies[], rooms[].name).
+    public List<SupplierSearchResult> search(String locationCode, LocalDate checkIn, LocalDate checkOut, String credential) {
+        // TODO: real call — sign the request using `credential` per PRD
+        // 10.2.1, map response fields per the Hotelbeds field-mapping table
+        // (hotelCode, rateKey, hotelName, boardName, net,
+        // cancellationPolicies[], rooms[].name).
         return List.of(new SupplierSearchResult(
             SupplierId.HOTELBEDS,
             "stub-rate-key",

@@ -50,6 +50,7 @@ class SupplierAggregationService implements SupplierSearchApi {
     private final SupplierSecretsService supplierSecretsService;
     private final LocalDmcService localDmcService;
     private final ByosCredentialService byosCredentialService;
+    private final SupplierCredentialResolver credentialResolver;
 
     SupplierAggregationService(HotelbedsClient hotelbedsClient, StubaClient stubaClient, TboClient tboClient,
                                SupplierCircuitBreakerGateway circuitBreakerGateway,
@@ -57,7 +58,7 @@ class SupplierAggregationService implements SupplierSearchApi {
                                SupplierCredentialRepository credentialRepository,
                                SupplierCredentialAuditLogRepository auditLogRepository,
                                SupplierSecretsService supplierSecretsService, LocalDmcService localDmcService,
-                               ByosCredentialService byosCredentialService) {
+                               ByosCredentialService byosCredentialService, SupplierCredentialResolver credentialResolver) {
         this.hotelbedsClient = hotelbedsClient;
         this.stubaClient = stubaClient;
         this.tboClient = tboClient;
@@ -68,12 +69,18 @@ class SupplierAggregationService implements SupplierSearchApi {
         this.supplierSecretsService = supplierSecretsService;
         this.localDmcService = localDmcService;
         this.byosCredentialService = byosCredentialService;
+        this.credentialResolver = credentialResolver;
     }
 
     @Override
     public List<SupplierSearchResult> searchHotels(String locationCode, LocalDate checkIn, LocalDate checkOut) {
+        // Resolved ONCE, here, on the calling request thread — CurrentPrincipal
+        // reads SecurityContextHolder's ThreadLocal, which does not propagate
+        // into the CompletableFuture.supplyAsync worker thread below (DMC-07's
+        // "invoked once per request, injected downstream" sub-task).
+        String hotelbedsCredential = credentialResolver.resolve(SupplierId.HOTELBEDS).orElse(null);
         List<CompletableFuture<List<SupplierSearchResult>>> futures = List.of(
-            searchAsync(SupplierId.HOTELBEDS, () -> hotelbedsClient.search(locationCode, checkIn, checkOut)),
+            searchAsync(SupplierId.HOTELBEDS, () -> hotelbedsClient.search(locationCode, checkIn, checkOut, hotelbedsCredential)),
             searchAsync(SupplierId.STUBA, () -> stubaClient.search(locationCode, checkIn, checkOut)),
             // TBO's TraceId is itinerary-draft-scoped (PRD §10.2.3); passing
             // null here starts a fresh search-session TraceId each call —
@@ -81,9 +88,10 @@ class SupplierAggregationService implements SupplierSearchApi {
             // work once the itinerary-builder search flow calls this method.
             searchAsync(SupplierId.TBO, () -> tboClient.search(locationCode, checkIn, checkOut, null).results())
         );
-        // TODO: merge Local DMC/BYOS results here too, then apply
-        // deduplication (BOK-20) + the Default Selection Algorithm
-        // (PRD Section 9.2, 9.4).
+        // TODO: merge Local DMC results here too (BYOS Hotelbeds is already
+        // merged above — DMC-08 — via credentialResolver, not a second
+        // fan-out entry), then apply deduplication (BOK-20) + the Default
+        // Selection Algorithm (PRD Section 9.2, 9.4).
         return futures.stream()
             .map(CompletableFuture::join)
             .flatMap(List::stream)

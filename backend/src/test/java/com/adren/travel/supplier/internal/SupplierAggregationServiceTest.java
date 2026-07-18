@@ -64,13 +64,18 @@ class SupplierAggregationServiceTest {
     @Mock
     ByosCredentialService byosCredentialService;
 
+    @Mock
+    SupplierCredentialResolver credentialResolver;
+
     SupplierAggregationService service;
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(credentialResolver.resolve(SupplierId.HOTELBEDS)).thenReturn(Optional.empty());
         service = new SupplierAggregationService(
             hotelbedsClient, stubaClient, tboClient, new SupplierCircuitBreakerGateway(), contentCacheRepository,
-            credentialRepository, auditLogRepository, supplierSecretsService, localDmcService, byosCredentialService);
+            credentialRepository, auditLogRepository, supplierSecretsService, localDmcService, byosCredentialService,
+            credentialResolver);
     }
 
     @AfterEach
@@ -130,7 +135,7 @@ class SupplierAggregationServiceTest {
 
     @Test
     void searchHotelsMergesResultsFromAllThreeHotelSuppliers() {
-        when(hotelbedsClient.search("BOM", checkIn(), checkOut())).thenReturn(List.of(hotelResult(SupplierId.HOTELBEDS)));
+        when(hotelbedsClient.search("BOM", checkIn(), checkOut(), null)).thenReturn(List.of(hotelResult(SupplierId.HOTELBEDS)));
         when(stubaClient.search("BOM", checkIn(), checkOut())).thenReturn(List.of(hotelResult(SupplierId.STUBA)));
         when(tboClient.search("BOM", checkIn(), checkOut(), null))
             .thenReturn(new TboClient.TboSearchResponse(List.of(hotelResult(SupplierId.TBO)), "trace-id"));
@@ -142,8 +147,42 @@ class SupplierAggregationServiceTest {
     }
 
     @Test
+    void searchHotelsThreadsTheResolvedByosCredentialIntoHotelbedsClientDMC07DMC08() {
+        when(credentialResolver.resolve(SupplierId.HOTELBEDS)).thenReturn(Optional.of("consultant-own-hotelbeds-key"));
+        when(hotelbedsClient.search("BOM", checkIn(), checkOut(), "consultant-own-hotelbeds-key"))
+            .thenReturn(List.of(hotelResult(SupplierId.HOTELBEDS)));
+        when(stubaClient.search("BOM", checkIn(), checkOut())).thenReturn(List.of());
+        when(tboClient.search("BOM", checkIn(), checkOut(), null)).thenReturn(new TboClient.TboSearchResponse(List.of(), "trace-id"));
+
+        List<SupplierSearchResult> results = service.searchHotels("BOM", checkIn(), checkOut());
+
+        // Same normalized SupplierSearchResult shape as the Adren-credential
+        // path below — DMC-08's AC: BYOS-sourced Hotelbeds inventory is
+        // indistinguishable, in shape, from Adren-sourced Hotelbeds inventory.
+        assertThat(results).extracting(SupplierSearchResult::supplierId).containsExactly(SupplierId.HOTELBEDS);
+        verify(hotelbedsClient).search("BOM", checkIn(), checkOut(), "consultant-own-hotelbeds-key");
+    }
+
+    @Test
+    void searchHotelsThreadsAdrensOwnCredentialWhenNoByosCredentialIsConfiguredDMC07() {
+        when(credentialResolver.resolve(SupplierId.HOTELBEDS)).thenReturn(Optional.of("adren-own-hotelbeds-key"));
+        when(hotelbedsClient.search("BOM", checkIn(), checkOut(), "adren-own-hotelbeds-key"))
+            .thenReturn(List.of(hotelResult(SupplierId.HOTELBEDS)));
+        when(stubaClient.search("BOM", checkIn(), checkOut())).thenReturn(List.of());
+        when(tboClient.search("BOM", checkIn(), checkOut(), null)).thenReturn(new TboClient.TboSearchResponse(List.of(), "trace-id"));
+
+        List<SupplierSearchResult> results = service.searchHotels("BOM", checkIn(), checkOut());
+
+        // Exact same call shape as the BYOS-credential test above — the ONLY
+        // difference between the two is which value credentialResolver
+        // returned; HotelbedsClient itself never branches on the source.
+        assertThat(results).extracting(SupplierSearchResult::supplierId).containsExactly(SupplierId.HOTELBEDS);
+        verify(hotelbedsClient).search("BOM", checkIn(), checkOut(), "adren-own-hotelbeds-key");
+    }
+
+    @Test
     void searchHotelsIsolatesAFailingSupplierBOK26() {
-        when(hotelbedsClient.search("BOM", checkIn(), checkOut())).thenReturn(List.of(hotelResult(SupplierId.HOTELBEDS)));
+        when(hotelbedsClient.search("BOM", checkIn(), checkOut(), null)).thenReturn(List.of(hotelResult(SupplierId.HOTELBEDS)));
         when(stubaClient.search("BOM", checkIn(), checkOut())).thenThrow(new RuntimeException("simulated STUBA downtime"));
         when(tboClient.search("BOM", checkIn(), checkOut(), null))
             .thenReturn(new TboClient.TboSearchResponse(List.of(hotelResult(SupplierId.TBO)), "trace-id"));
@@ -174,7 +213,7 @@ class SupplierAggregationServiceTest {
 
     @Test
     void searchHotelsEnrichesRatingFromTheContentCacheBOK27() {
-        when(hotelbedsClient.search("BOM", checkIn(), checkOut())).thenReturn(List.of(hotelResult(SupplierId.HOTELBEDS)));
+        when(hotelbedsClient.search("BOM", checkIn(), checkOut(), null)).thenReturn(List.of(hotelResult(SupplierId.HOTELBEDS)));
         when(stubaClient.search("BOM", checkIn(), checkOut())).thenReturn(List.of());
         when(tboClient.search("BOM", checkIn(), checkOut(), null))
             .thenReturn(new TboClient.TboSearchResponse(List.of(), "trace-id"));

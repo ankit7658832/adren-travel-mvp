@@ -97,6 +97,11 @@ class SupplierSearchApiMethodSecurityTest {
         }
 
         @Bean
+        SupplierCredentialResolver credentialResolver() {
+            return Mockito.mock(SupplierCredentialResolver.class);
+        }
+
+        @Bean
         SupplierSearchApi supplierSearchApi(HotelbedsClient hotelbedsClient, StubaClient stubaClient,
                                              TboClient tboClient, SupplierCircuitBreakerGateway circuitBreakerGateway,
                                              SupplierContentCacheRepository contentCacheRepository,
@@ -104,9 +109,11 @@ class SupplierSearchApiMethodSecurityTest {
                                              SupplierCredentialAuditLogRepository auditRepo,
                                              SupplierSecretsService supplierSecretsService,
                                              LocalDmcService localDmcService,
-                                             ByosCredentialService byosCredentialService) {
+                                             ByosCredentialService byosCredentialService,
+                                             SupplierCredentialResolver credentialResolver) {
             return new SupplierAggregationService(hotelbedsClient, stubaClient, tboClient, circuitBreakerGateway,
-                contentCacheRepository, repo, auditRepo, supplierSecretsService, localDmcService, byosCredentialService);
+                contentCacheRepository, repo, auditRepo, supplierSecretsService, localDmcService, byosCredentialService,
+                credentialResolver);
         }
     }
 

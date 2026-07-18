@@ -109,7 +109,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **DMC-04** — track local dmc quality signal cancellation rate and complaint count
 - [x] **DMC-05** — flag a local dmc to both the onboarding consultant and super admin on threshold breach
 - [x] **DMC-06** — let a consultant enter their own supplier api credentials byos
-- [ ] **DMC-07** — make the supplier integration layer credential source agnostic
+- [x] **DMC-07** — make the supplier integration layer credential source agnostic
 - [ ] **DMC-08** — merge byos inventory into search results using standard normalization and default selection
 - [ ] **DMC-09** — scope byos inventory and credentials strictly to the owning consultant
 - [x] **DMC-10** — manage local dmc inventory items after onboarding crud
