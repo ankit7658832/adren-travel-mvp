@@ -35,6 +35,20 @@ public interface SupplierSearchApi {
     List<SupplierCredentialSummary> listSupplierCredentials();
 
     /**
+     * Saves/rotates the CALLING Consultant's own BYOS supplier credential
+     * (PRD §10.4, DMC-06), row-level KMS-encrypted (FND-12) — always scoped
+     * to the caller's own tenant, never a client-supplied consultantId
+     * (RULES.md §5.2). {@code CONSULTANT}-only, unlike
+     * {@link #updateSupplierCredential} which is Adren-owned/Super-Admin-only.
+     */
+    @PreAuthorize("hasRole('CONSULTANT')")
+    void saveByosCredential(SaveByosCredentialCommand command);
+
+    /** Every supplier the calling Consultant has BYOS-configured — masked, never the secret value. */
+    @PreAuthorize("hasRole('CONSULTANT')")
+    List<ByosCredentialSummary> findByosCredentials();
+
+    /**
      * Submits a new Local DMC for onboarding (PRD §10.3 step 1, DMC-01) —
      * always {@code PENDING}, never immediately visible/sellable, per the
      * load-bearing invariant {@code LocalDmcRecord}'s constructor enforces.

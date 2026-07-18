@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
@@ -37,11 +38,14 @@ class ByosCredentialServiceTest {
     @Mock
     KmsEnvelopeEncryptionService encryptionService;
 
+    @Mock
+    ApplicationEventPublisher events;
+
     ByosCredentialService service;
 
     @BeforeEach
     void setUp() {
-        service = new ByosCredentialService(repository, encryptionService);
+        service = new ByosCredentialService(repository, encryptionService, events);
     }
 
     @AfterEach
@@ -128,6 +132,80 @@ class ByosCredentialServiceTest {
 
         assertThatThrownBy(() -> service.read(consultantId, SupplierId.HOTELBEDS))
             .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void saveWithNoExistingRowPublishesTheSavedEventDMC06() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(repository.findByConsultantIdAndSupplierId(consultantId, SupplierId.HOTELBEDS)).thenReturn(Optional.empty());
+        when(encryptionService.encrypt(any())).thenReturn(
+            new KmsEnvelopeEncryptionService.EncryptedPayload("c".getBytes(), "i".getBytes(), "w".getBytes()));
+
+        service.save(SupplierId.HOTELBEDS, "raw-secret");
+
+        ArgumentCaptor<com.adren.travel.supplier.event.ByosCredentialSavedEvent> captor =
+            ArgumentCaptor.forClass(com.adren.travel.supplier.event.ByosCredentialSavedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().consultantId()).isEqualTo(consultantId);
+        assertThat(captor.getValue().supplierId()).isEqualTo(SupplierId.HOTELBEDS);
+    }
+
+    @Test
+    void readForCurrentConsultantReturnsEmptyWhenNoByosCredentialIsConfiguredDMC07() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(repository.findByConsultantIdAndSupplierId(consultantId, SupplierId.HOTELBEDS)).thenReturn(Optional.empty());
+
+        assertThat(service.readForCurrentConsultant(SupplierId.HOTELBEDS)).isEmpty();
+    }
+
+    @Test
+    void readForCurrentConsultantReturnsTheDecryptedSecretWhenConfiguredDMC07() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        ByosCredential credential = new ByosCredential(UUID.randomUUID(), consultantId, SupplierId.HOTELBEDS,
+            "cipher".getBytes(), "iv".getBytes(), "wrapped".getBytes(), UUID.randomUUID());
+        when(repository.findByConsultantIdAndSupplierId(consultantId, SupplierId.HOTELBEDS)).thenReturn(Optional.of(credential));
+        when(encryptionService.decrypt(any())).thenReturn("consultant-own-secret");
+
+        assertThat(service.readForCurrentConsultant(SupplierId.HOTELBEDS)).contains("consultant-own-secret");
+    }
+
+    @Test
+    void readForCurrentConsultantIsEmptyForASuperAdminWithNoTenantOfTheirOwn() {
+        authenticateAs(Role.SUPER_ADMIN, null);
+
+        assertThat(service.readForCurrentConsultant(SupplierId.HOTELBEDS)).isEmpty();
+        verify(repository, org.mockito.Mockito.never()).findByConsultantIdAndSupplierId(any(), any());
+    }
+
+    @Test
+    void readForCurrentConsultantNeverAcceptsAConsultantIdParameterToSpoofFND03() {
+        // Structural proof, not a runtime one: readForCurrentConsultant's
+        // only source of tenant scope is CurrentPrincipal — there is no
+        // consultantId parameter on the method signature at all, so a
+        // cross-tenant read via this path is not just rejected, it's not
+        // expressible in the first place (DMC-09).
+        assertThat(java.util.Arrays.stream(ByosCredentialService.class.getDeclaredMethods())
+            .filter(m -> m.getName().equals("readForCurrentConsultant"))
+            .findFirst().orElseThrow().getParameterTypes())
+            .containsExactly(SupplierId.class);
+    }
+
+    @Test
+    void findByosCredentialsForCurrentConsultantListsOnlyTheCallersOwnSuppliersDMC06() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        ByosCredential credential = new ByosCredential(UUID.randomUUID(), consultantId, SupplierId.HOTELBEDS,
+            "cipher".getBytes(), "iv".getBytes(), "wrapped".getBytes(), UUID.randomUUID());
+        when(repository.findByConsultantId(consultantId)).thenReturn(List.of(credential));
+
+        var result = service.findByosCredentialsForCurrentConsultant();
+
+        assertThat(result).extracting(com.adren.travel.supplier.ByosCredentialSummary::supplierId)
+            .containsExactly(SupplierId.HOTELBEDS);
+        assertThat(result).extracting(com.adren.travel.supplier.ByosCredentialSummary::configured).containsExactly(true);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

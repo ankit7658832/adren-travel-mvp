@@ -2,10 +2,12 @@ package com.adren.travel.supplier.internal;
 
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.supplier.ActivateLocalDmcCommand;
+import com.adren.travel.supplier.ByosCredentialSummary;
 import com.adren.travel.supplier.LocalDmcInventoryItemCommand;
 import com.adren.travel.supplier.LocalDmcInventoryItemView;
 import com.adren.travel.supplier.LocalDmcInventoryUploadResult;
 import com.adren.travel.supplier.LocalDmcView;
+import com.adren.travel.supplier.SaveByosCredentialCommand;
 import com.adren.travel.supplier.SubmitLocalDmcCommand;
 import com.adren.travel.supplier.SupplierCredentialSummary;
 import com.adren.travel.supplier.SupplierId;
@@ -46,17 +48,16 @@ class SupplierAggregationService implements SupplierSearchApi {
     private final SupplierCredentialRepository credentialRepository;
     private final SupplierCredentialAuditLogRepository auditLogRepository;
     private final SupplierSecretsService supplierSecretsService;
-    // TODO: inject ByosClient once BYOS search-merge (DMC-08) is built,
-    // following the HotelbedsClient/StubaClient/TboClient pattern
-    // (PRD Section 10.2.9).
     private final LocalDmcService localDmcService;
+    private final ByosCredentialService byosCredentialService;
 
     SupplierAggregationService(HotelbedsClient hotelbedsClient, StubaClient stubaClient, TboClient tboClient,
                                SupplierCircuitBreakerGateway circuitBreakerGateway,
                                SupplierContentCacheRepository contentCacheRepository,
                                SupplierCredentialRepository credentialRepository,
                                SupplierCredentialAuditLogRepository auditLogRepository,
-                               SupplierSecretsService supplierSecretsService, LocalDmcService localDmcService) {
+                               SupplierSecretsService supplierSecretsService, LocalDmcService localDmcService,
+                               ByosCredentialService byosCredentialService) {
         this.hotelbedsClient = hotelbedsClient;
         this.stubaClient = stubaClient;
         this.tboClient = tboClient;
@@ -66,6 +67,7 @@ class SupplierAggregationService implements SupplierSearchApi {
         this.auditLogRepository = auditLogRepository;
         this.supplierSecretsService = supplierSecretsService;
         this.localDmcService = localDmcService;
+        this.byosCredentialService = byosCredentialService;
     }
 
     @Override
@@ -181,5 +183,15 @@ class SupplierAggregationService implements SupplierSearchApi {
     @Override
     public void recordLocalDmcComplaint(UUID localDmcId) {
         localDmcService.recordComplaint(localDmcId);
+    }
+
+    @Override
+    public void saveByosCredential(SaveByosCredentialCommand command) {
+        byosCredentialService.save(command.supplierId(), command.secretValue());
+    }
+
+    @Override
+    public List<ByosCredentialSummary> findByosCredentials() {
+        return byosCredentialService.findByosCredentialsForCurrentConsultant();
     }
 }

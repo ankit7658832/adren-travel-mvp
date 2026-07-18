@@ -61,13 +61,16 @@ class SupplierAggregationServiceTest {
     @Mock
     LocalDmcService localDmcService;
 
+    @Mock
+    ByosCredentialService byosCredentialService;
+
     SupplierAggregationService service;
 
     @BeforeEach
     void setUp() {
         service = new SupplierAggregationService(
             hotelbedsClient, stubaClient, tboClient, new SupplierCircuitBreakerGateway(), contentCacheRepository,
-            credentialRepository, auditLogRepository, supplierSecretsService, localDmcService);
+            credentialRepository, auditLogRepository, supplierSecretsService, localDmcService, byosCredentialService);
     }
 
     @AfterEach
@@ -184,6 +187,23 @@ class SupplierAggregationServiceTest {
 
         assertThat(results).hasSize(1);
         assertThat(results.get(0).rating()).isEqualTo(4.3);
+    }
+
+    @Test
+    void saveByosCredentialDelegatesToByosCredentialServiceDMC06() {
+        var command = new com.adren.travel.supplier.SaveByosCredentialCommand(SupplierId.HOTELBEDS, "raw-secret");
+
+        service.saveByosCredential(command);
+
+        verify(byosCredentialService).save(SupplierId.HOTELBEDS, "raw-secret");
+    }
+
+    @Test
+    void findByosCredentialsDelegatesToByosCredentialServiceDMC06() {
+        var summary = new com.adren.travel.supplier.ByosCredentialSummary(SupplierId.HOTELBEDS, true, java.time.Instant.now());
+        when(byosCredentialService.findByosCredentialsForCurrentConsultant()).thenReturn(List.of(summary));
+
+        assertThat(service.findByosCredentials()).containsExactly(summary);
     }
 
     private static LocalDate checkIn() {

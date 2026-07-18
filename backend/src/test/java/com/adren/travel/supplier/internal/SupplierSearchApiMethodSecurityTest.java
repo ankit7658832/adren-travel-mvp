@@ -92,15 +92,21 @@ class SupplierSearchApiMethodSecurityTest {
         }
 
         @Bean
+        ByosCredentialService byosCredentialService() {
+            return Mockito.mock(ByosCredentialService.class);
+        }
+
+        @Bean
         SupplierSearchApi supplierSearchApi(HotelbedsClient hotelbedsClient, StubaClient stubaClient,
                                              TboClient tboClient, SupplierCircuitBreakerGateway circuitBreakerGateway,
                                              SupplierContentCacheRepository contentCacheRepository,
                                              SupplierCredentialRepository repo,
                                              SupplierCredentialAuditLogRepository auditRepo,
                                              SupplierSecretsService supplierSecretsService,
-                                             LocalDmcService localDmcService) {
+                                             LocalDmcService localDmcService,
+                                             ByosCredentialService byosCredentialService) {
             return new SupplierAggregationService(hotelbedsClient, stubaClient, tboClient, circuitBreakerGateway,
-                contentCacheRepository, repo, auditRepo, supplierSecretsService, localDmcService);
+                contentCacheRepository, repo, auditRepo, supplierSecretsService, localDmcService, byosCredentialService);
         }
     }
 
@@ -161,6 +167,32 @@ class SupplierSearchApiMethodSecurityTest {
         authenticateAs(Role.CONSULTANT);
 
         assertThatThrownBy(() -> supplierSearchApi.recordLocalDmcComplaint(UUID.randomUUID()))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void aSuperAdminCannotSaveAByosCredentialDMC06() {
+        authenticateAs(Role.SUPER_ADMIN);
+
+        assertThatThrownBy(() -> supplierSearchApi.saveByosCredential(
+            new com.adren.travel.supplier.SaveByosCredentialCommand(SupplierId.HOTELBEDS, "secret")))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void aUserCannotSaveAByosCredentialDMC06() {
+        authenticateAs(Role.USER);
+
+        assertThatThrownBy(() -> supplierSearchApi.saveByosCredential(
+            new com.adren.travel.supplier.SaveByosCredentialCommand(SupplierId.HOTELBEDS, "secret")))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void aSuperAdminCannotListByosCredentialsDMC06() {
+        authenticateAs(Role.SUPER_ADMIN);
+
+        assertThatThrownBy(supplierSearchApi::findByosCredentials)
             .isInstanceOf(AccessDeniedException.class);
     }
 
