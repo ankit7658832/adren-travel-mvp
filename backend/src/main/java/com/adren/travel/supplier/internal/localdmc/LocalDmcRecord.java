@@ -128,8 +128,14 @@ public class LocalDmcRecord {
                 .divide(BigDecimal.valueOf(totalBookingsCount), 4, RoundingMode.HALF_UP);
     }
 
-    /** DMC-11: set/cleared by the scheduled staleness check — self-clears once inventory is refreshed. */
-    void setInventoryStale(boolean inventoryStale) {
+    /**
+     * DMC-11: set/cleared by the scheduled staleness check — self-clears
+     * once inventory is refreshed. Public (not package-private) for the
+     * same reason as every other Local DMC entity in this sub-package:
+     * the caller ({@code LocalDmcInventoryStalenessCheckService}) lives in
+     * {@code supplier.internal}, not {@code supplier.internal.localdmc}.
+     */
+    public void setInventoryStale(boolean inventoryStale) {
         this.inventoryStale = inventoryStale;
     }
 
