@@ -52,6 +52,9 @@ const ConsultantList = lazy(() =>
 const AiGovernanceLogViewer = lazy(() =>
   import("./features/ai-governance-log/AiGovernanceLogViewer").then((m) => ({ default: m.AiGovernanceLogViewer }))
 );
+const LocalDmcOnboarding = lazy(() =>
+  import("./features/local-dmc-onboarding/LocalDmcOnboarding").then((m) => ({ default: m.LocalDmcOnboarding }))
+);
 const UserManagement = lazy(() =>
   import("./features/user-management/UserManagement").then((m) => ({ default: m.UserManagement }))
 );
@@ -109,6 +112,7 @@ export default function App() {
         <Route path="/users" element={routeElement(<UserManagement />)} />
         <Route path="/admin/suppliers" element={routeElement(<SupplierCredentialManagement />)} />
         <Route path="/admin/ai-governance" element={routeElement(<AiGovernanceLogViewer />)} />
+        <Route path="/local-dmc" element={routeElement(<LocalDmcOnboarding />)} />
         <Route path="/wallet" element={routeElement(<WalletBilling />)} />
         <Route path="/campaigns/new" element={routeElement(<CampaignBuilder />)} />
         <Route path="/pnr" element={routeElement(<PnrSearch />)} />

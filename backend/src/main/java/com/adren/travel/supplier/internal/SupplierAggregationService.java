@@ -1,6 +1,9 @@
 package com.adren.travel.supplier.internal;
 
 import com.adren.travel.security.CurrentPrincipal;
+import com.adren.travel.supplier.ActivateLocalDmcCommand;
+import com.adren.travel.supplier.LocalDmcView;
+import com.adren.travel.supplier.SubmitLocalDmcCommand;
 import com.adren.travel.supplier.SupplierCredentialSummary;
 import com.adren.travel.supplier.SupplierId;
 import com.adren.travel.supplier.SupplierSearchApi;
@@ -9,6 +12,8 @@ import com.adren.travel.supplier.UpdateSupplierCredentialCommand;
 import com.adren.travel.supplier.internal.hotelbeds.HotelbedsClient;
 import com.adren.travel.supplier.internal.stuba.StubaClient;
 import com.adren.travel.supplier.internal.tbo.TboClient;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,16 +43,17 @@ class SupplierAggregationService implements SupplierSearchApi {
     private final SupplierCredentialRepository credentialRepository;
     private final SupplierCredentialAuditLogRepository auditLogRepository;
     private final SupplierSecretsService supplierSecretsService;
-    // TODO: inject LocalDmcRepository, ByosClient as each is built out,
+    // TODO: inject ByosClient once BYOS search-merge (DMC-08) is built,
     // following the HotelbedsClient/StubaClient/TboClient pattern
-    // (PRD Section 10.2.8 - 10.2.9).
+    // (PRD Section 10.2.9).
+    private final LocalDmcService localDmcService;
 
     SupplierAggregationService(HotelbedsClient hotelbedsClient, StubaClient stubaClient, TboClient tboClient,
                                SupplierCircuitBreakerGateway circuitBreakerGateway,
                                SupplierContentCacheRepository contentCacheRepository,
                                SupplierCredentialRepository credentialRepository,
                                SupplierCredentialAuditLogRepository auditLogRepository,
-                               SupplierSecretsService supplierSecretsService) {
+                               SupplierSecretsService supplierSecretsService, LocalDmcService localDmcService) {
         this.hotelbedsClient = hotelbedsClient;
         this.stubaClient = stubaClient;
         this.tboClient = tboClient;
@@ -56,6 +62,7 @@ class SupplierAggregationService implements SupplierSearchApi {
         this.credentialRepository = credentialRepository;
         this.auditLogRepository = auditLogRepository;
         this.supplierSecretsService = supplierSecretsService;
+        this.localDmcService = localDmcService;
     }
 
     @Override
@@ -126,5 +133,20 @@ class SupplierAggregationService implements SupplierSearchApi {
         return credentialRepository.findAll().stream()
             .map(c -> new SupplierCredentialSummary(c.getSupplierId(), true, c.getLastModifiedByUserId(), c.getLastModifiedAt()))
             .toList();
+    }
+
+    @Override
+    public UUID submitLocalDmc(SubmitLocalDmcCommand command) {
+        return localDmcService.submitLocalDmc(command);
+    }
+
+    @Override
+    public void activateLocalDmc(UUID localDmcId, ActivateLocalDmcCommand command) {
+        localDmcService.activateLocalDmc(localDmcId, command);
+    }
+
+    @Override
+    public Page<LocalDmcView> findLocalDmcs(UUID consultantId, Pageable pageable) {
+        return localDmcService.findLocalDmcs(consultantId, pageable);
     }
 }

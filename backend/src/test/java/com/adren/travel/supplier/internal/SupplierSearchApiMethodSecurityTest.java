@@ -87,14 +87,20 @@ class SupplierSearchApiMethodSecurityTest {
         }
 
         @Bean
+        LocalDmcService localDmcService() {
+            return Mockito.mock(LocalDmcService.class);
+        }
+
+        @Bean
         SupplierSearchApi supplierSearchApi(HotelbedsClient hotelbedsClient, StubaClient stubaClient,
                                              TboClient tboClient, SupplierCircuitBreakerGateway circuitBreakerGateway,
                                              SupplierContentCacheRepository contentCacheRepository,
                                              SupplierCredentialRepository repo,
                                              SupplierCredentialAuditLogRepository auditRepo,
-                                             SupplierSecretsService supplierSecretsService) {
+                                             SupplierSecretsService supplierSecretsService,
+                                             LocalDmcService localDmcService) {
             return new SupplierAggregationService(hotelbedsClient, stubaClient, tboClient, circuitBreakerGateway,
-                contentCacheRepository, repo, auditRepo, supplierSecretsService);
+                contentCacheRepository, repo, auditRepo, supplierSecretsService, localDmcService);
         }
     }
 

@@ -1,8 +1,11 @@
 package com.adren.travel.supplier;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Public API of the Supplier module. Normalizes results across all 9 sources
@@ -30,4 +33,35 @@ public interface SupplierSearchApi {
 
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     List<SupplierCredentialSummary> listSupplierCredentials();
+
+    /**
+     * Submits a new Local DMC for onboarding (PRD §10.3 step 1, DMC-01) —
+     * always {@code PENDING}, never immediately visible/sellable, per the
+     * load-bearing invariant {@code LocalDmcRecord}'s constructor enforces.
+     * {@code Yes/Yes/No} across Super Admin/Consultant/User per the story's
+     * own "As a Consultant" framing — narrower than the search/booking
+     * methods above, which are Yes/Yes/Yes.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT')")
+    UUID submitLocalDmc(SubmitLocalDmcCommand command);
+
+    /**
+     * Reviews a Pending Local DMC and, only once at least one verification
+     * step is recorded, transitions it to Active (PRD §10.3 steps 2-3,
+     * DMC-02) — throws {@link LocalDmcVerificationRequiredException} (409)
+     * rather than silently allowing the transition otherwise.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT')")
+    void activateLocalDmc(UUID localDmcId, ActivateLocalDmcCommand command);
+
+    /**
+     * Browses Local DMC records — a Consultant always sees only their own
+     * (regardless of {@code consultantId}, which this scaffold has no way
+     * to derive client-side yet, no login/session story having landed);
+     * Super Admin sees every Consultant's when {@code consultantId} is
+     * {@code null}, or one Consultant's when supplied — same shape as
+     * {@code AiApi.findAuditLog}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT')")
+    Page<LocalDmcView> findLocalDmcs(UUID consultantId, Pageable pageable);
 }

@@ -103,8 +103,8 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 
 ## Local DMC + BYOS (11)
 
-- [ ] **DMC-01** — submit a new local dmc for onboarding
-- [ ] **DMC-02** — run the local dmc pending active vetting workflow
+- [x] **DMC-01** — submit a new local dmc for onboarding
+- [x] **DMC-02** — run the local dmc pending active vetting workflow
 - [ ] **DMC-03** — bulk upload local dmc inventory via a validated csv template tool
 - [ ] **DMC-04** — track local dmc quality signal cancellation rate and complaint count
 - [ ] **DMC-05** — flag a local dmc to both the onboarding consultant and super admin on threshold breach

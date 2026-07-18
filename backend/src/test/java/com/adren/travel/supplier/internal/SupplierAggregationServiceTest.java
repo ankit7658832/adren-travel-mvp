@@ -58,13 +58,16 @@ class SupplierAggregationServiceTest {
     @Mock
     SupplierSecretsService supplierSecretsService;
 
+    @Mock
+    LocalDmcService localDmcService;
+
     SupplierAggregationService service;
 
     @BeforeEach
     void setUp() {
         service = new SupplierAggregationService(
             hotelbedsClient, stubaClient, tboClient, new SupplierCircuitBreakerGateway(), contentCacheRepository,
-            credentialRepository, auditLogRepository, supplierSecretsService);
+            credentialRepository, auditLogRepository, supplierSecretsService, localDmcService);
     }
 
     @AfterEach
