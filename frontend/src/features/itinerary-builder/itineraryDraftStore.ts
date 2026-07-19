@@ -18,6 +18,9 @@ export interface ItineraryLineItem {
   supplierRateId: string;
   /** Surfaced via FND-15's "Auto-selected: Best available match" badge. */
   autoSelected: boolean;
+  /** FES-05 — carried from Search Dashboard's hand-off so the Itinerary Builder's own MapPanel doesn't need to re-geocode; absent for line items that never passed through that hand-off. */
+  latitude?: number;
+  longitude?: number;
 }
 
 function lineItemKey(locationCode: string, category: string): string {

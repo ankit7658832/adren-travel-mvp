@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Badge } from "@/shared/design-system/Badge";
 import { Button } from "@/shared/design-system/Button";
+import { MapPanel } from "@/shared/layout/MapPanel";
+import { ResultsPanel } from "@/shared/layout/ResultsPanel";
 import { AiAssistPanel } from "./AiAssistPanel";
 import { useItineraryDraftStore, type ItineraryLineItem } from "./itineraryDraftStore";
 import { useAlternates, type AlternateOption } from "./useItineraryBuilder";
@@ -32,7 +34,22 @@ export function ItineraryBuilder() {
       )}
 
       {items.length > 0 && (
-        <ul aria-label="itinerary-line-items" className="mt-6 space-y-3">
+        <ResultsPanel
+          ariaLabel="itinerary-line-items"
+          map={
+            <MapPanel
+              pins={items
+                .filter((item) => item.latitude != null && item.longitude != null)
+                .map((item) => ({
+                  id: `${item.locationCode}:${item.category}`,
+                  latitude: item.latitude as number,
+                  longitude: item.longitude as number,
+                  label: item.locationCode,
+                }))}
+              ariaLabel={`Map showing ${items.length} itinerary location${items.length === 1 ? "" : "s"}`}
+            />
+          }
+        >
           {items.map((item) => (
             <li
               key={`${item.locationCode}:${item.category}`}
@@ -56,7 +73,7 @@ export function ItineraryBuilder() {
               </div>
             </li>
           ))}
-        </ul>
+        </ResultsPanel>
       )}
 
       {activePanel && itineraryId && (
@@ -64,6 +81,7 @@ export function ItineraryBuilder() {
           itineraryId={itineraryId}
           locationCode={activePanel.locationCode}
           category={activePanel.category}
+          existingItem={lineItems[`${activePanel.locationCode}:${activePanel.category}`]}
           onClose={() => setActivePanel(null)}
         />
       )}
@@ -77,10 +95,11 @@ interface AlternatesPanelProps {
   itineraryId: string;
   locationCode: string;
   category: string;
+  existingItem: ItineraryLineItem | undefined;
   onClose: () => void;
 }
 
-function AlternatesPanel({ itineraryId, locationCode, category, onClose }: AlternatesPanelProps) {
+function AlternatesPanel({ itineraryId, locationCode, category, existingItem, onClose }: AlternatesPanelProps) {
   const [sortField, setSortField] = useState<SortField>("price");
   const [supplierFilter, setSupplierFilter] = useState<string>("");
   const setLineItem = useItineraryDraftStore((s) => s.setLineItem);
@@ -109,6 +128,10 @@ function AlternatesPanel({ itineraryId, locationCode, category, onClose }: Alter
       supplierId: alternate.supplierId,
       supplierRateId: alternate.supplierRateId,
       autoSelected: false,
+      // FES-05: a supplier swap doesn't move the location — carry the
+      // existing pin coordinates forward rather than dropping them.
+      latitude: existingItem?.latitude,
+      longitude: existingItem?.longitude,
     };
     setLineItem(lineItem);
     onClose();

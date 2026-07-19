@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMultiLocationSearch } from "./useMultiLocationSearch";
-import { MapPanel } from "./MapPanel";
+import { MapPanel } from "@/shared/layout/MapPanel";
+import { ResultsPanel } from "@/shared/layout/ResultsPanel";
 import { Button } from "@/shared/design-system/Button";
 import { Badge } from "@/shared/design-system/Badge";
 import { useItineraryDraftStore } from "@/features/itinerary-builder/itineraryDraftStore";
@@ -45,6 +46,12 @@ export function SearchDashboard() {
           supplierId: location.autoSelectedSupplierId,
           supplierRateId: location.autoSelectedSupplierRateId,
           autoSelected: true,
+          // FES-05: carried through so the Itinerary Builder's own MapPanel
+          // can show pins without re-geocoding — a supplier swap later
+          // (AlternatesPanel) preserves these, since the location itself
+          // doesn't change when the chosen supplier/rate does.
+          latitude: location.latitude,
+          longitude: location.longitude,
         });
       }
     }
@@ -110,10 +117,21 @@ export function SearchDashboard() {
 
       {status === "success" && (
         <>
-          <div className="mt-6">
-            <MapPanel locations={results} />
-          </div>
-          <ul aria-label="search-results" className="mt-6 space-y-3">
+          <ResultsPanel
+            ariaLabel="search-results"
+            map={
+              <MapPanel
+                pins={results.map((location) => ({
+                  id: location.locationCode,
+                  latitude: location.latitude,
+                  longitude: location.longitude,
+                  label: location.displayName,
+                  hasInventory: location.hasInventory,
+                }))}
+                ariaLabel={`Map showing ${results.length} searched location${results.length === 1 ? "" : "s"}`}
+              />
+            }
+          >
             {results.map((location) => (
               <li
                 key={location.locationCode}
@@ -127,7 +145,7 @@ export function SearchDashboard() {
                 )}
               </li>
             ))}
-          </ul>
+          </ResultsPanel>
           {results.some((location) => location.hasInventory) && (
             <div className="mt-6 flex justify-end">
               <Button onClick={handleBuildItinerary}>Build Itinerary</Button>
