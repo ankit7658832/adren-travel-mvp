@@ -1,6 +1,8 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { Routes, Route } from "react-router-dom";
 import { RouteErrorBoundary } from "./shared/components/RouteErrorBoundary";
+import { ProtectedRoute } from "./shared/auth/ProtectedRoute";
+import type { Role } from "./shared/auth/authTypes";
 
 /**
  * Route scaffold matching PRD Part 21 (Screen-by-Screen UI Specification).
@@ -25,6 +27,11 @@ import { RouteErrorBoundary } from "./shared/components/RouteErrorBoundary";
  *   /disputes             -> Dispute Ticket Tracker (PRD §12.5) — HRD-06;
  *                           not a numbered Part 21 screen either, same
  *                           gap class as /storefront
+ *
+ * FES-07: every route except /, /search, and /storefront is wrapped in
+ * ProtectedRoute with a per-route allowedRoles list derived from PRD §6's
+ * Roles & Permissions Matrix. See protectedRouteElement's own comment for
+ * why /, /search stay unguarded.
  */
 const SearchDashboard = lazy(() =>
   import("./features/search-dashboard/SearchDashboard").then((m) => ({ default: m.SearchDashboard }))
@@ -108,31 +115,76 @@ function routeElement(screen: ReactNode) {
   return <RouteErrorBoundary>{screen}</RouteErrorBoundary>;
 }
 
+// FES-07 — per-route guard, derived from PRD §6's Roles & Permissions
+// Matrix (and spot-checked against each screen's actual backend
+// @PreAuthorize target where the matrix's business-level wording was
+// ambiguous). "/" and "/search" are deliberately left unguarded — every
+// role PRD §6 defines (including no session, since no login flow exists
+// yet) is allowed there, and ProtectedRoute always redirects unauthorized
+// attempts *to* "/", so guarding it too would risk a redirect loop.
+function protectedRouteElement(screen: ReactNode, allowedRoles: Role[]) {
+  return routeElement(<ProtectedRoute allowedRoles={allowedRoles}>{screen}</ProtectedRoute>);
+}
+
 export default function App() {
   return (
     <Suspense fallback={<RouteLoadingFallback />}>
       <Routes>
         <Route path="/" element={routeElement(<SearchDashboard />)} />
         <Route path="/search" element={routeElement(<SearchDashboard />)} />
-        <Route path="/itinerary/:id" element={routeElement(<ItineraryBuilder />)} />
-        <Route path="/packages/new" element={routeElement(<PackageBuilder />)} />
-        <Route path="/booking/:packageId" element={routeElement(<BookingPaymentFlow />)} />
-        <Route path="/dashboard" element={routeElement(<ConsultantDashboard />)} />
-        <Route path="/admin" element={routeElement(<SuperAdminConsole />)} />
-        <Route path="/admin/consultants/new" element={routeElement(<ConsultantOnboardingWizard />)} />
-        <Route path="/admin/consultants" element={routeElement(<ConsultantList />)} />
-        <Route path="/users" element={routeElement(<UserManagement />)} />
-        <Route path="/admin/suppliers" element={routeElement(<SupplierCredentialManagement />)} />
-        <Route path="/admin/ai-governance" element={routeElement(<AiGovernanceLogViewer />)} />
-        <Route path="/local-dmc" element={routeElement(<LocalDmcOnboarding />)} />
-        <Route path="/local-dmc/:id/inventory" element={routeElement(<LocalDmcBulkUpload />)} />
-        <Route path="/byos-credentials" element={routeElement(<ByosCredentialEntry />)} />
-        <Route path="/wallet" element={routeElement(<WalletBilling />)} />
-        <Route path="/campaigns/new" element={routeElement(<CampaignBuilder />)} />
-        <Route path="/pnr" element={routeElement(<PnrBookingSearch />)} />
-        <Route path="/notifications" element={routeElement(<NotificationPreferences />)} />
+        <Route
+          path="/itinerary/:id"
+          element={protectedRouteElement(<ItineraryBuilder />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+        />
+        <Route
+          path="/packages/new"
+          element={protectedRouteElement(<PackageBuilder />, ["SUPER_ADMIN", "CONSULTANT"])}
+        />
+        <Route
+          path="/booking/:packageId"
+          element={protectedRouteElement(<BookingPaymentFlow />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+        />
+        <Route path="/dashboard" element={protectedRouteElement(<ConsultantDashboard />, ["CONSULTANT"])} />
+        <Route path="/admin" element={protectedRouteElement(<SuperAdminConsole />, ["SUPER_ADMIN"])} />
+        <Route
+          path="/admin/consultants/new"
+          element={protectedRouteElement(<ConsultantOnboardingWizard />, ["SUPER_ADMIN"])}
+        />
+        <Route path="/admin/consultants" element={protectedRouteElement(<ConsultantList />, ["SUPER_ADMIN"])} />
+        <Route path="/users" element={protectedRouteElement(<UserManagement />, ["CONSULTANT"])} />
+        <Route
+          path="/admin/suppliers"
+          element={protectedRouteElement(<SupplierCredentialManagement />, ["SUPER_ADMIN"])}
+        />
+        <Route
+          path="/admin/ai-governance"
+          element={protectedRouteElement(<AiGovernanceLogViewer />, ["SUPER_ADMIN"])}
+        />
+        <Route path="/local-dmc" element={protectedRouteElement(<LocalDmcOnboarding />, ["CONSULTANT"])} />
+        <Route
+          path="/local-dmc/:id/inventory"
+          element={protectedRouteElement(<LocalDmcBulkUpload />, ["CONSULTANT"])}
+        />
+        <Route path="/byos-credentials" element={protectedRouteElement(<ByosCredentialEntry />, ["CONSULTANT"])} />
+        <Route path="/wallet" element={protectedRouteElement(<WalletBilling />, ["SUPER_ADMIN", "CONSULTANT"])} />
+        <Route
+          path="/campaigns/new"
+          element={protectedRouteElement(<CampaignBuilder />, ["SUPER_ADMIN", "CONSULTANT"])}
+        />
+        <Route
+          path="/pnr"
+          element={protectedRouteElement(<PnrBookingSearch />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+        />
+        <Route
+          path="/notifications"
+          element={protectedRouteElement(<NotificationPreferences />, ["CONSULTANT"])}
+        />
+        {/* Layer 2, End Traveler-facing — no internal role required. */}
         <Route path="/storefront" element={routeElement(<ConsultantStorefront />)} />
-        <Route path="/disputes" element={routeElement(<DisputeTicketTracker />)} />
+        <Route
+          path="/disputes"
+          element={protectedRouteElement(<DisputeTicketTracker />, ["SUPER_ADMIN", "CONSULTANT"])}
+        />
       </Routes>
     </Suspense>
   );
