@@ -1,6 +1,7 @@
 package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.BookingApi;
+import com.adren.travel.booking.BookingSearchResultView;
 import com.adren.travel.booking.CalculateCancellationRefundCommand;
 import com.adren.travel.booking.CancellationRequestView;
 import com.adren.travel.booking.DisputeTicketView;
@@ -41,6 +42,12 @@ class BookingQueryController {
     @GetMapping
     PageResponse<UUID> findByConsultant(@RequestParam UUID consultantId, Pageable pageable) {
         return PageResponse.of(bookingApi.findBookingsByConsultant(consultantId, pageable));
+    }
+
+    /** PRD §16, §22.8 T12, HRD-07 — PNR/booking reference search across all product types. */
+    @GetMapping("/search")
+    PageResponse<BookingSearchResultView> search(@RequestParam String ref, Pageable pageable) {
+        return PageResponse.of(bookingApi.searchByPnrReference(ref, pageable));
     }
 
     @PostMapping

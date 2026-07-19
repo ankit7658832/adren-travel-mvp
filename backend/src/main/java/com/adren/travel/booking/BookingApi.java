@@ -169,6 +169,21 @@ public interface BookingApi {
     Page<UUID> findBookingsByConsultant(UUID consultantId, Pageable pageable);
 
     /**
+     * Searches by PNR/internal booking reference across all product types
+     * from a single field (PRD §16, §22.8 T12, HRD-07) — {@code Booking}
+     * itself carries no product-type field, so this is one lookup, not a
+     * fan-out across five line-item tables. Tenant-scoped exactly like
+     * {@link #flagDispute}: a CONSULTANT/USER whose PNR guess resolves to
+     * another tenant's booking is rejected the same way any other
+     * cross-tenant lookup in this codebase is (RULES.md §5.2), not silently
+     * treated as "not found". Paginated (0 or 1 results) per RULES.md
+     * §3.4's blanket collection-endpoint shape, even though a PNR
+     * reference is unique.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    Page<BookingSearchResultView> searchByPnrReference(String pnrReference, Pageable pageable);
+
+    /**
      * The Itinerary Builder's alternate-selection side panel (PRD §21.2,
      * FND-16) — every alternate available for one location/category, for
      * the Consultant to filter/sort (price, rating, supplier) client-side

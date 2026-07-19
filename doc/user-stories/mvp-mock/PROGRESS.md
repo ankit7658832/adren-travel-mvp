@@ -141,7 +141,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **HRD-04** — build the notification preferences screen
 - [ ] **HRD-05** — implement the full cancellation workflow across policy check approval and refund
 - [x] **HRD-06** — track disputes as tickets not email handoffs
-- [ ] **HRD-07** — implement pnr booking search across all product types
+- [x] **HRD-07** — implement pnr booking search across all product types
 - [ ] **HRD-08** — build the pnr booking search screen
 - [ ] **HRD-09** — build the consultant dashboard
 - [ ] **HRD-10** — show an onboarding checklist instead of empty charts for new consultants

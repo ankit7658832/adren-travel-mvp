@@ -114,4 +114,16 @@ class Booking {
     PaymentMethod getPaymentMethod() {
         return paymentMethod;
     }
+
+    BigDecimal getTotalSellPriceAmount() {
+        return totalSellPriceAmount;
+    }
+
+    CurrencyCode getTotalSellCurrency() {
+        return totalSellCurrency;
+    }
+
+    Instant getCreatedAt() {
+        return createdAt;
+    }
 }
