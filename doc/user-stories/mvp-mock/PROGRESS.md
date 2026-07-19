@@ -126,7 +126,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **ADS-07** — launch an approved campaign under the adren managed meta account
 - [x] **ADS-08** — display a campaign status stepper matching the status enum
 - [x] **ADS-09** — flow campaign performance data back to the consultant dashboard
-- [ ] **ADS-10** — enforce near real time spend cap on active campaigns
+- [x] **ADS-10** — enforce near real time spend cap on active campaigns
 - [ ] **ADS-11** — implement campaign approval workflow guardrails and billing transparency
 - [ ] **ADS-12** — auto pause a campaign when its linked package price changes
 - [ ] **ADS-13** — surface a clear suspended action required status on meta account suspension

@@ -1,5 +1,6 @@
 package com.adren.travel.ads.internal;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
@@ -27,4 +28,13 @@ interface MetaAdsClient {
     /** ADS-09's increment payload. */
     record PerformanceIncrement(int impressions, int clicks, int bookingsAttributed) {
     }
+
+    /**
+     * ADS-10 — one poll of Meta's spend feed for a Live campaign: the
+     * amount spent since the last poll (an increment, same shape as
+     * {@link #fetchPerformanceIncrement}). Polled on its own, tighter
+     * cadence than the performance feed (PRD §24.6's near-real-time NFR
+     * applies to spend, not to impressions/clicks display).
+     */
+    BigDecimal fetchSpendIncrement(UUID campaignId);
 }

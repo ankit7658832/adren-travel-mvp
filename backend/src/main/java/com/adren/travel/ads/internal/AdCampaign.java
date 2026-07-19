@@ -165,6 +165,30 @@ class AdCampaign {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * ADS-10, PRD §14.3/§24.6 — accrues a spend increment from the mocked
+     * near-real-time feed. Caps {@code spend_to_date} exactly at {@code
+     * budget_cap} rather than letting it overshoot even by the increment's
+     * remainder — §24.6's NFR is "must not meaningfully overshoot," and
+     * capping at the exact budget is the strictest reading of that, not
+     * just "close enough." Self-transitions to SpendCapReached the moment
+     * the cap is met, same "entity owns the guard" shape as every other
+     * transition in this class.
+     */
+    void recordSpend(BigDecimal amount) {
+        if (this.status != AdCampaignStatus.LIVE) {
+            throw new IllegalStateException("Spend can only accrue on a LIVE campaign, was: " + this.status);
+        }
+        BigDecimal newTotal = this.spendToDateAmount.add(amount);
+        if (budgetCapAmount != null && newTotal.compareTo(budgetCapAmount) >= 0) {
+            this.spendToDateAmount = budgetCapAmount;
+            this.status = AdCampaignStatus.SPEND_CAP_REACHED;
+        } else {
+            this.spendToDateAmount = newTotal;
+        }
+        this.updatedAt = Instant.now();
+    }
+
     UUID getCampaignId() {
         return campaignId;
     }

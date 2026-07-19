@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -35,5 +36,13 @@ class StubMetaAdsClient implements MetaAdsClient {
         log.info("Meta ads stub: performance increment for campaignId={} impressions={} clicks={} bookingsAttributed={}",
             campaignId, impressions, clicks, bookingsAttributed);
         return new PerformanceIncrement(impressions, clicks, bookingsAttributed);
+    }
+
+    @Override
+    public BigDecimal fetchSpendIncrement(UUID campaignId) {
+        BigDecimal spendIncrement = BigDecimal.valueOf(ThreadLocalRandom.current().nextDouble(10, 60))
+            .setScale(2, java.math.RoundingMode.HALF_UP);
+        log.info("Meta ads stub: spend increment for campaignId={} amount={}", campaignId, spendIncrement);
+        return spendIncrement;
     }
 }

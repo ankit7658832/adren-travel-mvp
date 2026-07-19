@@ -120,4 +120,45 @@ class AdCampaignTest {
         assertThatThrownBy(() -> campaign.recordPerformanceSnapshot(100, 10, 1))
             .isInstanceOf(IllegalStateException.class);
     }
+
+    private AdCampaign newLiveCampaignWithBudget(String budgetCapAmount) {
+        AdCampaign campaign = newCampaign();
+        campaign.submitCampaignInputs("Adults 25-45", new java.math.BigDecimal(budgetCapAmount), 14);
+        campaign.submitForPolicyReview();
+        campaign.launch("meta-ref-123");
+        return campaign;
+    }
+
+    @Test
+    void recordSpendAccumulatesBelowTheCapADS10() {
+        AdCampaign campaign = newLiveCampaignWithBudget("500.00");
+
+        campaign.recordSpend(new java.math.BigDecimal("100.00"));
+        campaign.recordSpend(new java.math.BigDecimal("50.00"));
+
+        assertThat(campaign.getSpendToDateAmount()).isEqualByComparingTo("150.00");
+        assertThat(campaign.getStatus()).isEqualTo(AdCampaignStatus.LIVE);
+    }
+
+    @Test
+    void recordSpendCapsExactlyAtBudgetAndTransitionsToSpendCapReachedADS10() {
+        // PRD §24.6 NFR: must not meaningfully overshoot — an increment
+        // that would push spend past the cap is truncated to land exactly
+        // on the cap, never beyond it.
+        AdCampaign campaign = newLiveCampaignWithBudget("500.00");
+        campaign.recordSpend(new java.math.BigDecimal("480.00"));
+
+        campaign.recordSpend(new java.math.BigDecimal("50.00"));
+
+        assertThat(campaign.getSpendToDateAmount()).isEqualByComparingTo("500.00");
+        assertThat(campaign.getStatus()).isEqualTo(AdCampaignStatus.SPEND_CAP_REACHED);
+    }
+
+    @Test
+    void recordSpendIsOnlyValidWhileLiveADS10() {
+        AdCampaign campaign = newCampaign();
+
+        assertThatThrownBy(() -> campaign.recordSpend(new java.math.BigDecimal("10.00")))
+            .isInstanceOf(IllegalStateException.class);
+    }
 }
