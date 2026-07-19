@@ -1,14 +1,18 @@
 package com.adren.travel.ads.internal;
 
 import com.adren.travel.ads.AdAccountView;
+import com.adren.travel.ads.AdCampaignView;
 import com.adren.travel.ads.AdsApi;
+import com.adren.travel.ads.CreateCampaignCommand;
 import com.adren.travel.ads.GenerateAdCreativeForPackageCommand;
+import com.adren.travel.ads.event.AdCampaignCreatedEvent;
 import com.adren.travel.ai.AdCreativeGenerationResult;
 import com.adren.travel.ai.AiApi;
 import com.adren.travel.ai.GenerateAdCreativeCommand;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.PackageView;
 import com.adren.travel.shared.Money;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,13 +36,18 @@ class AdsServiceImpl implements AdsApi {
     private final AiApi aiApi;
     private final AdAccountRepository adAccountRepository;
     private final MetaAdsClient metaAdsClient;
+    private final AdCampaignRepository adCampaignRepository;
+    private final ApplicationEventPublisher events;
 
     AdsServiceImpl(BookingApi bookingApi, AiApi aiApi, AdAccountRepository adAccountRepository,
-                   MetaAdsClient metaAdsClient) {
+                   MetaAdsClient metaAdsClient, AdCampaignRepository adCampaignRepository,
+                   ApplicationEventPublisher events) {
         this.bookingApi = bookingApi;
         this.aiApi = aiApi;
         this.adAccountRepository = adAccountRepository;
         this.metaAdsClient = metaAdsClient;
+        this.adCampaignRepository = adCampaignRepository;
+        this.events = events;
     }
 
     @Override
@@ -67,5 +76,28 @@ class AdsServiceImpl implements AdsApi {
     private static AdAccountView toView(AdAccount account) {
         return new AdAccountView(account.getAdAccountId(), account.getConsultantId(),
             account.getMetaBusinessManagerId(), account.getProvisionedAt());
+    }
+
+    @Override
+    @Transactional
+    public AdCampaignView createCampaign(CreateCampaignCommand command) {
+        // findPackageById already enforces PUBLISHED status and tenant
+        // scoping (RULES.md §5.2) — no need to duplicate either check here.
+        PackageView travelPackage = bookingApi.findPackageById(command.packageId());
+
+        AdCampaign campaign = new AdCampaign(UUID.randomUUID(), travelPackage.packageId(),
+            travelPackage.consultantId(), travelPackage.currency());
+        adCampaignRepository.save(campaign);
+        events.publishEvent(
+            new AdCampaignCreatedEvent(campaign.getCampaignId(), campaign.getPackageId(), campaign.getConsultantId()));
+
+        return toView(campaign);
+    }
+
+    private static AdCampaignView toView(AdCampaign campaign) {
+        return new AdCampaignView(campaign.getCampaignId(), campaign.getPackageId(), campaign.getConsultantId(),
+            campaign.getStatus().name(), campaign.getAudienceDescription(), campaign.getBudgetCapAmount(),
+            campaign.getBudgetCapCurrency(), campaign.getDurationDays(), campaign.getMetaCampaignRef(),
+            campaign.getSpendToDateAmount(), campaign.getRejectionReason());
     }
 }

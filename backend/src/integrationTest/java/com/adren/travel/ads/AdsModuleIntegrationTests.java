@@ -1,5 +1,6 @@
 package com.adren.travel.ads;
 
+import com.adren.travel.ads.event.AdCampaignCreatedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import org.junit.jupiter.api.AfterEach;
@@ -9,6 +10,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.modulith.test.ApplicationModuleTest;
+import org.springframework.modulith.test.Scenario;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
@@ -145,6 +147,23 @@ class AdsModuleIntegrationTests {
 
         assertThatThrownBy(() -> adsApi.provisionAdAccount(UUID.randomUUID()))
             .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+    }
+
+    @Test
+    void createCampaignPersistsAtPendingApprovalAndPublishesTheRealEventADS02(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, consultantId);
+        var command = new CreateCampaignCommand(packageId);
+
+        scenario.stimulate(() -> adsApi.createCampaign(command))
+            .andWaitForEventOfType(AdCampaignCreatedEvent.class)
+            .matchingMappedValue(AdCampaignCreatedEvent::packageId, packageId)
+            .toArrive();
+
+        String status = jdbcTemplate.queryForObject(
+            "SELECT status FROM ad_campaign WHERE package_id = ?", String.class, packageId);
+        assertThat(status).isEqualTo("PENDING_APPROVAL");
     }
 
     private UUID seedPackage(UUID consultantId, String name, String status) {

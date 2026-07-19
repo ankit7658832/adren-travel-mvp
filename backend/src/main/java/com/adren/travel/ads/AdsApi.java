@@ -37,4 +37,14 @@ public interface AdsApi {
      */
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     AdAccountView provisionAdAccount(UUID consultantId);
+
+    /**
+     * Creates a new campaign in PendingApproval for a published Package
+     * (PRD §14.2 steps 1-2, ADS-02) — same "Create package" authority
+     * shape as {@link #generateAdCreativeForPackage}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT') or "
+        + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
+        + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
+    AdCampaignView createCampaign(CreateCampaignCommand command);
 }
