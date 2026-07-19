@@ -3,22 +3,16 @@ package com.adren.travel.notification.internal;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.shared.LogFields;
 import com.adren.travel.shared.TraceIds;
-import com.adren.travel.whitelabel.Market;
-import com.adren.travel.whitelabel.WhitelabelApi;
 import org.slf4j.MDC;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.modulith.events.ApplicationModuleListener;
 import org.springframework.stereotype.Component;
 
-import java.util.UUID;
-
 /**
  * Real implementation of PRD Section 15's notification dispatch (HRD-01) —
  * email always, plus a region-routed secondary channel (WhatsApp for
- * India/Dubai, SMS elsewhere per §22.7 T11). Per-Consultant override
- * (HRD-04's notification preferences screen) isn't built yet, so the
- * market default always applies.
+ * India/Dubai, SMS elsewhere per §22.7 T11), via {@link NotificationDispatcher}.
  * <p>
  * {@code @ApplicationModuleListener} (Spring Modulith) is a meta-annotation
  * for {@code @Async @TransactionalEventListener(phase = AFTER_COMMIT)} —
@@ -40,19 +34,10 @@ class BookingNotificationListener {
 
     private static final Logger log = LoggerFactory.getLogger(BookingNotificationListener.class);
 
-    private final WhitelabelApi whitelabelApi;
-    private final SecondaryChannelProvider secondaryChannelProvider;
-    private final EmailClient emailClient;
-    private final WhatsAppClient whatsAppClient;
-    private final SmsClient smsClient;
+    private final NotificationDispatcher dispatcher;
 
-    BookingNotificationListener(WhitelabelApi whitelabelApi, SecondaryChannelProvider secondaryChannelProvider,
-                                 EmailClient emailClient, WhatsAppClient whatsAppClient, SmsClient smsClient) {
-        this.whitelabelApi = whitelabelApi;
-        this.secondaryChannelProvider = secondaryChannelProvider;
-        this.emailClient = emailClient;
-        this.whatsAppClient = whatsAppClient;
-        this.smsClient = smsClient;
+    BookingNotificationListener(NotificationDispatcher dispatcher) {
+        this.dispatcher = dispatcher;
     }
 
     @ApplicationModuleListener
@@ -75,29 +60,7 @@ class BookingNotificationListener {
 
         String subject = "Your booking is confirmed";
         String body = "Booking " + event.bookingId() + " is confirmed for " + event.totalSellPrice() + ".";
-        emailClient.send(event.consultantId(), subject, body);
-
-        NotificationChannel secondaryChannel = resolveSecondaryChannel(event.consultantId());
         String message = "Booking " + event.bookingId() + " confirmed.";
-        if (secondaryChannel == NotificationChannel.WHATSAPP) {
-            whatsAppClient.send(event.consultantId(), message);
-        } else {
-            smsClient.send(event.consultantId(), message);
-        }
-    }
-
-    private NotificationChannel resolveSecondaryChannel(UUID consultantId) {
-        try {
-            Market market = whitelabelApi.findConsultantMarket(consultantId);
-            return secondaryChannelProvider.defaultChannelFor(market);
-        } catch (IllegalArgumentException e) {
-            // Defensive: several confirmBooking paths across this
-            // walking-skeleton's test suite use a consultantId that was
-            // never onboarded as a real Consultant record — fall back to
-            // SMS (the majority-market default) rather than let
-            // notification dispatch throw, since this listener must never
-            // be able to fail the booking flow it reacts to.
-            return NotificationChannel.SMS;
-        }
+        dispatcher.dispatch(event.consultantId(), subject, body, message);
     }
 }

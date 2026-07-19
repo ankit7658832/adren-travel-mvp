@@ -95,6 +95,9 @@ class PaymentsServiceImplTest {
     @Mock
     StripeClient stripeClient;
 
+    @Mock
+    CreditThresholdBreachEventPublisher creditThresholdBreachEventPublisher;
+
     PaymentsServiceImpl service;
 
     @BeforeEach
@@ -107,7 +110,8 @@ class PaymentsServiceImplTest {
         UkTomsVatProperties disabledUkTomsVat = new UkTomsVatProperties(false, BigDecimal.valueOf(20));
         service = new PaymentsServiceImpl(markupRuleRepository, walletRepository, paymentIntentRepository,
             walletLedgerEntryRepository, new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
-            new PricingPipeline(markupRuleRepository, events), stripeClient, disabledIndiaTax, disabledUkTomsVat);
+            new PricingPipeline(markupRuleRepository, events), stripeClient, disabledIndiaTax, disabledUkTomsVat,
+            creditThresholdBreachEventPublisher);
     }
 
     @AfterEach
@@ -709,6 +713,10 @@ class PaymentsServiceImplTest {
         verify(walletRepository, org.mockito.Mockito.never()).save(any());
         verify(walletLedgerEntryRepository, org.mockito.Mockito.never()).saveAndFlush(any());
         verifyNoInteractions(events);
+        // HRD-02: the notification-trigger event still fires, via its own
+        // REQUIRES_NEW-transactional publisher — never through `events`
+        // directly, since that would roll back with this (blocked) transaction.
+        verify(creditThresholdBreachEventPublisher).publish(consultantId, amount);
     }
 
     @Test
@@ -738,6 +746,7 @@ class PaymentsServiceImplTest {
         service.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
 
         assertThat(wallet.getPendingHolds()).isEqualByComparingTo("500");
+        verifyNoInteractions(creditThresholdBreachEventPublisher);
     }
 
     @Test
@@ -1057,7 +1066,8 @@ class PaymentsServiceImplTest {
         PaymentsServiceImpl enabledService = new PaymentsServiceImpl(markupRuleRepository, walletRepository,
             paymentIntentRepository, walletLedgerEntryRepository,
             new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
-            new PricingPipeline(markupRuleRepository, events), stripeClient, enabledIndiaTax, disabledUkTomsVat);
+            new PricingPipeline(markupRuleRepository, events), stripeClient, enabledIndiaTax, disabledUkTomsVat,
+            creditThresholdBreachEventPublisher);
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Money margin = new Money(BigDecimal.valueOf(50_000), CurrencyCode.INR);
@@ -1083,7 +1093,8 @@ class PaymentsServiceImplTest {
         PaymentsServiceImpl enabledService = new PaymentsServiceImpl(markupRuleRepository, walletRepository,
             paymentIntentRepository, walletLedgerEntryRepository,
             new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
-            new PricingPipeline(markupRuleRepository, events), stripeClient, enabledIndiaTax, disabledUkTomsVat);
+            new PricingPipeline(markupRuleRepository, events), stripeClient, enabledIndiaTax, disabledUkTomsVat,
+            creditThresholdBreachEventPublisher);
         Money margin = new Money(BigDecimal.valueOf(20_000), CurrencyCode.INR);
         Money packageValue = new Money(BigDecimal.valueOf(500_000), CurrencyCode.INR); // under the threshold
 
@@ -1114,7 +1125,8 @@ class PaymentsServiceImplTest {
         PaymentsServiceImpl enabledService = new PaymentsServiceImpl(markupRuleRepository, walletRepository,
             paymentIntentRepository, walletLedgerEntryRepository,
             new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
-            new PricingPipeline(markupRuleRepository, events), stripeClient, disabledIndiaTax, enabledUkTomsVat);
+            new PricingPipeline(markupRuleRepository, events), stripeClient, disabledIndiaTax, enabledUkTomsVat,
+            creditThresholdBreachEventPublisher);
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Money margin = new Money(BigDecimal.valueOf(1_000), CurrencyCode.GBP);
