@@ -230,4 +230,25 @@ public interface PaymentsApi {
      * {@link #calculateCommission} — no {@code @PreAuthorize}.
      */
     UkTomsVatCalculation calculateUkTomsVat(CalculateUkTomsVatCommand command);
+
+    /**
+     * Calculates the managed-service fee on an ad-spend increment (PRD §1
+     * Executive Summary's "managed-service fee on ad spend" business
+     * model, §19, ADS-14) — a Consultant is billed in their own
+     * settlement currency, with Adren's fee built into the calculation.
+     * Gated behind {@code adren.payments.ad-spend.enabled} (off by
+     * default, same reasoning as {@link #calculateUkTomsVat}'s gate — PRD
+     * §19 flags the exact billing model as pending business confirmation;
+     * this ships a configurable-percentage placeholder pipeline, not a
+     * confirmed rate). Publishes {@link
+     * com.adren.travel.payments.event.AdSpendBillingCalculatedEvent} in
+     * the same transactional scope — the reconciliation point a FIN-06
+     * wallet/ledger consumer would react to once the business rule is
+     * confirmed; this story stops at calculation + event publication, not
+     * an actual wallet debit, since debiting real money against an
+     * unconfirmed rate would be premature. Same
+     * internal-pricing-pipeline-step shape as {@link #calculateCommission}
+     * — no {@code @PreAuthorize}.
+     */
+    AdSpendBillingCalculation calculateAdSpendBilling(CalculateAdSpendBillingCommand command);
 }

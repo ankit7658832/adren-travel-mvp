@@ -1,6 +1,8 @@
 package com.adren.travel.payments.internal;
 
+import com.adren.travel.payments.AdSpendBillingCalculation;
 import com.adren.travel.payments.ApplyCurrencyBufferCommand;
+import com.adren.travel.payments.CalculateAdSpendBillingCommand;
 import com.adren.travel.payments.CalculateCommissionCommand;
 import com.adren.travel.payments.CalculateIndiaGstTcsCommand;
 import com.adren.travel.payments.CalculateRefundCommand;
@@ -25,6 +27,7 @@ import com.adren.travel.payments.UkTomsVatCalculation;
 import com.adren.travel.payments.WalletHoldCommand;
 import com.adren.travel.payments.WalletLedgerEntryView;
 import com.adren.travel.payments.WalletView;
+import com.adren.travel.payments.event.AdSpendBillingCalculatedEvent;
 import com.adren.travel.payments.event.BookingPaidOnAccountEvent;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
@@ -68,6 +71,7 @@ class PaymentsServiceImpl implements PaymentsApi {
     private final StripeClient stripeClient;
     private final IndiaTaxProperties indiaTaxProperties;
     private final UkTomsVatProperties ukTomsVatProperties;
+    private final AdSpendBillingProperties adSpendBillingProperties;
     private final CreditThresholdBreachEventPublisher creditThresholdBreachEventPublisher;
 
     PaymentsServiceImpl(MarkupRuleRepository markupRuleRepository, WalletRepository walletRepository,
@@ -76,6 +80,7 @@ class PaymentsServiceImpl implements PaymentsApi {
                          WalletLedgerEntryRecorder walletLedgerEntryRecorder, ApplicationEventPublisher events,
                          PricingPipeline pricingPipeline, StripeClient stripeClient,
                          IndiaTaxProperties indiaTaxProperties, UkTomsVatProperties ukTomsVatProperties,
+                         AdSpendBillingProperties adSpendBillingProperties,
                          CreditThresholdBreachEventPublisher creditThresholdBreachEventPublisher) {
         this.markupRuleRepository = markupRuleRepository;
         this.walletRepository = walletRepository;
@@ -87,6 +92,7 @@ class PaymentsServiceImpl implements PaymentsApi {
         this.stripeClient = stripeClient;
         this.indiaTaxProperties = indiaTaxProperties;
         this.ukTomsVatProperties = ukTomsVatProperties;
+        this.adSpendBillingProperties = adSpendBillingProperties;
         this.creditThresholdBreachEventPublisher = creditThresholdBreachEventPublisher;
     }
 
@@ -442,6 +448,23 @@ class PaymentsServiceImpl implements PaymentsApi {
         events.publishEvent(new UkTomsVatCalculatedEvent(command.bookingId(), command.consultantId(), vatAmount, applied));
 
         return new UkTomsVatCalculation(vatAmount, applied);
+    }
+
+    @Override
+    @Transactional
+    public AdSpendBillingCalculation calculateAdSpendBilling(CalculateAdSpendBillingCommand command) {
+        boolean applied = adSpendBillingProperties.enabled();
+        // PRD §19: exact ad-spend billing model pending business
+        // confirmation — never silently charge the placeholder percentage
+        // as if final.
+        Money feeAmount = applied
+            ? command.spendAmount().percentOf(adSpendBillingProperties.managedServiceFeePercent())
+            : Money.zero(command.spendAmount().currency());
+
+        events.publishEvent(new AdSpendBillingCalculatedEvent(
+            command.campaignId(), command.consultantId(), command.spendAmount(), feeAmount, applied));
+
+        return new AdSpendBillingCalculation(command.spendAmount(), feeAmount, applied);
     }
 
     // FIN-10: the ledger insert is attempted (and, on a unique-constraint

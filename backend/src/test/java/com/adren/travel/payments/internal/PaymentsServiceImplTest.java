@@ -23,6 +23,7 @@ import com.adren.travel.payments.SnapshotFxRateCommand;
 import com.adren.travel.payments.UkTomsVatCalculation;
 import com.adren.travel.payments.WalletHoldCommand;
 import com.adren.travel.payments.WalletView;
+import com.adren.travel.payments.event.AdSpendBillingCalculatedEvent;
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
@@ -108,10 +109,11 @@ class PaymentsServiceImplTest {
         IndiaTaxProperties disabledIndiaTax = new IndiaTaxProperties(false, BigDecimal.valueOf(5),
             BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
         UkTomsVatProperties disabledUkTomsVat = new UkTomsVatProperties(false, BigDecimal.valueOf(20));
+        AdSpendBillingProperties disabledAdSpendBilling = new AdSpendBillingProperties(false, BigDecimal.valueOf(15));
         service = new PaymentsServiceImpl(markupRuleRepository, walletRepository, paymentIntentRepository,
             walletLedgerEntryRepository, new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
             new PricingPipeline(markupRuleRepository, events), stripeClient, disabledIndiaTax, disabledUkTomsVat,
-            creditThresholdBreachEventPublisher);
+            disabledAdSpendBilling, creditThresholdBreachEventPublisher);
     }
 
     @AfterEach
@@ -1063,11 +1065,12 @@ class PaymentsServiceImplTest {
         IndiaTaxProperties enabledIndiaTax = new IndiaTaxProperties(true, BigDecimal.valueOf(5),
             BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
         UkTomsVatProperties disabledUkTomsVat = new UkTomsVatProperties(false, BigDecimal.valueOf(20));
+        AdSpendBillingProperties disabledAdSpendBilling = new AdSpendBillingProperties(false, BigDecimal.valueOf(15));
         PaymentsServiceImpl enabledService = new PaymentsServiceImpl(markupRuleRepository, walletRepository,
             paymentIntentRepository, walletLedgerEntryRepository,
             new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
             new PricingPipeline(markupRuleRepository, events), stripeClient, enabledIndiaTax, disabledUkTomsVat,
-            creditThresholdBreachEventPublisher);
+            disabledAdSpendBilling, creditThresholdBreachEventPublisher);
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Money margin = new Money(BigDecimal.valueOf(50_000), CurrencyCode.INR);
@@ -1090,11 +1093,12 @@ class PaymentsServiceImplTest {
         IndiaTaxProperties enabledIndiaTax = new IndiaTaxProperties(true, BigDecimal.valueOf(5),
             BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
         UkTomsVatProperties disabledUkTomsVat = new UkTomsVatProperties(false, BigDecimal.valueOf(20));
+        AdSpendBillingProperties disabledAdSpendBilling = new AdSpendBillingProperties(false, BigDecimal.valueOf(15));
         PaymentsServiceImpl enabledService = new PaymentsServiceImpl(markupRuleRepository, walletRepository,
             paymentIntentRepository, walletLedgerEntryRepository,
             new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
             new PricingPipeline(markupRuleRepository, events), stripeClient, enabledIndiaTax, disabledUkTomsVat,
-            creditThresholdBreachEventPublisher);
+            disabledAdSpendBilling, creditThresholdBreachEventPublisher);
         Money margin = new Money(BigDecimal.valueOf(20_000), CurrencyCode.INR);
         Money packageValue = new Money(BigDecimal.valueOf(500_000), CurrencyCode.INR); // under the threshold
 
@@ -1122,11 +1126,12 @@ class PaymentsServiceImplTest {
         UkTomsVatProperties enabledUkTomsVat = new UkTomsVatProperties(true, BigDecimal.valueOf(20));
         IndiaTaxProperties disabledIndiaTax = new IndiaTaxProperties(false, BigDecimal.valueOf(5),
             BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
+        AdSpendBillingProperties disabledAdSpendBilling = new AdSpendBillingProperties(false, BigDecimal.valueOf(15));
         PaymentsServiceImpl enabledService = new PaymentsServiceImpl(markupRuleRepository, walletRepository,
             paymentIntentRepository, walletLedgerEntryRepository,
             new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
             new PricingPipeline(markupRuleRepository, events), stripeClient, disabledIndiaTax, enabledUkTomsVat,
-            creditThresholdBreachEventPublisher);
+            disabledAdSpendBilling, creditThresholdBreachEventPublisher);
         UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Money margin = new Money(BigDecimal.valueOf(1_000), CurrencyCode.GBP);
@@ -1141,6 +1146,47 @@ class PaymentsServiceImplTest {
         verify(events).publishEvent(captor.capture());
         assertThat(captor.getValue().applied()).isTrue();
         assertThat(captor.getValue().vatAmount().amount()).isEqualByComparingTo("200.00");
+    }
+
+    @Test
+    void calculateAdSpendBillingAppliesNothingWhenTheFeatureFlagIsOffADS14() {
+        // Default `service` from setUp() is built with the flag disabled.
+        Money spendAmount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
+
+        com.adren.travel.payments.AdSpendBillingCalculation calculation = service.calculateAdSpendBilling(
+            new com.adren.travel.payments.CalculateAdSpendBillingCommand(UUID.randomUUID(), UUID.randomUUID(), spendAmount));
+
+        assertThat(calculation.applied()).isFalse();
+        assertThat(calculation.feeAmount().amount()).isEqualByComparingTo("0");
+        assertThat(calculation.spendAmount()).isEqualTo(spendAmount);
+    }
+
+    @Test
+    void calculateAdSpendBillingAppliesTheConfiguredFeePercentWhenEnabledADS14() {
+        AdSpendBillingProperties enabledAdSpendBilling = new AdSpendBillingProperties(true, BigDecimal.valueOf(15));
+        IndiaTaxProperties disabledIndiaTax = new IndiaTaxProperties(false, BigDecimal.valueOf(5),
+            BigDecimal.valueOf(5), BigDecimal.valueOf(700_000));
+        UkTomsVatProperties disabledUkTomsVat = new UkTomsVatProperties(false, BigDecimal.valueOf(20));
+        PaymentsServiceImpl enabledService = new PaymentsServiceImpl(markupRuleRepository, walletRepository,
+            paymentIntentRepository, walletLedgerEntryRepository,
+            new WalletLedgerEntryRecorder(walletLedgerEntryRepository), events,
+            new PricingPipeline(markupRuleRepository, events), stripeClient, disabledIndiaTax, disabledUkTomsVat,
+            enabledAdSpendBilling, creditThresholdBreachEventPublisher);
+        UUID campaignId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Money spendAmount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
+
+        com.adren.travel.payments.AdSpendBillingCalculation calculation = enabledService.calculateAdSpendBilling(
+            new com.adren.travel.payments.CalculateAdSpendBillingCommand(campaignId, consultantId, spendAmount));
+
+        assertThat(calculation.applied()).isTrue();
+        assertThat(calculation.feeAmount().amount()).isEqualByComparingTo("150.00"); // 15% of spend
+
+        ArgumentCaptor<AdSpendBillingCalculatedEvent> captor = ArgumentCaptor.forClass(AdSpendBillingCalculatedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().campaignId()).isEqualTo(campaignId);
+        assertThat(captor.getValue().applied()).isTrue();
+        assertThat(captor.getValue().feeAmount().amount()).isEqualByComparingTo("150.00");
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

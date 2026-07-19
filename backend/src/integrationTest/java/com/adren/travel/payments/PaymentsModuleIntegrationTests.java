@@ -511,6 +511,25 @@ class PaymentsModuleIntegrationTests {
         assertThat(calculation.vatAmount().amount()).isEqualByComparingTo("0");
     }
 
+    /**
+     * ADS-14's real acceptance criterion: against the actual application.yml
+     * wiring, the ad-spend managed-service fee is off by default — PRD §19's
+     * business confirmation is still pending, so a real Spring context must
+     * never silently apply the placeholder percentage. Flipping it on is
+     * covered at the unit tier (PaymentsServiceImplTest), which also proves
+     * the actual fee math and the real event's publication.
+     */
+    @Test
+    void adSpendBillingIsDisabledByDefaultInTheRealApplicationConfigurationADS14() {
+        Money spendAmount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
+
+        AdSpendBillingCalculation calculation = paymentsApi.calculateAdSpendBilling(
+            new CalculateAdSpendBillingCommand(UUID.randomUUID(), UUID.randomUUID(), spendAmount));
+
+        assertThat(calculation.applied()).isFalse();
+        assertThat(calculation.feeAmount().amount()).isEqualByComparingTo("0");
+    }
+
     private static void authenticateAs(Role role, UUID consultantId) {
         AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), role, consultantId);
         List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));

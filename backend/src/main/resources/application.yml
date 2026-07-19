@@ -87,6 +87,13 @@ adren:
       uk-toms:
         enabled: ${ADREN_UK_TOMS_VAT_ENABLED:false}
         vat-percent: 20
+    # ADS-14, PRD §1/§19: exact ad-spend billing model is an open item
+    # pending business confirmation — same "illustrative, off by default"
+    # shape as tax.india/tax.uk-toms above. managed-service-fee-percent is
+    # a placeholder figure, not a confirmed business rate.
+    ad-spend:
+      enabled: ${ADREN_AD_SPEND_BILLING_ENABLED:false}
+      managed-service-fee-percent: 15
 
 server:
   port: 8080
