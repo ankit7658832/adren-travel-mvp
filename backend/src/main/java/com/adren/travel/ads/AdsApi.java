@@ -3,6 +3,8 @@ package com.adren.travel.ads;
 import com.adren.travel.ai.AdCreativeGenerationResult;
 import org.springframework.security.access.prepost.PreAuthorize;
 
+import java.util.UUID;
+
 /**
  * Public API of the Ads/Campaign Management module. Other modules must
  * depend on this interface, never on classes under {@code
@@ -24,4 +26,15 @@ public interface AdsApi {
         + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
         + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
     AdCreativeGenerationResult generateAdCreativeForPackage(GenerateAdCreativeForPackageCommand command);
+
+    /**
+     * Provisions an Adren-managed Meta ad account/Business Manager for a
+     * Consultant (PRD §14.1, ADS-01) — Super Admin only, per PRD §6's
+     * "No (executes)" row (a Consultant never owns their own Meta account).
+     * Idempotent-shaped: a second call for an already-provisioned
+     * Consultant returns the existing account rather than erroring or
+     * duplicating.
+     */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    AdAccountView provisionAdAccount(UUID consultantId);
 }

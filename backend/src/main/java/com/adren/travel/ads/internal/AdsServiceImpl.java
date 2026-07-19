@@ -1,5 +1,6 @@
 package com.adren.travel.ads.internal;
 
+import com.adren.travel.ads.AdAccountView;
 import com.adren.travel.ads.AdsApi;
 import com.adren.travel.ads.GenerateAdCreativeForPackageCommand;
 import com.adren.travel.ai.AdCreativeGenerationResult;
@@ -9,16 +10,13 @@ import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.PackageView;
 import com.adren.travel.shared.Money;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.UUID;
 
 /**
- * Internal implementation of {@link AdsApi} (PRD §14, AI-12). Not visible
- * outside this module.
- * <p>
- * This is the module's first real content beyond its {@code package-info}
- * scaffold — only what AI-12 needs (ad-creative generation grounded in a
- * Package's real content). The full Ads Campaign Builder epic (ADS-*
- * stories — Meta account provisioning, campaign lifecycle, spend-cap
- * enforcement) is separate, out of scope here.
+ * Internal implementation of {@link AdsApi} (PRD §14). Not visible outside
+ * this module.
  * <p>
  * Resolves the Package's REAL, live content via {@link
  * BookingApi#findPackageById} and passes it into {@link
@@ -32,10 +30,15 @@ class AdsServiceImpl implements AdsApi {
 
     private final BookingApi bookingApi;
     private final AiApi aiApi;
+    private final AdAccountRepository adAccountRepository;
+    private final MetaAdsClient metaAdsClient;
 
-    AdsServiceImpl(BookingApi bookingApi, AiApi aiApi) {
+    AdsServiceImpl(BookingApi bookingApi, AiApi aiApi, AdAccountRepository adAccountRepository,
+                   MetaAdsClient metaAdsClient) {
         this.bookingApi = bookingApi;
         this.aiApi = aiApi;
+        this.adAccountRepository = adAccountRepository;
+        this.metaAdsClient = metaAdsClient;
     }
 
     @Override
@@ -47,5 +50,22 @@ class AdsServiceImpl implements AdsApi {
         return aiApi.generateAdCreative(new GenerateAdCreativeCommand(travelPackage.consultantId(),
             travelPackage.packageId(), travelPackage.name(), travelPackage.description(), currentSellPrice,
             command.variantCount()));
+    }
+
+    @Override
+    @Transactional
+    public AdAccountView provisionAdAccount(UUID consultantId) {
+        AdAccount account = adAccountRepository.findByConsultantId(consultantId)
+            .orElseGet(() -> {
+                String metaBusinessManagerId = metaAdsClient.provisionAdAccount(consultantId);
+                AdAccount created = new AdAccount(UUID.randomUUID(), consultantId, metaBusinessManagerId);
+                return adAccountRepository.save(created);
+            });
+        return toView(account);
+    }
+
+    private static AdAccountView toView(AdAccount account) {
+        return new AdAccountView(account.getAdAccountId(), account.getConsultantId(),
+            account.getMetaBusinessManagerId(), account.getProvisionedAt());
     }
 }

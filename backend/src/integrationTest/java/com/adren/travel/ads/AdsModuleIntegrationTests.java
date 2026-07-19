@@ -124,6 +124,29 @@ class AdsModuleIntegrationTests {
         assertThat(row.get("source_data_snapshot_json").toString()).contains("Goa Beach Escape");
     }
 
+    @Test
+    void provisionAdAccountCreatesARealRowAndIsIdempotentOnASecondCallADS01() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.SUPER_ADMIN, null);
+
+        AdAccountView first = adsApi.provisionAdAccount(consultantId);
+        AdAccountView second = adsApi.provisionAdAccount(consultantId);
+
+        assertThat(second.adAccountId()).isEqualTo(first.adAccountId());
+        assertThat(second.metaBusinessManagerId()).isEqualTo(first.metaBusinessManagerId());
+        Long rowCount = jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM ad_account WHERE consultant_id = ?", Long.class, consultantId);
+        assertThat(rowCount).isEqualTo(1L);
+    }
+
+    @Test
+    void provisionAdAccountRejectsANonSuperAdminCallerADS01() {
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> adsApi.provisionAdAccount(UUID.randomUUID()))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+    }
+
     private UUID seedPackage(UUID consultantId, String name, String status) {
         java.sql.Timestamp now = java.sql.Timestamp.from(Instant.now());
         UUID itineraryId = UUID.randomUUID();
