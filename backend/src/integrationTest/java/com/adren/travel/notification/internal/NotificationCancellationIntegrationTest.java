@@ -5,6 +5,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.CalculateCancellationRefundCommand;
+import com.adren.travel.booking.event.BookingCancelledEvent;
 import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
@@ -54,10 +55,12 @@ class NotificationCancellationIntegrationTest {
     }
 
     private final BookingApi bookingApi;
+    private final BookingCancelledNotificationListener listener;
 
     @Autowired
-    NotificationCancellationIntegrationTest(BookingApi bookingApi) {
+    NotificationCancellationIntegrationTest(BookingApi bookingApi, BookingCancelledNotificationListener listener) {
         this.bookingApi = bookingApi;
+        this.listener = listener;
     }
 
     @Autowired
@@ -94,6 +97,54 @@ class NotificationCancellationIntegrationTest {
                 .anyMatch(e -> e.getFormattedMessage().contains(consultantId.toString())
                     && e.getFormattedMessage().contains(bookingId.toString())))
                 .isTrue());
+    }
+
+    /**
+     * HRD-03 Step C — Hardening's own before/after requirement: proves the
+     * idempotency guard survives the actual condition it exists for
+     * (Spring Modulith's documented at-least-once redelivery), against the
+     * real {@code processed_event} table and its unique constraint — not a
+     * mocked {@code ProcessedEventDeduplicationService}. Submits one real
+     * cancellation (the event fires once through the async listener), then
+     * manually re-delivers an equal {@link BookingCancelledEvent} straight
+     * to the same listener bean — exactly what a redelivery after a crash
+     * between "process" and "acknowledge" looks like. Asserts exactly one
+     * notification total, not two.
+     */
+    @Test
+    void aRedeliveredCancellationEventDoesNotDoubleDispatchTheNotificationHRD03() {
+        emailAppender.start();
+        ((Logger) LoggerFactory.getLogger(StubEmailClient.class)).addAppender(emailAppender);
+
+        UUID consultantId = UUID.randomUUID();
+        UUID bookingId = insertConfirmedBooking(consultantId);
+        authenticateAsSuperAdmin();
+        FxRateSnapshot originalFxRateSnapshot = new FxRateSnapshot(CurrencyCode.USD, CurrencyCode.INR,
+            BigDecimal.valueOf(80), Instant.now().minusSeconds(7200));
+        var command = new CalculateCancellationRefundCommand(new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR),
+            Instant.now().plusSeconds(3600), Instant.now(), BigDecimal.valueOf(30), originalFxRateSnapshot);
+
+        var result = bookingApi.submitCancellation(bookingId, command);
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(5)).untilAsserted(() ->
+            assertThat(messagesFor(bookingId)).hasSize(1));
+
+        // Simulate redelivery: the same event, delivered a second time.
+        // The autowired reference is still the @Async proxy, not a raw
+        // instance, so this redelivery — like the original — completes on
+        // its own async thread; a delayed re-check (not an immediate
+        // assertion) is required to actually observe whether it lands.
+        listener.on(new BookingCancelledEvent(bookingId, consultantId, result.refundAmount(), result.penaltyAmount()));
+
+        org.awaitility.Awaitility.await()
+            .pollDelay(java.time.Duration.ofSeconds(2))
+            .atMost(java.time.Duration.ofSeconds(4))
+            .untilAsserted(() -> assertThat(messagesFor(bookingId)).hasSize(1));
+    }
+
+    private List<ILoggingEvent> messagesFor(UUID bookingId) {
+        return emailAppender.list.stream()
+            .filter(e -> e.getFormattedMessage().contains(bookingId.toString()))
+            .toList();
     }
 
     private UUID insertConfirmedBooking(UUID consultantId) {
