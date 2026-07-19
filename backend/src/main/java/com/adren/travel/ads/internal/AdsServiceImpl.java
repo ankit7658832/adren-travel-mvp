@@ -247,10 +247,18 @@ class AdsServiceImpl implements AdsApi {
         return toView(campaign);
     }
 
+    @Override
+    public Page<AdCampaignView> findCampaignsForConsultant(UUID consultantId, Pageable pageable) {
+        UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(consultantId);
+        return adCampaignRepository.findByConsultantId(scopedConsultantId, pageable)
+            .map(AdsServiceImpl::toView);
+    }
+
     private static AdCampaignView toView(AdCampaign campaign) {
         return new AdCampaignView(campaign.getCampaignId(), campaign.getPackageId(), campaign.getConsultantId(),
             campaign.getStatus().name(), campaign.getAudienceDescription(), campaign.getBudgetCapAmount(),
             campaign.getBudgetCapCurrency(), campaign.getDurationDays(), campaign.getMetaCampaignRef(),
-            campaign.getSpendToDateAmount(), campaign.getRejectionReason());
+            campaign.getSpendToDateAmount(), campaign.getRejectionReason(), campaign.getImpressions(),
+            campaign.getClicks(), campaign.getBookingsAttributed());
     }
 }

@@ -125,4 +125,16 @@ public interface AdsApi {
      */
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     AdCampaignView launchCampaign(UUID campaignId);
+
+    /**
+     * A Consultant's own campaigns, including each one's current {@code
+     * performance_snapshot} (PRD §14.2 step 7, §20.13, ADS-09) — the
+     * Consultant Dashboard's Active Campaigns tab (§21.5, HRD-09) reads
+     * from here. Tenant-scoped inside the implementation via {@code
+     * CurrentPrincipal.resolveTenantScope}, same "never trust a
+     * client-supplied consultantId" pattern as {@code
+     * BookingApi#findBookingsByConsultant}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    Page<AdCampaignView> findCampaignsForConsultant(UUID consultantId, Pageable pageable);
 }

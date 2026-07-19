@@ -396,6 +396,36 @@ class AdsModuleIntegrationTests {
         assertThat(status).isEqualTo("PENDING_APPROVAL");
     }
 
+    @Test
+    void findCampaignsForConsultantReturnsARealCampaignWithItsPerformanceSnapshotADS09() {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+        jdbcTemplate.update(
+            "UPDATE ad_campaign SET impressions = 150, clicks = 12, bookings_attributed = 2 WHERE campaign_id = ?",
+            created.campaignId());
+
+        var page = adsApi.findCampaignsForConsultant(consultantId, org.springframework.data.domain.Pageable.unpaged());
+
+        assertThat(page.getContent()).extracting(AdCampaignView::campaignId).contains(created.campaignId());
+        AdCampaignView withSnapshot = page.getContent().stream()
+            .filter(v -> v.campaignId().equals(created.campaignId())).findFirst().orElseThrow();
+        assertThat(withSnapshot.impressions()).isEqualTo(150);
+        assertThat(withSnapshot.clicks()).isEqualTo(12);
+        assertThat(withSnapshot.bookingsAttributed()).isEqualTo(2);
+    }
+
+    @Test
+    void findCampaignsForConsultantRejectsAnotherConsultantsQueryADS09() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> adsApi.findCampaignsForConsultant(
+            ownerConsultantId, org.springframework.data.domain.Pageable.unpaged()))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
     private UUID seedPackage(UUID consultantId, String name, String status) {
         java.sql.Timestamp now = java.sql.Timestamp.from(Instant.now());
         UUID itineraryId = UUID.randomUUID();

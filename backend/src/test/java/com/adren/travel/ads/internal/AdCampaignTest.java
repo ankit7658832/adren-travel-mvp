@@ -98,4 +98,26 @@ class AdCampaignTest {
         assertThatThrownBy(() -> campaign.submitCampaignInputs("audience", new java.math.BigDecimal("500.00"), 14))
             .isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    void recordPerformanceSnapshotAccumulatesOntoTheRunningTotalADS09() {
+        AdCampaign campaign = newCampaign();
+        campaign.submitForPolicyReview();
+        campaign.launch("meta-ref-123");
+
+        campaign.recordPerformanceSnapshot(100, 10, 1);
+        campaign.recordPerformanceSnapshot(50, 5, 0);
+
+        assertThat(campaign.getImpressions()).isEqualTo(150);
+        assertThat(campaign.getClicks()).isEqualTo(15);
+        assertThat(campaign.getBookingsAttributed()).isEqualTo(1);
+    }
+
+    @Test
+    void recordPerformanceSnapshotIsOnlyValidWhileLiveADS09() {
+        AdCampaign campaign = newCampaign();
+
+        assertThatThrownBy(() -> campaign.recordPerformanceSnapshot(100, 10, 1))
+            .isInstanceOf(IllegalStateException.class);
+    }
 }

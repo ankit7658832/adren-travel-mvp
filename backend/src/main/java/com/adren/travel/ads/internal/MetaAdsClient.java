@@ -15,4 +15,16 @@ interface MetaAdsClient {
 
     /** ADS-07 — launches a policy-reviewed campaign, returning Meta's campaign identifier. */
     String launchCampaign(UUID campaignId);
+
+    /**
+     * ADS-09 — one poll of Meta Insights for a Live campaign: the
+     * impressions/clicks/bookings-attributed accrued since the last poll
+     * (an increment, not a running total — {@code AdCampaign} owns the
+     * running total).
+     */
+    PerformanceIncrement fetchPerformanceIncrement(UUID campaignId);
+
+    /** ADS-09's increment payload. */
+    record PerformanceIncrement(int impressions, int clicks, int bookingsAttributed) {
+    }
 }

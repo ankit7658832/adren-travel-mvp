@@ -67,6 +67,12 @@ class AdCampaign {
     @Column(name = "rejection_reason")
     private String rejectionReason;
 
+    private int impressions;
+    private int clicks;
+
+    @Column(name = "bookings_attributed")
+    private int bookingsAttributed;
+
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -139,6 +145,26 @@ class AdCampaign {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * ADS-09, PRD §14.2 step 7 — accumulates the mocked performance feed's
+     * latest increment onto the running {@code performance_snapshot}
+     * (PRD §20.13). Guarded to LIVE since that's the only status the mock
+     * feed (ADS-09's own scheduled poller) ever polls; a campaign that has
+     * since paused or reached its spend cap keeps its last snapshot values
+     * rather than accumulating further, which is the correct behavior, not
+     * a gap — the guard just makes that explicit instead of accidental.
+     */
+    void recordPerformanceSnapshot(int impressionsIncrement, int clicksIncrement, int bookingsAttributedIncrement) {
+        if (this.status != AdCampaignStatus.LIVE) {
+            throw new IllegalStateException(
+                "Performance can only accrue on a LIVE campaign, was: " + this.status);
+        }
+        this.impressions += impressionsIncrement;
+        this.clicks += clicksIncrement;
+        this.bookingsAttributed += bookingsAttributedIncrement;
+        this.updatedAt = Instant.now();
+    }
+
     UUID getCampaignId() {
         return campaignId;
     }
@@ -181,6 +207,18 @@ class AdCampaign {
 
     String getRejectionReason() {
         return rejectionReason;
+    }
+
+    int getImpressions() {
+        return impressions;
+    }
+
+    int getClicks() {
+        return clicks;
+    }
+
+    int getBookingsAttributed() {
+        return bookingsAttributed;
     }
 
     Instant getCreatedAt() {

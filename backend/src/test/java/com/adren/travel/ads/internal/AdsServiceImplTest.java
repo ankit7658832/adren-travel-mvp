@@ -364,6 +364,31 @@ class AdsServiceImplTest {
         verify(metaAdsClient, never()).launchCampaign(any());
     }
 
+    @Test
+    void findCampaignsForConsultantReturnsThatConsultantsOwnCampaignsADS09() {
+        UUID consultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), consultantId, CurrencyCode.INR);
+        when(adCampaignRepository.findByConsultantId(eq(consultantId), any()))
+            .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(campaign)));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        var page = service().findCampaignsForConsultant(consultantId, org.springframework.data.domain.Pageable.unpaged());
+
+        assertThat(page.getContent()).hasSize(1);
+        assertThat(page.getContent().get(0).campaignId()).isEqualTo(campaignId);
+    }
+
+    @Test
+    void findCampaignsForConsultantRejectsACallerFromAnotherConsultantADS09() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> service().findCampaignsForConsultant(
+            ownerConsultantId, org.springframework.data.domain.Pageable.unpaged()))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
     private static void authenticateAs(Role role, UUID consultantId) {
         AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), role, consultantId);
         List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));

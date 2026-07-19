@@ -17,6 +17,9 @@ public record AdCampaignView(
     Integer durationDays,
     String metaCampaignRef,
     BigDecimal spendToDateAmount,
-    String rejectionReason
+    String rejectionReason,
+    int impressions,
+    int clicks,
+    int bookingsAttributed
 ) {
 }
