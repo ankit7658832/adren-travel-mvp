@@ -55,4 +55,10 @@ class AdCampaignController {
     List<AdCampaignCreativeVariantView> findCreativeVariants(@PathVariable UUID campaignId) {
         return adsApi.findCreativeVariantsForCampaign(campaignId);
     }
+
+    /** ADS-05, PRD §14.2 step 4. */
+    @PostMapping("/{campaignId}/creative-variants/{variantId}/approval")
+    AdCampaignCreativeVariantView approveCreativeVariant(@PathVariable UUID campaignId, @PathVariable UUID variantId) {
+        return adsApi.approveCreativeVariant(campaignId, variantId);
+    }
 }

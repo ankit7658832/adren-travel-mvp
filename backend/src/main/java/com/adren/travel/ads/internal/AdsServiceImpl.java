@@ -8,6 +8,7 @@ import com.adren.travel.ads.CreateCampaignCommand;
 import com.adren.travel.ads.GenerateAdCreativeForPackageCommand;
 import com.adren.travel.ads.SubmitCampaignInputsCommand;
 import com.adren.travel.ads.event.AdCampaignCreatedEvent;
+import com.adren.travel.ads.event.AdCampaignCreativeVariantApprovedEvent;
 import com.adren.travel.ads.event.AdCampaignInputsSubmittedEvent;
 import com.adren.travel.ai.AdCreativeGenerationResult;
 import com.adren.travel.ai.AdCreativeSuggestion;
@@ -149,6 +150,27 @@ class AdsServiceImpl implements AdsApi {
             .map(v -> new AdCampaignCreativeVariantView(
                 v.getVariantId(), v.getCampaignId(), v.getHeadline(), v.getBodyText(), v.getImageRef(), v.isApproved()))
             .toList();
+    }
+
+    @Override
+    @Transactional
+    public AdCampaignCreativeVariantView approveCreativeVariant(UUID campaignId, UUID variantId) {
+        AdCampaign campaign = adCampaignRepository.findById(campaignId)
+            .orElseThrow(() -> new IllegalArgumentException("No campaign: " + campaignId));
+        CurrentPrincipal.resolveTenantScope(campaign.getConsultantId());
+
+        AdCampaignCreativeVariant variant = creativeVariantRepository.findById(variantId)
+            .orElseThrow(() -> new IllegalArgumentException("No creative variant: " + variantId));
+        if (!variant.getCampaignId().equals(campaignId)) {
+            throw new IllegalArgumentException("Variant " + variantId + " does not belong to campaign " + campaignId);
+        }
+
+        variant.approve();
+        creativeVariantRepository.save(variant);
+        events.publishEvent(new AdCampaignCreativeVariantApprovedEvent(campaignId, variantId));
+
+        return new AdCampaignCreativeVariantView(variant.getVariantId(), variant.getCampaignId(),
+            variant.getHeadline(), variant.getBodyText(), variant.getImageRef(), variant.isApproved());
     }
 
     private static AdCampaignView toView(AdCampaign campaign) {

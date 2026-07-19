@@ -1,6 +1,7 @@
 package com.adren.travel.ads.internal;
 
 import com.adren.travel.ads.AdAccountView;
+import com.adren.travel.ads.AdCampaignCreativeVariantView;
 import com.adren.travel.ads.AdCampaignView;
 import com.adren.travel.ads.CreateCampaignCommand;
 import com.adren.travel.ads.SubmitCampaignInputsCommand;
@@ -204,6 +205,55 @@ class AdsServiceImplTest {
         authenticateAs(Role.CONSULTANT, UUID.randomUUID());
 
         assertThatThrownBy(() -> service().findCreativeVariantsForCampaign(campaignId))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void approveCreativeVariantFlipsTheFlagAndPublishesAnEventADS05() {
+        UUID consultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        UUID variantId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), consultantId, CurrencyCode.INR);
+        AdCampaignCreativeVariant variant =
+            new AdCampaignCreativeVariant(variantId, campaignId, "Escape to Goa", "Book now", null);
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        when(creativeVariantRepository.findById(variantId)).thenReturn(Optional.of(variant));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        AdCampaignCreativeVariantView view = service().approveCreativeVariant(campaignId, variantId);
+
+        assertThat(view.approved()).isTrue();
+        verify(creativeVariantRepository).save(variant);
+        verify(events).publishEvent(any(com.adren.travel.ads.event.AdCampaignCreativeVariantApprovedEvent.class));
+    }
+
+    @Test
+    void approveCreativeVariantRejectsAVariantThatDoesNotBelongToTheGivenCampaignADS05() {
+        UUID consultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        UUID otherCampaignId = UUID.randomUUID();
+        UUID variantId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), consultantId, CurrencyCode.INR);
+        AdCampaignCreativeVariant variant =
+            new AdCampaignCreativeVariant(variantId, otherCampaignId, "Escape to Goa", "Book now", null);
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        when(creativeVariantRepository.findById(variantId)).thenReturn(Optional.of(variant));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        assertThatThrownBy(() -> service().approveCreativeVariant(campaignId, variantId))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void approveCreativeVariantRejectsACallerFromAnotherConsultantADS05() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        UUID variantId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), ownerConsultantId, CurrencyCode.INR);
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> service().approveCreativeVariant(campaignId, variantId))
             .isInstanceOf(AccessDeniedException.class);
     }
 

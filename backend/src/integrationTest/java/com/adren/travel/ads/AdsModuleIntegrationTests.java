@@ -253,6 +253,46 @@ class AdsModuleIntegrationTests {
             .isInstanceOf(AccessDeniedException.class);
     }
 
+    @Test
+    void approveCreativeVariantPersistsTheFlagAndPublishesTheRealEventADS05(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+        UUID variantId = UUID.randomUUID();
+        jdbcTemplate.update(
+            "INSERT INTO ad_campaign_creative_variant (variant_id, campaign_id, headline, body_text, approved) "
+                + "VALUES (?, ?, 'Escape to Goa', 'Book now', false)",
+            variantId, created.campaignId());
+
+        scenario.stimulate(() -> adsApi.approveCreativeVariant(created.campaignId(), variantId))
+            .andWaitForEventOfType(com.adren.travel.ads.event.AdCampaignCreativeVariantApprovedEvent.class)
+            .matchingMappedValue(com.adren.travel.ads.event.AdCampaignCreativeVariantApprovedEvent::variantId, variantId)
+            .toArrive();
+
+        Boolean approved = jdbcTemplate.queryForObject(
+            "SELECT approved FROM ad_campaign_creative_variant WHERE variant_id = ?", Boolean.class, variantId);
+        assertThat(approved).isTrue();
+    }
+
+    @Test
+    void approveCreativeVariantRejectsAnotherConsultantsCallADS05() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(ownerConsultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, ownerConsultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+        UUID variantId = UUID.randomUUID();
+        jdbcTemplate.update(
+            "INSERT INTO ad_campaign_creative_variant (variant_id, campaign_id, headline, body_text, approved) "
+                + "VALUES (?, ?, 'Escape to Goa', 'Book now', false)",
+            variantId, created.campaignId());
+
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> adsApi.approveCreativeVariant(created.campaignId(), variantId))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
     private UUID seedPackage(UUID consultantId, String name, String status) {
         java.sql.Timestamp now = java.sql.Timestamp.from(Instant.now());
         UUID itineraryId = UUID.randomUUID();

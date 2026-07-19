@@ -79,4 +79,16 @@ public interface AdsApi {
     /** The persisted creative variants for a campaign (PRD §20.13), tenant-scoped to the campaign's owning Consultant. */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     List<AdCampaignCreativeVariantView> findCreativeVariantsForCampaign(UUID campaignId);
+
+    /**
+     * A Consultant approves one creative variant (PRD §14.2 step 4,
+     * ADS-05) — mandatory, per-variant, mirroring AI-06's human-in-the-loop
+     * pattern. Every variant must carry an approval before the campaign
+     * can be submitted for policy review (ADS-06 enforces that gate at
+     * submission time).
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT') or "
+        + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
+        + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
+    AdCampaignCreativeVariantView approveCreativeVariant(UUID campaignId, UUID variantId);
 }

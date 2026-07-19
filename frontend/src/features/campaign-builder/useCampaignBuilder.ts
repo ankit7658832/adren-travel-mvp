@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/apiClient";
 
 /**
@@ -121,5 +121,19 @@ export function useCreativeVariants(campaignId: string | null) {
       return data;
     },
     enabled: campaignId !== null,
+  });
+}
+
+/** ADS-05, PRD §14.2 step 4 — mandatory per-variant approval; there is no "unapprove" endpoint, matching AI-06's one-way human-in-the-loop sign-off pattern. */
+export function useApproveCreativeVariant(campaignId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (variantId: string) => {
+      const { data } = await apiClient.post<PersistedCreativeVariant>(
+        `/campaigns/${campaignId}/creative-variants/${variantId}/approval`
+      );
+      return data;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["campaign-creative-variants", campaignId] }),
   });
 }
