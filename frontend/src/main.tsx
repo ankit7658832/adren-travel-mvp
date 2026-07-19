@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AppProviders } from "./shared/providers/AppProviders";
 import { RootErrorBoundary } from "./shared/components/RootErrorBoundary";
+import { ToastContainer } from "./shared/toast/ToastContainer";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -29,6 +30,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <BrowserRouter>
             <App />
           </BrowserRouter>
+          {/* FES-10: one app-wide mount point, not a context provider, so it lives beside AppProviders rather than in it. */}
+          <ToastContainer />
         </AppProviders>
       </RootErrorBoundary>
     </QueryClientProvider>

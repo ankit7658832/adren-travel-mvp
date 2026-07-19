@@ -1,5 +1,6 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { apiClient } from "@/shared/api/apiClient";
+import { useMarketDependentFields, type SchemaField } from "@/shared/forms/useMarketDependentFields";
 
 export type Market = "INDIA" | "AUSTRALIA" | "UK" | "USA" | "DUBAI_UAE" | "DENMARK";
 
@@ -12,11 +13,7 @@ export const MARKETS: { value: Market; label: string }[] = [
   { value: "DENMARK", label: "Denmark" },
 ];
 
-export interface KycFieldDefinition {
-  fieldKey: string;
-  label: string;
-  required: boolean;
-}
+export type KycFieldDefinition = SchemaField;
 
 export interface OnboardConsultantInput {
   businessName: string;
@@ -25,22 +22,13 @@ export interface OnboardConsultantInput {
 }
 
 /**
- * Data-driven per-market KYC field set (RULES.md §24.7 / FND-04) — fetched
- * from the backend's rule table rather than a hardcoded frontend map, so a
- * market-rule change never requires a frontend deploy that can drift out
- * of sync (the same principle FES-09 later generalizes for other forms).
+ * FES-09 — thin wrapper over the shared, generic field-resolution engine
+ * (`useMarketDependentFields`), pointed at FND-04's specific endpoint.
+ * RULES.md §24.7's data-driven KYC principle: the market→fields mapping
+ * lives entirely on the backend, never duplicated as a frontend map.
  */
 export function useKycRules(market: Market | null) {
-  return useQuery({
-    queryKey: ["consultant-kyc-rules", market],
-    queryFn: async () => {
-      const { data } = await apiClient.get<KycFieldDefinition[]>("/consultants/kyc-rules", {
-        params: { market },
-      });
-      return data;
-    },
-    enabled: market !== null,
-  });
+  return useMarketDependentFields("/consultants/kyc-rules", market);
 }
 
 export function useOnboardConsultant() {

@@ -54,6 +54,70 @@ describe("ItineraryBuilder", () => {
     expect(screen.getByText("Auto-selected: Best available match")).toBeInTheDocument();
   });
 
+  it("FES-05: renders a real MapPanel pin for a line item carrying coordinates from Search Dashboard's hand-off", () => {
+    useItineraryDraftStore.getState().startDraft(ITINERARY_ID);
+    useItineraryDraftStore.getState().setLineItem({
+      locationCode: "Goa",
+      category: "hotel",
+      supplierId: "HOTELBEDS",
+      supplierRateId: "rate-1",
+      autoSelected: true,
+      latitude: 15.5,
+      longitude: 73.8,
+    });
+
+    renderWithProviders();
+
+    expect(screen.getByRole("img", { name: "Map showing 1 itinerary location" })).toBeInTheDocument();
+    expect(screen.getByTestId("map-pin")).toBeInTheDocument();
+  });
+
+  it("preserves a line item's coordinates across a supplier swap via the alternates panel", async () => {
+    useItineraryDraftStore.getState().startDraft(ITINERARY_ID);
+    useItineraryDraftStore.getState().setLineItem({
+      locationCode: "Goa",
+      category: "hotel",
+      supplierId: "HOTELBEDS",
+      supplierRateId: "rate-1",
+      autoSelected: true,
+      latitude: 15.5,
+      longitude: 73.8,
+    });
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: [
+        {
+          supplierId: "STUBA",
+          supplierRateId: "rate-2",
+          propertyName: "Hotel B",
+          roomType: "Standard",
+          netRateAmount: 3000,
+          netRateCurrency: "INR",
+          rating: 3.8,
+        },
+      ],
+    });
+
+    renderWithProviders();
+    fireEvent.click(screen.getByRole("button", { name: /change/i }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("alternate-options").children).toHaveLength(1);
+    });
+    fireEvent.click(screen.getByRole("button", { name: /select/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(useItineraryDraftStore.getState().lineItems["Goa:hotel"]).toEqual({
+      locationCode: "Goa",
+      category: "hotel",
+      supplierId: "STUBA",
+      supplierRateId: "rate-2",
+      autoSelected: false,
+      latitude: 15.5,
+      longitude: 73.8,
+    });
+  });
+
   it("opens the alternates panel, loads options, and swapping removes the auto-selected badge", async () => {
     useItineraryDraftStore.getState().startDraft(ITINERARY_ID);
     useItineraryDraftStore.getState().setLineItem({

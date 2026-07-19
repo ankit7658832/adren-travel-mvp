@@ -78,6 +78,51 @@ describe("ConsultantOnboardingWizard", () => {
     });
   });
 
+  it("FES-09: renders correctly for two different markets, with genuinely different fields fetched per market, not a hardcoded map", async () => {
+    vi.mocked(apiClient.get).mockImplementation(async (_url, config) => {
+      if (config?.params?.market === "INDIA") {
+        return { data: [{ fieldKey: "gstRegistration", label: "GST Registration", required: true }] };
+      }
+      return { data: [{ fieldKey: "companiesHouseNumber", label: "Companies House Number", required: true }] };
+    });
+    renderWizard();
+
+    fireEvent.change(screen.getByLabelText(/home market/i), { target: { value: "INDIA" } });
+    await waitFor(() => expect(screen.getByLabelText(/gst registration/i)).toBeInTheDocument());
+    expect(screen.queryByLabelText(/companies house number/i)).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/home market/i), { target: { value: "UK" } });
+    await waitFor(() => expect(screen.getByLabelText(/companies house number/i)).toBeInTheDocument());
+    expect(screen.queryByLabelText(/gst registration/i)).not.toBeInTheDocument();
+  });
+
+  it("FES-09: the rendered field set reflects whatever the backend rule table returns, not a value baked into the frontend", async () => {
+    // First render: the rule table has one field for this market.
+    vi.mocked(apiClient.get).mockResolvedValueOnce({
+      data: [{ fieldKey: "abnNumber", label: "ABN Number", required: true }],
+    });
+    const { unmount } = renderWizard();
+    fireEvent.change(screen.getByLabelText(/home market/i), { target: { value: "AUSTRALIA" } });
+    await waitFor(() => expect(screen.getByLabelText(/abn number/i)).toBeInTheDocument());
+    unmount();
+
+    // Simulate the backend rule table changing (an admin adds a second
+    // required field for this market) — a fresh mount re-fetches and must
+    // reflect the new set, since nothing about this field set is hardcoded
+    // frontend-side.
+    vi.mocked(apiClient.get).mockResolvedValueOnce({
+      data: [
+        { fieldKey: "abnNumber", label: "ABN Number", required: true },
+        { fieldKey: "gstRegistrationAu", label: "GST Registration (AU)", required: true },
+      ],
+    });
+    renderWizard();
+    fireEvent.change(screen.getByLabelText(/home market/i), { target: { value: "AUSTRALIA" } });
+
+    await waitFor(() => expect(screen.getByLabelText(/gst registration \(au\)/i)).toBeInTheDocument());
+    expect(screen.getByLabelText(/abn number/i)).toBeInTheDocument();
+  });
+
   it("submits the onboarding request and shows a success confirmation with the new consultant id", async () => {
     vi.mocked(apiClient.get).mockResolvedValue({
       data: [{ fieldKey: "gstRegistration", label: "GST Registration", required: true }],

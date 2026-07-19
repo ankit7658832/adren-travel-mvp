@@ -94,4 +94,19 @@ describe("ByosCredentialEntry", () => {
       expect(screen.getByRole("alert")).toHaveTextContent(/could not save this credential/i);
     });
   });
+
+  it("FES-08: a zod validation error surfaces via TextField's aria-invalid/aria-describedby wiring, with no network call", async () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ data: [] });
+    renderWithQueryClient();
+    await waitFor(() => expect(screen.getByLabelText("byos-credential-list").children).toHaveLength(7));
+
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    const secretInput = await screen.findByLabelText(/your credential value/i);
+    const error = await screen.findByText(/credential value is required/i);
+    expect(error).toHaveAttribute("role", "alert");
+    expect(secretInput).toHaveAttribute("aria-invalid", "true");
+    expect(secretInput).toHaveAttribute("aria-describedby", error.id);
+    expect(apiClient.post).not.toHaveBeenCalled();
+  });
 });

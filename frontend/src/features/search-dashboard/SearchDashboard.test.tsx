@@ -148,6 +148,10 @@ describe("SearchDashboard", () => {
       supplierId: "HOTELBEDS",
       supplierRateId: "rate-Goa",
       autoSelected: true,
+      // FES-05: carried through from the search result so the Itinerary
+      // Builder's own MapPanel doesn't need to re-geocode.
+      latitude: 20,
+      longitude: 80,
     });
     expect(draft.lineItems["Udaipur:hotel"]).toBeDefined();
   });

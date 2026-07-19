@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Button } from "@/shared/design-system/Button";
+import { SchemaFieldSet } from "@/shared/forms/SchemaFieldSet";
 import { MARKETS, useKycRules, useOnboardConsultant, type Market } from "./useConsultantOnboarding";
 
 /**
@@ -95,28 +96,12 @@ export function ConsultantOnboardingWizard() {
         )}
 
         {market && kycRulesQuery.isSuccess && kycRulesQuery.data.length > 0 && (
-          <fieldset className="space-y-3">
-            <legend className="text-sm font-medium text-neutral-700">
-              KYC details for {MARKETS.find((m) => m.value === market)?.label}
-            </legend>
-            {kycRulesQuery.data.map((field) => (
-              <div key={field.fieldKey}>
-                <label htmlFor={`kyc-${field.fieldKey}`} className="mb-1 block text-sm font-medium text-neutral-700">
-                  {field.label}
-                  {field.required && <span aria-hidden="true"> *</span>}
-                </label>
-                <input
-                  id={`kyc-${field.fieldKey}`}
-                  required={field.required}
-                  value={kycFieldValues[field.fieldKey] ?? ""}
-                  onChange={(e) =>
-                    setKycFieldValues((prev) => ({ ...prev, [field.fieldKey]: e.target.value }))
-                  }
-                  className="h-10 w-full rounded-md border border-neutral-300 bg-surface px-3 text-base text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-                />
-              </div>
-            ))}
-          </fieldset>
+          <SchemaFieldSet
+            legend={`KYC details for ${MARKETS.find((m) => m.value === market)?.label}`}
+            fields={kycRulesQuery.data}
+            values={kycFieldValues}
+            onChange={(fieldKey, value) => setKycFieldValues((prev) => ({ ...prev, [fieldKey]: value }))}
+          />
         )}
 
         {onboardMutation.isError && (
