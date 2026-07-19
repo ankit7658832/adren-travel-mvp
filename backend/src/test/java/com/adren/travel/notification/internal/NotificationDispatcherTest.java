@@ -7,6 +7,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -19,13 +20,17 @@ import static org.mockito.Mockito.when;
  * HRD-01/HRD-02's core acceptance criteria, now centralized on the shared
  * dispatcher every trigger-event listener uses: email always dispatches,
  * and the region-routed secondary channel follows the Consultant's home
- * market, falling back to SMS when the market can't be resolved.
+ * market, falling back to SMS when the market can't be resolved. HRD-04 —
+ * a saved preference override takes priority over the market default.
  */
 @ExtendWith(MockitoExtension.class)
 class NotificationDispatcherTest {
 
     @Mock
     WhitelabelApi whitelabelApi;
+
+    @Mock
+    NotificationPreferenceRepository preferenceRepository;
 
     @Mock
     EmailClient emailClient;
@@ -40,7 +45,8 @@ class NotificationDispatcherTest {
 
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
-        dispatcher = new NotificationDispatcher(whitelabelApi, new SecondaryChannelProvider(),
+        org.mockito.Mockito.lenient().when(preferenceRepository.findById(any())).thenReturn(Optional.empty());
+        dispatcher = new NotificationDispatcher(whitelabelApi, new SecondaryChannelProvider(), preferenceRepository,
             emailClient, whatsAppClient, smsClient);
     }
 
@@ -99,5 +105,20 @@ class NotificationDispatcherTest {
         verify(emailClient).send(eq(consultantId), any(), any());
         verify(smsClient).send(eq(consultantId), any());
         verify(whatsAppClient, never()).send(any(), any());
+    }
+
+    @Test
+    void aSavedOverrideTakesPriorityOverTheMarketDefaultHRD04() {
+        UUID consultantId = UUID.randomUUID();
+        // India's market default is WhatsApp — this Consultant overrode it to SMS.
+        when(preferenceRepository.findById(consultantId))
+            .thenReturn(Optional.of(new NotificationPreference(consultantId, NotificationChannel.SMS)));
+
+        dispatcher.dispatch(consultantId, "subject", "body", "message");
+
+        verify(smsClient).send(eq(consultantId), any());
+        verify(whatsAppClient, never()).send(any(), any());
+        // The market lookup is never even needed once an override exists.
+        verify(whitelabelApi, never()).findConsultantMarket(any());
     }
 }

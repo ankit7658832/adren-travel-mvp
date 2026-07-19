@@ -15,21 +15,27 @@ import java.util.UUID;
  * resolveSecondaryChannel/dual-send logic — both were refactored onto this
  * shared collaborator in the same change, per backend-best-practices §4's
  * "a growing set of near-identical call sites is the decomposition
- * signal."
+ * signal." HRD-04: a saved {@link NotificationPreference} override now
+ * takes priority over the market default — this is the ONE place that
+ * decision is made, so every existing and future listener picks up an
+ * override automatically without its own code changing.
  */
 @Component
 class NotificationDispatcher {
 
     private final WhitelabelApi whitelabelApi;
     private final SecondaryChannelProvider secondaryChannelProvider;
+    private final NotificationPreferenceRepository preferenceRepository;
     private final EmailClient emailClient;
     private final WhatsAppClient whatsAppClient;
     private final SmsClient smsClient;
 
     NotificationDispatcher(WhitelabelApi whitelabelApi, SecondaryChannelProvider secondaryChannelProvider,
-                           EmailClient emailClient, WhatsAppClient whatsAppClient, SmsClient smsClient) {
+                           NotificationPreferenceRepository preferenceRepository, EmailClient emailClient,
+                           WhatsAppClient whatsAppClient, SmsClient smsClient) {
         this.whitelabelApi = whitelabelApi;
         this.secondaryChannelProvider = secondaryChannelProvider;
+        this.preferenceRepository = preferenceRepository;
         this.emailClient = emailClient;
         this.whatsAppClient = whatsAppClient;
         this.smsClient = smsClient;
@@ -47,6 +53,12 @@ class NotificationDispatcher {
     }
 
     private NotificationChannel resolveSecondaryChannel(UUID consultantId) {
+        return preferenceRepository.findById(consultantId)
+            .map(NotificationPreference::getSecondaryChannel)
+            .orElseGet(() -> marketDefaultChannel(consultantId));
+    }
+
+    private NotificationChannel marketDefaultChannel(UUID consultantId) {
         try {
             Market market = whitelabelApi.findConsultantMarket(consultantId);
             return secondaryChannelProvider.defaultChannelFor(market);
