@@ -8,6 +8,7 @@ import { TextField } from "@/shared/design-system/TextField";
 import { usePublishedPackages, useCreateCampaign, useSubmitCampaignInputs } from "./useCampaignBuilder";
 import { CreativeVariantGallery } from "./CreativeVariantGallery";
 import { CreativeApprovalPanel } from "./CreativeApprovalPanel";
+import { CampaignStatusStepper } from "./CampaignStatusStepper";
 
 const campaignInputsSchema = z.object({
   packageId: z.string().min(1, "Select a package to promote"),
@@ -105,6 +106,9 @@ export function CampaignBuilder() {
     return (
       <main className="mx-auto max-w-2xl px-6 py-8">
         <h1 className="text-2xl font-semibold text-neutral-900">Campaign started</h1>
+        <div className="mt-4">
+          <CampaignStatusStepper status={submitInputs.data.status} />
+        </div>
         <p role="status" className="mt-4 text-sm text-neutral-600">
           Your campaign is now pending approval — generate ad creative next.
         </p>
