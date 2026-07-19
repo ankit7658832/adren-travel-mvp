@@ -20,6 +20,7 @@ public record AdCampaignView(
     String rejectionReason,
     int impressions,
     int clicks,
-    int bookingsAttributed
+    int bookingsAttributed,
+    boolean metaSuspended
 ) {
 }

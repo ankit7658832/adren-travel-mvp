@@ -179,4 +179,13 @@ class AdCampaignTest {
 
         assertThatThrownBy(campaign::pause).isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    void flagMetaSuspendedSetsTheFlagRegardlessOfStatusADS13() {
+        AdCampaign campaign = newCampaign();
+
+        campaign.flagMetaSuspended();
+
+        assertThat(campaign.isMetaSuspended()).isTrue();
+    }
 }

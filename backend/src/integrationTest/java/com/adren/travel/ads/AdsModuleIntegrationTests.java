@@ -2,6 +2,7 @@ package com.adren.travel.ads;
 
 import com.adren.travel.ads.event.AdCampaignCreatedEvent;
 import com.adren.travel.ads.event.AdCampaignInputsSubmittedEvent;
+import com.adren.travel.ads.event.AdCampaignMetaSuspendedEvent;
 import com.adren.travel.ads.event.AdCampaignPausedEvent;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.security.AdrenPrincipal;
@@ -509,6 +510,42 @@ class AdsModuleIntegrationTests {
         String status = jdbcTemplate.queryForObject(
             "SELECT status FROM ad_campaign WHERE campaign_id = ?", String.class, created.campaignId());
         assertThat(status).isEqualTo("PAUSED");
+    }
+
+    @Test
+    void reportMetaAccountSuspensionFlagsEveryRealNonRejectedCampaignForTheConsultantADS13(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        UUID livePackageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
+        UUID rejectedPackageId = seedPackage(consultantId, "Kerala Backwaters", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AdCampaignView liveCampaign = adsApi.createCampaign(new CreateCampaignCommand(livePackageId));
+        AdCampaignView rejectedCampaign = adsApi.createCampaign(new CreateCampaignCommand(rejectedPackageId));
+        jdbcTemplate.update("UPDATE ad_campaign SET status = 'REJECTED' WHERE campaign_id = ?", rejectedCampaign.campaignId());
+        authenticateAs(Role.SUPER_ADMIN, null);
+
+        scenario.stimulate(() -> adsApi.reportMetaAccountSuspension(consultantId))
+            .andWaitForEventOfType(AdCampaignMetaSuspendedEvent.class)
+            .matchingMappedValue(AdCampaignMetaSuspendedEvent::campaignId, liveCampaign.campaignId())
+            .toArrive();
+
+        Boolean liveSuspended = jdbcTemplate.queryForObject(
+            "SELECT meta_suspended FROM ad_campaign WHERE campaign_id = ?", Boolean.class, liveCampaign.campaignId());
+        Boolean rejectedSuspended = jdbcTemplate.queryForObject(
+            "SELECT meta_suspended FROM ad_campaign WHERE campaign_id = ?", Boolean.class, rejectedCampaign.campaignId());
+        assertThat(liveSuspended).isTrue();
+        assertThat(rejectedSuspended).isFalse();
+    }
+
+    @Test
+    void findCampaignByIdRejectsAnotherConsultantsQueryADS13() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(ownerConsultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, ownerConsultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> adsApi.findCampaignById(created.campaignId())).isInstanceOf(AccessDeniedException.class);
     }
 
     private UUID seedPackage(UUID consultantId, String name, String status) {

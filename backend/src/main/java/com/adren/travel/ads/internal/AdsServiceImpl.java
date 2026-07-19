@@ -13,6 +13,7 @@ import com.adren.travel.ads.event.AdCampaignCreatedEvent;
 import com.adren.travel.ads.event.AdCampaignCreativeVariantApprovedEvent;
 import com.adren.travel.ads.event.AdCampaignInputsSubmittedEvent;
 import com.adren.travel.ads.event.AdCampaignLaunchedEvent;
+import com.adren.travel.ads.event.AdCampaignMetaSuspendedEvent;
 import com.adren.travel.ads.event.AdCampaignPolicyReviewRejectedEvent;
 import com.adren.travel.ads.event.AdCampaignSubmittedForPolicyReviewEvent;
 import com.adren.travel.ai.AdCreativeGenerationResult;
@@ -274,11 +275,29 @@ class AdsServiceImpl implements AdsApi {
             campaign.getBudgetCapAmount(), campaign.getBudgetCapCurrency(), transactions);
     }
 
+    @Override
+    public AdCampaignView findCampaignById(UUID campaignId) {
+        AdCampaign campaign = adCampaignRepository.findById(campaignId)
+            .orElseThrow(() -> new IllegalArgumentException("No campaign: " + campaignId));
+        CurrentPrincipal.resolveTenantScope(campaign.getConsultantId());
+        return toView(campaign);
+    }
+
+    @Override
+    @Transactional
+    public void reportMetaAccountSuspension(UUID consultantId) {
+        for (AdCampaign campaign : adCampaignRepository.findByConsultantIdAndStatusNot(consultantId, AdCampaignStatus.REJECTED)) {
+            campaign.flagMetaSuspended();
+            adCampaignRepository.save(campaign);
+            events.publishEvent(new AdCampaignMetaSuspendedEvent(campaign.getCampaignId(), consultantId));
+        }
+    }
+
     private static AdCampaignView toView(AdCampaign campaign) {
         return new AdCampaignView(campaign.getCampaignId(), campaign.getPackageId(), campaign.getConsultantId(),
             campaign.getStatus().name(), campaign.getAudienceDescription(), campaign.getBudgetCapAmount(),
             campaign.getBudgetCapCurrency(), campaign.getDurationDays(), campaign.getMetaCampaignRef(),
             campaign.getSpendToDateAmount(), campaign.getRejectionReason(), campaign.getImpressions(),
-            campaign.getClicks(), campaign.getBookingsAttributed());
+            campaign.getClicks(), campaign.getBookingsAttributed(), campaign.isMetaSuspended());
     }
 }

@@ -73,6 +73,9 @@ class AdCampaign {
     @Column(name = "bookings_attributed")
     private int bookingsAttributed;
 
+    @Column(name = "meta_suspended")
+    private boolean metaSuspended;
+
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -164,6 +167,20 @@ class AdCampaign {
             throw new IllegalStateException("Only a LIVE campaign can be paused, was: " + this.status);
         }
         this.status = AdCampaignStatus.PAUSED;
+        this.updatedAt = Instant.now();
+    }
+
+    /**
+     * ADS-13, PRD §23.5 Edge Case #12 / §25 T17 — flags this campaign
+     * "suspended - action required" following a mocked Meta ad-account
+     * suspension signal. Orthogonal to {@code status} (the enum has no
+     * SUSPENDED value), so this carries no status guard of its own — the
+     * caller ({@code AdsServiceImpl#reportMetaAccountSuspension}) decides
+     * which campaigns are eligible (everything but REJECTED) before
+     * calling this.
+     */
+    void flagMetaSuspended() {
+        this.metaSuspended = true;
         this.updatedAt = Instant.now();
     }
 
@@ -265,6 +282,10 @@ class AdCampaign {
 
     int getBookingsAttributed() {
         return bookingsAttributed;
+    }
+
+    boolean isMetaSuspended() {
+        return metaSuspended;
     }
 
     Instant getCreatedAt() {

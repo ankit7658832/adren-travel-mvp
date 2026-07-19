@@ -9,6 +9,7 @@ import { usePublishedPackages, useCreateCampaign, useSubmitCampaignInputs } from
 import { CreativeVariantGallery } from "./CreativeVariantGallery";
 import { CreativeApprovalPanel } from "./CreativeApprovalPanel";
 import { CampaignStatusStepper } from "./CampaignStatusStepper";
+import { CampaignSuspensionBanner } from "./CampaignSuspensionBanner";
 
 const campaignInputsSchema = z.object({
   packageId: z.string().min(1, "Select a package to promote"),
@@ -109,6 +110,7 @@ export function CampaignBuilder() {
         <div className="mt-4">
           <CampaignStatusStepper status={submitInputs.data.status} />
         </div>
+        <CampaignSuspensionBanner campaignId={submitInputs.data.campaignId} />
         <p role="status" className="mt-4 text-sm text-neutral-600">
           Your campaign is now pending approval — generate ad creative next.
         </p>

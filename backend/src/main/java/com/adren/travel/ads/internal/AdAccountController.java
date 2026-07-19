@@ -24,4 +24,10 @@ class AdAccountController {
     AdAccountView provisionAdAccount(@PathVariable UUID consultantId) {
         return adsApi.provisionAdAccount(consultantId);
     }
+
+    /** ADS-13, PRD §23.5 Edge Case #12 / §25 T17 — the mocked Meta ad-account suspension signal. */
+    @PostMapping("/suspension")
+    void reportSuspension(@PathVariable UUID consultantId) {
+        adsApi.reportMetaAccountSuspension(consultantId);
+    }
 }

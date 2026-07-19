@@ -106,4 +106,10 @@ class AdCampaignController {
     CampaignBillingDetailView findCampaignBillingDetail(@PathVariable UUID campaignId) {
         return adsApi.findCampaignBillingDetail(campaignId);
     }
+
+    /** ADS-13 — a single campaign's current state, backing the suspension-status hook. */
+    @GetMapping("/{campaignId}")
+    AdCampaignView findCampaignById(@PathVariable UUID campaignId) {
+        return adsApi.findCampaignById(campaignId);
+    }
 }

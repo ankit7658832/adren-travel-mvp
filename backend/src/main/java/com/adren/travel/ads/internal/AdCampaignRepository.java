@@ -27,4 +27,12 @@ interface AdCampaignRepository extends JpaRepository<AdCampaign, UUID> {
      * uniqueness.
      */
     List<AdCampaign> findByPackageIdAndStatus(UUID packageId, AdCampaignStatus status);
+
+    /**
+     * ADS-13 — every campaign the mocked Meta suspension signal must
+     * flag: everything under the Consultant except REJECTED (a rejected
+     * campaign never spends, so "action required" would be meaningless
+     * for it).
+     */
+    List<AdCampaign> findByConsultantIdAndStatusNot(UUID consultantId, AdCampaignStatus excludedStatus);
 }

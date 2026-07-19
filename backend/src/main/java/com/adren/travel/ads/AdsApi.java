@@ -148,4 +148,20 @@ public interface AdsApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     CampaignBillingDetailView findCampaignBillingDetail(UUID campaignId);
+
+    /** A single campaign's current state (PRD §20.13) — tenant-scoped, same pattern as every other per-campaign lookup here. Backs ADS-13's suspension-status hook. */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    AdCampaignView findCampaignById(UUID campaignId);
+
+    /**
+     * Reports a mocked Meta ad-account suspension signal (PRD §23.5 Edge
+     * Case #12, §25 T17, ADS-13) — Super Admin only, simulating an
+     * internal ops/support-triggered signal in MVP scope (real Meta
+     * webhook handling is Phase 2's MADS-07). Flags every non-REJECTED
+     * campaign under the Consultant "suspended — action required", so a
+     * Live campaign never just silently stops spending with no
+     * explanation.
+     */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    void reportMetaAccountSuspension(UUID consultantId);
 }

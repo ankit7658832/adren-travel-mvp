@@ -426,6 +426,47 @@ class AdsServiceImplTest {
             .isInstanceOf(AccessDeniedException.class);
     }
 
+    @Test
+    void findCampaignByIdReturnsTheCampaignForItsOwningConsultantADS13() {
+        UUID consultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), consultantId, CurrencyCode.INR);
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        AdCampaignView view = service().findCampaignById(campaignId);
+
+        assertThat(view.campaignId()).isEqualTo(campaignId);
+        assertThat(view.metaSuspended()).isFalse();
+    }
+
+    @Test
+    void findCampaignByIdRejectsACallerFromAnotherConsultantADS13() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), ownerConsultantId, CurrencyCode.INR);
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> service().findCampaignById(campaignId)).isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void reportMetaAccountSuspensionFlagsEveryNonRejectedCampaignAndPublishesAnEventPerCampaignADS13() {
+        UUID consultantId = UUID.randomUUID();
+        AdCampaign liveCampaign = new AdCampaign(UUID.randomUUID(), UUID.randomUUID(), consultantId, CurrencyCode.INR);
+        AdCampaign pendingCampaign = new AdCampaign(UUID.randomUUID(), UUID.randomUUID(), consultantId, CurrencyCode.INR);
+        when(adCampaignRepository.findByConsultantIdAndStatusNot(consultantId, AdCampaignStatus.REJECTED))
+            .thenReturn(List.of(liveCampaign, pendingCampaign));
+
+        service().reportMetaAccountSuspension(consultantId);
+
+        assertThat(liveCampaign.isMetaSuspended()).isTrue();
+        assertThat(pendingCampaign.isMetaSuspended()).isTrue();
+        verify(events, org.mockito.Mockito.times(2))
+            .publishEvent(any(com.adren.travel.ads.event.AdCampaignMetaSuspendedEvent.class));
+    }
+
     private static void authenticateAs(Role role, UUID consultantId) {
         AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), role, consultantId);
         List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
