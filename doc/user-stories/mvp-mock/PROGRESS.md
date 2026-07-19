@@ -139,7 +139,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **HRD-02** — wire all prd 15 notification trigger events
 - [x] **HRD-03** — make every notification listener idempotent
 - [x] **HRD-04** — build the notification preferences screen
-- [ ] **HRD-05** — implement the full cancellation workflow across policy check approval and refund
+- [x] **HRD-05** — implement the full cancellation workflow across policy check approval and refund
 - [x] **HRD-06** — track disputes as tickets not email handoffs
 - [x] **HRD-07** — implement pnr booking search across all product types
 - [x] **HRD-08** — build the pnr booking search screen
