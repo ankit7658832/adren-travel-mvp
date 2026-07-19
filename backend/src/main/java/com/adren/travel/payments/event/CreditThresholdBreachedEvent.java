@@ -10,7 +10,9 @@ import java.util.UUID;
  * notification-trigger counterpart to {@link com.adren.travel.payments.CreditLimitExceededException},
  * which blocks the booking itself (FIN-08). {@code attemptedAmount} is the
  * hold that was rejected, not a wallet balance snapshot — {@code Wallet}
- * stays package-private.
+ * stays package-private. {@code bookingId} is also HRD-03's dedup key for
+ * the notification listener: a redelivered breach for the same rejected
+ * hold attempt must not double-notify.
  */
-public record CreditThresholdBreachedEvent(UUID consultantId, Money attemptedAmount) {
+public record CreditThresholdBreachedEvent(UUID bookingId, UUID consultantId, Money attemptedAmount) {
 }

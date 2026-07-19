@@ -35,7 +35,7 @@ class CreditThresholdBreachEventPublisher {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    void publish(UUID consultantId, Money attemptedAmount) {
-        events.publishEvent(new CreditThresholdBreachedEvent(consultantId, attemptedAmount));
+    void publish(UUID bookingId, UUID consultantId, Money attemptedAmount) {
+        events.publishEvent(new CreditThresholdBreachedEvent(bookingId, consultantId, attemptedAmount));
     }
 }

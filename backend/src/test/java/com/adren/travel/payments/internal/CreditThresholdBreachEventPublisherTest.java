@@ -24,15 +24,17 @@ class CreditThresholdBreachEventPublisherTest {
     ApplicationEventPublisher events;
 
     @Test
-    void publishesTheEventWithTheConsultantAndAttemptedAmount() {
+    void publishesTheEventWithTheBookingConsultantAndAttemptedAmount() {
         CreditThresholdBreachEventPublisher publisher = new CreditThresholdBreachEventPublisher(events);
+        UUID bookingId = UUID.randomUUID();
         UUID consultantId = UUID.randomUUID();
         Money amount = new Money(BigDecimal.valueOf(1_000), CurrencyCode.INR);
 
-        publisher.publish(consultantId, amount);
+        publisher.publish(bookingId, consultantId, amount);
 
         ArgumentCaptor<CreditThresholdBreachedEvent> captor = ArgumentCaptor.forClass(CreditThresholdBreachedEvent.class);
         verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().bookingId()).isEqualTo(bookingId);
         assertThat(captor.getValue().consultantId()).isEqualTo(consultantId);
         assertThat(captor.getValue().attemptedAmount()).isEqualTo(amount);
     }

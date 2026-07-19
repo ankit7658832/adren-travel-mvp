@@ -7,19 +7,28 @@ import org.springframework.stereotype.Component;
 /**
  * PRD §15, HRD-02 — "credit threshold" trigger, published by the {@code
  * payments} module whenever a wallet hold attempt is rejected for
- * exceeding {@code availableBalance + creditLimit} (FIN-08).
+ * exceeding {@code availableBalance + creditLimit} (FIN-08). HRD-03:
+ * {@code bookingId} is the dedup key.
  */
 @Component
 class CreditThresholdNotificationListener {
 
-    private final NotificationDispatcher dispatcher;
+    private static final String LISTENER_NAME = "CreditThresholdNotificationListener";
 
-    CreditThresholdNotificationListener(NotificationDispatcher dispatcher) {
+    private final NotificationDispatcher dispatcher;
+    private final ProcessedEventDeduplicationService deduplicationService;
+
+    CreditThresholdNotificationListener(NotificationDispatcher dispatcher, ProcessedEventDeduplicationService deduplicationService) {
         this.dispatcher = dispatcher;
+        this.deduplicationService = deduplicationService;
     }
 
     @ApplicationModuleListener
     void on(CreditThresholdBreachedEvent event) {
+        if (!deduplicationService.tryClaim(event.bookingId().toString(), LISTENER_NAME)) {
+            return;
+        }
+
         String subject = "Wallet credit limit reached";
         String body = "A booking attempt of " + event.attemptedAmount() + " could not be held — you have reached "
             + "your wallet balance plus credit limit. Please top up to continue.";

@@ -137,7 +137,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 
 - [x] **HRD-01** — implement notification dispatch for email plus region configurable secondary channel
 - [x] **HRD-02** — wire all prd 15 notification trigger events
-- [ ] **HRD-03** — make every notification listener idempotent
+- [x] **HRD-03** — make every notification listener idempotent
 - [ ] **HRD-04** — build the notification preferences screen
 - [ ] **HRD-05** — implement the full cancellation workflow across policy check approval and refund
 - [ ] **HRD-06** — track disputes as tickets not email handoffs

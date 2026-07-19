@@ -10,19 +10,27 @@ import org.springframework.stereotype.Component;
  * the tracked record; this listener is the notification fan-out on top of
  * it, alerting the Consultant a ticket now exists — via {@link NotificationDispatcher},
  * the same region-routed email + WhatsApp/SMS shape every trigger-event
- * listener uses.
+ * listener uses. HRD-03: {@code disputeTicketId} is the dedup key.
  */
 @Component
 class DisputeTicketNotificationListener {
 
-    private final NotificationDispatcher dispatcher;
+    private static final String LISTENER_NAME = "DisputeTicketNotificationListener";
 
-    DisputeTicketNotificationListener(NotificationDispatcher dispatcher) {
+    private final NotificationDispatcher dispatcher;
+    private final ProcessedEventDeduplicationService deduplicationService;
+
+    DisputeTicketNotificationListener(NotificationDispatcher dispatcher, ProcessedEventDeduplicationService deduplicationService) {
         this.dispatcher = dispatcher;
+        this.deduplicationService = deduplicationService;
     }
 
     @ApplicationModuleListener
     void on(DisputeTicketCreatedEvent event) {
+        if (!deduplicationService.tryClaim(event.disputeTicketId().toString(), LISTENER_NAME)) {
+            return;
+        }
+
         String subject = "A dispute has been flagged on your booking";
         String body = "Dispute ticket " + event.disputeTicketId() + " was opened for booking "
             + event.bookingId() + ": " + event.reason();

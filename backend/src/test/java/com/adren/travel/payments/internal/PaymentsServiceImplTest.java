@@ -716,7 +716,7 @@ class PaymentsServiceImplTest {
         // HRD-02: the notification-trigger event still fires, via its own
         // REQUIRES_NEW-transactional publisher — never through `events`
         // directly, since that would roll back with this (blocked) transaction.
-        verify(creditThresholdBreachEventPublisher).publish(consultantId, amount);
+        verify(creditThresholdBreachEventPublisher).publish(bookingId, consultantId, amount);
     }
 
     @Test

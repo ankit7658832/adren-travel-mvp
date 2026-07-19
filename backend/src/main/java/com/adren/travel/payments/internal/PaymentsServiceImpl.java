@@ -285,7 +285,7 @@ class PaymentsServiceImpl implements PaymentsApi {
             // HRD-02: notify even though this transaction is about to roll
             // back — see CreditThresholdBreachEventPublisher's Javadoc for
             // why that requires its own REQUIRES_NEW transaction.
-            creditThresholdBreachEventPublisher.publish(command.consultantId(), command.amount());
+            creditThresholdBreachEventPublisher.publish(command.bookingId(), command.consultantId(), command.amount());
             throw e;
         }
 

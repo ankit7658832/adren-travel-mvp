@@ -16,7 +16,9 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * FND-24 — proves the notification listener's monetary log line carries
@@ -31,12 +33,14 @@ import static org.mockito.Mockito.mock;
 class BookingNotificationListenerLoggingTest {
 
     private final NotificationDispatcher dispatcher = mock(NotificationDispatcher.class);
-    private final BookingNotificationListener listener = new BookingNotificationListener(dispatcher);
+    private final ProcessedEventDeduplicationService deduplicationService = mock(ProcessedEventDeduplicationService.class);
+    private final BookingNotificationListener listener = new BookingNotificationListener(dispatcher, deduplicationService);
     private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
     private Logger logger;
 
     @BeforeEach
     void setUp() {
+        when(deduplicationService.tryClaim(any(), any())).thenReturn(true);
         logger = (Logger) LoggerFactory.getLogger(BookingNotificationListener.class);
         appender.start();
         logger.addAppender(appender);

@@ -28,20 +28,32 @@ import org.springframework.stereotype.Component;
  * This is the pattern every cross-module listener in this codebase should
  * follow — see the {@code backend-spring-modulith} skill for the full
  * writeup.
+ * <p>
+ * HRD-03 / RULES.md §2.2: {@code bookingId} is the dedup key — a booking
+ * only ever confirms once, so a redelivery of this same event carries the
+ * same {@code bookingId} and is claimed (or rejected) by {@link
+ * ProcessedEventDeduplicationService#tryClaim} before anything else runs.
  */
 @Component
 class BookingNotificationListener {
 
     private static final Logger log = LoggerFactory.getLogger(BookingNotificationListener.class);
+    private static final String LISTENER_NAME = "BookingNotificationListener";
 
     private final NotificationDispatcher dispatcher;
+    private final ProcessedEventDeduplicationService deduplicationService;
 
-    BookingNotificationListener(NotificationDispatcher dispatcher) {
+    BookingNotificationListener(NotificationDispatcher dispatcher, ProcessedEventDeduplicationService deduplicationService) {
         this.dispatcher = dispatcher;
+        this.deduplicationService = deduplicationService;
     }
 
     @ApplicationModuleListener
     void on(BookingConfirmedEvent event) {
+        if (!deduplicationService.tryClaim(event.bookingId().toString(), LISTENER_NAME)) {
+            return;
+        }
+
         // FND-24: consultantId and currency go in MDC (not just the message
         // text) so this line is auditable as structured fields, per
         // RULES.md §6.2 — a monetary log line is never just a bare number.
