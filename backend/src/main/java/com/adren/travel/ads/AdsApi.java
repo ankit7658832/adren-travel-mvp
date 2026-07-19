@@ -137,4 +137,15 @@ public interface AdsApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     Page<AdCampaignView> findCampaignsForConsultant(UUID consultantId, Pageable pageable);
+
+    /**
+     * A single campaign's full billing transparency view (PRD §14.3,
+     * ADS-11) — spend-to-date, budget cap, and every itemized spend
+     * transaction ADS-10's poller has recorded, consolidating those
+     * guardrails into one coherent view rather than a single opaque
+     * total. Tenant-scoped to the campaign's owning Consultant, same
+     * pattern as every other per-campaign lookup in this interface.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    CampaignBillingDetailView findCampaignBillingDetail(UUID campaignId);
 }

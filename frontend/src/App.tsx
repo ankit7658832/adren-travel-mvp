@@ -19,6 +19,9 @@ import type { Role } from "./shared/auth/authTypes";
  *   /admin               -> 21.6 Super Admin Console (Layer 1) — HRD-11
  *   /wallet              -> 21.7 Wallet & Billing (Layer 1) — FIN-09
  *   /campaigns/new       -> 21.8 Campaign Builder (Layer 1) — ADS-03
+ *   /campaigns/:id/billing -> Campaign Billing Detail (Layer 1) — ADS-11;
+ *                           not a numbered Part 21 screen, same gap class
+ *                           as /storefront and /disputes
  *   /pnr                 -> 21.9 PNR Search (Layer 1) — HRD-08
  *   /notifications       -> 21.10 Notification Preferences (Layer 1) — HRD-04
  *   /storefront          -> Layer 2 placeholder (doc/DESIGN.md §10, §12
@@ -104,6 +107,9 @@ const CampaignPolicyReviewQueue = lazy(() =>
     default: m.CampaignPolicyReviewQueue,
   }))
 );
+const CampaignBillingDetail = lazy(() =>
+  import("./features/campaign-billing/CampaignBillingDetail").then((m) => ({ default: m.CampaignBillingDetail }))
+);
 
 function RouteLoadingFallback() {
   return (
@@ -179,6 +185,10 @@ export default function App() {
         <Route
           path="/campaigns/new"
           element={protectedRouteElement(<CampaignBuilder />, ["SUPER_ADMIN", "CONSULTANT"])}
+        />
+        <Route
+          path="/campaigns/:campaignId/billing"
+          element={protectedRouteElement(<CampaignBillingDetail />, ["SUPER_ADMIN", "CONSULTANT"])}
         />
         <Route
           path="/pnr"

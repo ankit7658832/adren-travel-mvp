@@ -4,8 +4,10 @@ import com.adren.travel.ads.AdAccountView;
 import com.adren.travel.ads.AdCampaignCreativeVariantView;
 import com.adren.travel.ads.AdCampaignView;
 import com.adren.travel.ads.AdsApi;
+import com.adren.travel.ads.CampaignBillingDetailView;
 import com.adren.travel.ads.CreateCampaignCommand;
 import com.adren.travel.ads.GenerateAdCreativeForPackageCommand;
+import com.adren.travel.ads.SpendTransactionView;
 import com.adren.travel.ads.SubmitCampaignInputsCommand;
 import com.adren.travel.ads.event.AdCampaignCreatedEvent;
 import com.adren.travel.ads.event.AdCampaignCreativeVariantApprovedEvent;
@@ -51,17 +53,20 @@ class AdsServiceImpl implements AdsApi {
     private final MetaAdsClient metaAdsClient;
     private final AdCampaignRepository adCampaignRepository;
     private final AdCampaignCreativeVariantRepository creativeVariantRepository;
+    private final AdCampaignSpendTransactionRepository spendTransactionRepository;
     private final ApplicationEventPublisher events;
 
     AdsServiceImpl(BookingApi bookingApi, AiApi aiApi, AdAccountRepository adAccountRepository,
                    MetaAdsClient metaAdsClient, AdCampaignRepository adCampaignRepository,
-                   AdCampaignCreativeVariantRepository creativeVariantRepository, ApplicationEventPublisher events) {
+                   AdCampaignCreativeVariantRepository creativeVariantRepository,
+                   AdCampaignSpendTransactionRepository spendTransactionRepository, ApplicationEventPublisher events) {
         this.bookingApi = bookingApi;
         this.aiApi = aiApi;
         this.adAccountRepository = adAccountRepository;
         this.metaAdsClient = metaAdsClient;
         this.adCampaignRepository = adCampaignRepository;
         this.creativeVariantRepository = creativeVariantRepository;
+        this.spendTransactionRepository = spendTransactionRepository;
         this.events = events;
     }
 
@@ -252,6 +257,21 @@ class AdsServiceImpl implements AdsApi {
         UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(consultantId);
         return adCampaignRepository.findByConsultantId(scopedConsultantId, pageable)
             .map(AdsServiceImpl::toView);
+    }
+
+    @Override
+    public CampaignBillingDetailView findCampaignBillingDetail(UUID campaignId) {
+        AdCampaign campaign = adCampaignRepository.findById(campaignId)
+            .orElseThrow(() -> new IllegalArgumentException("No campaign: " + campaignId));
+        CurrentPrincipal.resolveTenantScope(campaign.getConsultantId());
+
+        List<SpendTransactionView> transactions = spendTransactionRepository
+            .findByCampaignIdOrderByRecordedAtDesc(campaignId).stream()
+            .map(t -> new SpendTransactionView(t.getTransactionId(), t.getAmount(), t.getRecordedAt()))
+            .toList();
+
+        return new CampaignBillingDetailView(campaign.getCampaignId(), campaign.getSpendToDateAmount(),
+            campaign.getBudgetCapAmount(), campaign.getBudgetCapCurrency(), transactions);
     }
 
     private static AdCampaignView toView(AdCampaign campaign) {

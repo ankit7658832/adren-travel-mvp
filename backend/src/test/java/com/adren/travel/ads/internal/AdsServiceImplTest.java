@@ -61,11 +61,14 @@ class AdsServiceImplTest {
     AdCampaignCreativeVariantRepository creativeVariantRepository;
 
     @Mock
+    AdCampaignSpendTransactionRepository spendTransactionRepository;
+
+    @Mock
     ApplicationEventPublisher events;
 
     private AdsServiceImpl service() {
         return new AdsServiceImpl(bookingApi, aiApi, adAccountRepository, metaAdsClient, adCampaignRepository,
-            creativeVariantRepository, events);
+            creativeVariantRepository, spendTransactionRepository, events);
     }
 
     @Test
@@ -386,6 +389,40 @@ class AdsServiceImplTest {
 
         assertThatThrownBy(() -> service().findCampaignsForConsultant(
             ownerConsultantId, org.springframework.data.domain.Pageable.unpaged()))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void findCampaignBillingDetailReturnsSpendBudgetAndEveryTransactionADS11() {
+        UUID consultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), consultantId, CurrencyCode.INR);
+        campaign.submitCampaignInputs("Adults 25-45", new BigDecimal("500.00"), 14);
+        campaign.submitForPolicyReview();
+        campaign.launch("meta-ref-123");
+        campaign.recordSpend(new BigDecimal("50.00"));
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        AdCampaignSpendTransaction txn = new AdCampaignSpendTransaction(UUID.randomUUID(), campaignId, new BigDecimal("50.00"));
+        when(spendTransactionRepository.findByCampaignIdOrderByRecordedAtDesc(campaignId)).thenReturn(List.of(txn));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        var detail = service().findCampaignBillingDetail(campaignId);
+
+        assertThat(detail.spendToDateAmount()).isEqualByComparingTo("50.00");
+        assertThat(detail.budgetCapAmount()).isEqualByComparingTo("500.00");
+        assertThat(detail.transactions()).hasSize(1);
+        assertThat(detail.transactions().get(0).amount()).isEqualByComparingTo("50.00");
+    }
+
+    @Test
+    void findCampaignBillingDetailRejectsACallerFromAnotherConsultantADS11() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), ownerConsultantId, CurrencyCode.INR);
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> service().findCampaignBillingDetail(campaignId))
             .isInstanceOf(AccessDeniedException.class);
     }
 

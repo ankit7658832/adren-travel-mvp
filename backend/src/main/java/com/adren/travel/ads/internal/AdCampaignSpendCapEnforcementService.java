@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 /**
  * Near-real-time spend-cap enforcement (PRD §14.3, §24.6's NFR, ADS-10) —
@@ -22,12 +23,15 @@ import java.math.BigDecimal;
 class AdCampaignSpendCapEnforcementService {
 
     private final AdCampaignRepository repository;
+    private final AdCampaignSpendTransactionRepository spendTransactionRepository;
     private final MetaAdsClient metaAdsClient;
     private final ApplicationEventPublisher events;
 
-    AdCampaignSpendCapEnforcementService(
-        AdCampaignRepository repository, MetaAdsClient metaAdsClient, ApplicationEventPublisher events) {
+    AdCampaignSpendCapEnforcementService(AdCampaignRepository repository,
+                                          AdCampaignSpendTransactionRepository spendTransactionRepository,
+                                          MetaAdsClient metaAdsClient, ApplicationEventPublisher events) {
         this.repository = repository;
+        this.spendTransactionRepository = spendTransactionRepository;
         this.metaAdsClient = metaAdsClient;
         this.events = events;
     }
@@ -39,6 +43,12 @@ class AdCampaignSpendCapEnforcementService {
             BigDecimal increment = metaAdsClient.fetchSpendIncrement(campaign.getCampaignId());
             campaign.recordSpend(increment);
             repository.save(campaign);
+            // ADS-11's billing-transparency AC needs the per-transaction
+            // breakdown, not just the running total recordSpend maintains —
+            // one row per poll increment, the actual amount fetched (not
+            // truncated to whatever recordSpend capped spend_to_date at).
+            spendTransactionRepository.save(
+                new AdCampaignSpendTransaction(UUID.randomUUID(), campaign.getCampaignId(), increment));
 
             if (campaign.getStatus() == AdCampaignStatus.SPEND_CAP_REACHED) {
                 events.publishEvent(new AdCampaignSpendCapReachedEvent(

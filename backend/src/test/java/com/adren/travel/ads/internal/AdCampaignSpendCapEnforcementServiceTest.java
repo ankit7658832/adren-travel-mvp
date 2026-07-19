@@ -27,6 +27,9 @@ class AdCampaignSpendCapEnforcementServiceTest {
     AdCampaignRepository repository;
 
     @Mock
+    AdCampaignSpendTransactionRepository spendTransactionRepository;
+
+    @Mock
     MetaAdsClient metaAdsClient;
 
     @Mock
@@ -47,12 +50,18 @@ class AdCampaignSpendCapEnforcementServiceTest {
         when(repository.findByStatus(AdCampaignStatus.LIVE)).thenReturn(List.of(campaign));
         when(metaAdsClient.fetchSpendIncrement(campaignId)).thenReturn(new BigDecimal("50.00"));
 
-        new AdCampaignSpendCapEnforcementService(repository, metaAdsClient, events).enforceSpendCaps();
+        new AdCampaignSpendCapEnforcementService(repository, spendTransactionRepository, metaAdsClient, events)
+            .enforceSpendCaps();
 
         assertThat(campaign.getSpendToDateAmount()).isEqualByComparingTo("50.00");
         assertThat(campaign.getStatus()).isEqualTo(AdCampaignStatus.LIVE);
         verify(repository).save(campaign);
         verify(events, never()).publishEvent(any());
+
+        ArgumentCaptor<AdCampaignSpendTransaction> txnCaptor = ArgumentCaptor.forClass(AdCampaignSpendTransaction.class);
+        verify(spendTransactionRepository).save(txnCaptor.capture());
+        assertThat(txnCaptor.getValue().getCampaignId()).isEqualTo(campaignId);
+        assertThat(txnCaptor.getValue().getAmount()).isEqualByComparingTo("50.00");
     }
 
     @Test
@@ -64,7 +73,8 @@ class AdCampaignSpendCapEnforcementServiceTest {
         when(repository.findByStatus(AdCampaignStatus.LIVE)).thenReturn(List.of(campaign));
         when(metaAdsClient.fetchSpendIncrement(campaignId)).thenReturn(new BigDecimal("50.00"));
 
-        new AdCampaignSpendCapEnforcementService(repository, metaAdsClient, events).enforceSpendCaps();
+        new AdCampaignSpendCapEnforcementService(repository, spendTransactionRepository, metaAdsClient, events)
+            .enforceSpendCaps();
 
         assertThat(campaign.getStatus()).isEqualTo(AdCampaignStatus.SPEND_CAP_REACHED);
         ArgumentCaptor<AdCampaignSpendCapReachedEvent> captor = ArgumentCaptor.forClass(AdCampaignSpendCapReachedEvent.class);

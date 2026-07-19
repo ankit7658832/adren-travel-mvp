@@ -63,6 +63,10 @@ class AdCampaignSpendCapEnforcementIntegrationTest {
             "SELECT status, spend_to_date_amount FROM ad_campaign WHERE campaign_id = ?", campaignId);
         assertThat(row.get("status")).isEqualTo("SPEND_CAP_REACHED");
         assertThat(((Number) row.get("spend_to_date_amount")).doubleValue()).isEqualTo(500.00);
+
+        Long transactionCount = jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM ad_campaign_spend_transaction WHERE campaign_id = ?", Long.class, campaignId);
+        assertThat(transactionCount).isEqualTo(1L);
     }
 
     private UUID seedLiveCampaign(java.math.BigDecimal budgetCapAmount, java.math.BigDecimal spendToDateAmount) {

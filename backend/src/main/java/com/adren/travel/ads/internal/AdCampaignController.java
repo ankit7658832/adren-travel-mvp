@@ -3,6 +3,7 @@ package com.adren.travel.ads.internal;
 import com.adren.travel.ads.AdCampaignCreativeVariantView;
 import com.adren.travel.ads.AdCampaignView;
 import com.adren.travel.ads.AdsApi;
+import com.adren.travel.ads.CampaignBillingDetailView;
 import com.adren.travel.ads.CreateCampaignCommand;
 import com.adren.travel.ads.SubmitCampaignInputsCommand;
 import com.adren.travel.ai.AdCreativeGenerationResult;
@@ -98,5 +99,11 @@ class AdCampaignController {
     @GetMapping
     PageResponse<AdCampaignView> findCampaignsForConsultant(@RequestParam UUID consultantId, Pageable pageable) {
         return PageResponse.of(adsApi.findCampaignsForConsultant(consultantId, pageable));
+    }
+
+    /** ADS-11, PRD §14.3 — the Consultant-facing billing-transparency detail view. */
+    @GetMapping("/{campaignId}/billing-detail")
+    CampaignBillingDetailView findCampaignBillingDetail(@PathVariable UUID campaignId) {
+        return adsApi.findCampaignBillingDetail(campaignId);
     }
 }

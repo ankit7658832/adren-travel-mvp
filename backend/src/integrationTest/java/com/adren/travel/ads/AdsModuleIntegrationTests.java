@@ -426,6 +426,39 @@ class AdsModuleIntegrationTests {
             .isInstanceOf(AccessDeniedException.class);
     }
 
+    @Test
+    void findCampaignBillingDetailReturnsSpendBudgetAndEveryRealTransactionADS11() {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+        jdbcTemplate.update(
+            "UPDATE ad_campaign SET spend_to_date_amount = 50.00 WHERE campaign_id = ?", created.campaignId());
+        jdbcTemplate.update(
+            "INSERT INTO ad_campaign_spend_transaction (transaction_id, campaign_id, amount, recorded_at) "
+                + "VALUES (?, ?, 50.00, now())",
+            UUID.randomUUID(), created.campaignId());
+
+        var detail = adsApi.findCampaignBillingDetail(created.campaignId());
+
+        assertThat(detail.spendToDateAmount()).isEqualByComparingTo("50.00");
+        assertThat(detail.transactions()).hasSize(1);
+        assertThat(detail.transactions().get(0).amount()).isEqualByComparingTo("50.00");
+    }
+
+    @Test
+    void findCampaignBillingDetailRejectsAnotherConsultantsQueryADS11() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(ownerConsultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, ownerConsultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> adsApi.findCampaignBillingDetail(created.campaignId()))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
     private UUID seedPackage(UUID consultantId, String name, String status) {
         java.sql.Timestamp now = java.sql.Timestamp.from(Instant.now());
         UUID itineraryId = UUID.randomUUID();
