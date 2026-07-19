@@ -92,7 +92,7 @@ Every `⚠️ NEEDS CLARIFICATION` flag in the story catalogues, consolidated in
 
 This is the ongoing tracker, now backed by `doc/user-stories/mvp-mock/PROGRESS.md` (created in Stage 1; §5's "gap" note above predates it and is left as historical record). Update as stories close.
 
-### Mock phase (149 stories / 748 points, updated Stage 6 — 2026-07-19)
+### Mock phase (149 stories / 748 points, updated Stage 7 — 2026-07-19)
 
 | Epic | Stories | Points | Status |
 |---|---|---|---|
@@ -101,12 +101,12 @@ This is the ongoing tracker, now backed by `doc/user-stories/mvp-mock/PROGRESS.m
 | Financial Layer | 18 | 95 | **100% (18/18)** — completed Stage 3 Batch 2 |
 | AI Layer | 13 | 72 | **100% (13/13)** — completed Stage 4 |
 | Local DMC + BYOS | 11 | 57 | **100% (11/11)** — completed Stage 5 |
-| Ads/Campaign Management | 15 | 80 | 0% (0/15) |
+| Ads/Campaign Management | 15 | 80 | 0% (0/15) — **fully unblocked as of Stage 7** (see §7g) |
 | Hardening | 13 | 76 | **77% (10/13, 57/76 pts)** — everything unblocked by Stage 6 is done; `HRD-09/10/11` (19 pts) remain gated on `ADS-09` |
-| Frontend Shell | 10 | 55 | 20% (2/10, 10 pts) |
-| DevOps/Infra | 9 | 30 | 0% (0/9) |
-| Test Infrastructure | 9 | 38 | 0% (0/9) |
-| **Total** | **149** | **748** | **70% (105/149 stories, 536/748 pts)** |
+| Frontend Shell | 10 | 55 | **100% (10/10)** — completed Stage 7 |
+| DevOps/Infra | 9 | 30 | 0% (0/9) — fully unblocked, unaffected by this stage |
+| Test Infrastructure | 9 | 38 | 0% (0/9) — **7/9 unblocked**; `TST-04/05` (7 pts) newly unblocked by Stage 7 (`FES-08`) |
+| **Total** | **149** | **748** | **76% (113/149 stories, 581/748 pts)** |
 
 ## 7a. Stage 1 & Stage 2 actual velocity, and a revised remaining-timeline estimate (Stage 3, Step A)
 
@@ -315,6 +315,48 @@ Re-verified directly against the dependency graph, not carried over unchecked fr
 **Once Ads/Campaign is unblocked and built out, Hardening's final 3 stories (`HRD-09/10/11`, 19 points) become buildable and should be swept up as a short closing batch** — they're Consultant/Super Admin dashboard screens with no further hidden dependencies beyond `ADS-09`.
 
 **Stopping here per Step D's own instruction — not starting Frontend Shell without an explicit go-ahead.**
+
+## 7g. Stage 7 (Frontend Shell) completion, a seventh velocity data point, and the next-epic recommendation (Stage 7, Step D — 2026-07-19)
+
+**What landed:** All 8 remaining Frontend Shell stories (45 points) across two checkpointed batches — Batch 1 (`FES-02, 04, 05` — provider-stack slot, shared UI primitives, shared map/results layout; 16 points) and Batch 2 (`FES-08, 06, 07` — react-hook-form+zod adoption, runtime white-label theming, auth/session route guards; 18 points) — plus a corrective Batch 3 (`FES-09, 10` — schema-driven onboarding field engine, global toast queue; 11 points) after an initial completion report incorrectly claimed the epic was fully done when only Batches 1–2 had actually shipped; caught and fixed within the same stage rather than left standing. **Frontend Shell is now 10/10 stories, 55/55 points (100%).** Mock-phase total is now **113/149 stories, 581/748 points (76%)**.
+
+**What this stage revealed, flagged rather than smoothed over:**
+
+- **The "pre-existing foundation, just needs proving/extracting" pattern (§7e/§7f) showed up a third time, across half this stage's stories.** `FES-02` was fully built in Stage 1. `FES-06`'s CSS-custom-property runtime-theming mechanism already existed; only the actual fetch-from-FND-06's-real-endpoint provider was missing (a stale code comment claimed no backend endpoint existed — FND-06/FND-07 had shipped one since). `FES-09`'s data-driven KYC field resolution already worked end-to-end in `ConsultantOnboardingWizard`; the story's own Developer Notes framed the real remaining work as *extracting* it into a reusable engine, which is what actually happened. This is the same dynamic Stage 5 and Stage 6 both hit — worth treating as a standing expectation for future stages, not a one-off surprise.
+- **A real, load-bearing bug was caught by the story's own test, not shipped and found later.** `FES-10`'s toast auto-dismiss test failed on first write: `ToastItem`'s dismiss timer was keyed to an inline arrow-function prop, so queuing a *second* toast silently reset the *first* toast's already-ticking timer (new callback identity on every `ToastContainer` render re-triggers the effect). Fixed by reading the store's `removeToast` action directly (a stable Zustand reference) instead of threading a fresh callback through props each render. This is exactly the class of bug a shallow "renders successfully" test would have missed — the fix only exists because the test asserted the *actual auto-dismiss timing*, not just presence.
+- **This stage also included a real self-correction.** The first Batch 2 completion report to the user claimed "Frontend Shell is now 8/10 stories, 45/45 remaining points — fully done," which was wrong on the remaining-points count (`FES-09`/`FES-10`, 11 points, hadn't been started) — caught on the very next turn while preparing this Step D section, not by the user. Flagging this here rather than silently fixing it, since the accuracy of these completion claims is exactly what `phases.md`'s tracking is for.
+
+**Stage 7 velocity** (same method as §7a–§7f — git commit timestamps, `AD-stage7-frontend-shell` branch):
+- Commits: `29288f4` (2026-07-19 14:36:46) through `054a4df` (2026-07-19 16:43:54).
+- Delivered **8 stories / 45 points** — the entire remainder of Frontend Shell.
+- Calendar-day span: 2026-07-19 only (same date as Stage 6). Wall-clock elapsed: ~2h7m.
+
+| Basis | Elapsed | Points | Velocity |
+|---|---|---|---|
+| Wall-clock hours | ~2.12h (0.088 days) | 45 | 509.6 pts/day → **~3,567 pts/week** |
+
+**⚠️ A third consecutive outlier, same driver as Stages 5 and 6 — not a new sustainable rate.** Roughly half this stage's stories (`FES-02`, large parts of `FES-06`/`FES-09`) were substantially pre-existing mechanism needing tests/extraction rather than new builds, per the finding above. Averaging this into the cumulative rate would overstate what to expect from a story that doesn't have that head start — same caveat §7e and §7f both already gave.
+
+**Combined actual delivery (all seven stages):** 113 stories / **581 points**. Summing each stage's own raw wall-clock span: 10h17m + 14h54m + 24h38m + 15h5m + 2h7m + 2h12m + 2h7m ≈ **71h20m (≈2.97 days)**, across 6 distinct calendar dates (2026-07-14 through 2026-07-19, Stage 6 and Stage 7 sharing 2026-07-19).
+
+| Basis | Elapsed | Points | Velocity |
+|---|---|---|---|
+| Summed wall-clock | ~71.3h (2.97 days) | 581 | 195.5 pts/day → **~1,368 pts/week** |
+| Calendar-date count (crude) | 6 distinct dates | 581 | 96.8 pts/day → **~678 pts/week** |
+
+**Revised remaining-timeline estimate:** Remaining: **167 points** (748 total − 581 done). Stage 4's own demonstrated rate (114.6 pts/day) remains the most defensible non-outlier single-stage basis — three of the last four stages are now flagged outliers, which is itself worth noting rather than continuing to average them in: 167 / 114.6 ≈ **1.46 more days of active work**. The cumulative summed-wall-clock rate (195.5 pts/day, now inflated by three outlier stages) gives a more optimistic ≈0.85 days — reported for completeness, not recommended as the planning number.
+
+**Epic-completion flag, per the standing Step D instruction:** the trigger ("Booking Core, Financial Layer, AI Layer, Local DMC+BYOS, Ads/Campaign, and Hardening all complete") is **still not met** — Ads/Campaign is still 0/15 and Hardening still has 3 stories pending. But this stage changes the picture materially: **Ads/Campaign Management is now fully unblocked, top to bottom** — verified directly against every `ADS-*` story's `dependencies:` frontmatter, not inferred. `ADS-03` was the epic's sole remaining gate (`["ADS-02", "BOK-12", "FES-08"]` — `ADS-02` was already unblocked, `BOK-12` has been done since Stage 3, and `FES-08` just landed in this stage's Batch 2); every story from `ADS-04` through `ADS-15` chains off `ADS-03` and has no other blocker. Once Ads/Campaign is built, `HRD-09/10/11` (Hardening's last 3 stories, 19 points) become buildable too, closing that epic out completely.
+
+Per the user's own standing instruction, the estimate for finishing the non-Ads/Campaign remainder (Frontend Shell is now done; DevOps/Infra and Test Infrastructure are what's left of that original three-epic list) rather than waiting to be asked: **DevOps/Infra (9 stories, 30 points, fully unblocked) + Test Infrastructure (9 stories, 38 points, 7 already unblocked and the remaining 2 — `TST-04/05` — unblocked as of this stage) = 68 points ≈ 0.6 days at Stage 4's demonstrated rate.** Combined with Ads/Campaign (80 points) and Hardening's tail (19 points), the full remaining 167 points ≈ 1.46 days at that same rate — consistent with the total already given above, since these are the only pieces left.
+
+**Recommendation: build Ads/Campaign Management next (15 stories, 80 points)** — not Frontend Shell (now done), and not DevOps/Infra/Test Infrastructure, even though both are also fully or mostly unblocked:
+
+1. **It's the PRD §8-stated order, unblocked for the first time this project.** §8's release order ("... → Local DMC+BYOS → Ads/Campaign → Hardening") named Ads/Campaign as next after Local DMC+BYOS three stages ago (§7d); it stayed blocked through Stages 5 and 6 purely on `FES-08`, which is now done — this is the first stage where building it top-to-bottom is actually possible.
+2. **It's the highest-leverage remaining epic — finishing it closes out Hardening too.** `HRD-09/10/11`'s only blocker is `ADS-09`. No other remaining epic (DevOps/Infra, Test Infrastructure) unblocks anything else in the catalogue.
+3. **DevOps/Infra and Test Infrastructure remain legitimate parallel-track candidates** (both fully or mostly unblocked, 30 and 38 points respectively) if a second work-stream is available, but neither has Ads/Campaign's downstream unblock value.
+
+**Stopping here per Step D's own instruction — not starting Ads/Campaign Management without an explicit go-ahead.**
 
 ### Production phase (83 stories / 476 points)
 
