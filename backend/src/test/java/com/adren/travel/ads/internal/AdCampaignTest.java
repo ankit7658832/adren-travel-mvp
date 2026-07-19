@@ -78,4 +78,24 @@ class AdCampaignTest {
 
         assertThatThrownBy(() -> campaign.rejectPolicyReview("too-early")).isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    void submitCampaignInputsSetsAllThreeFieldsWhilePendingApprovalADS03() {
+        AdCampaign campaign = newCampaign();
+
+        campaign.submitCampaignInputs("Adults 25-45 interested in beach travel", new java.math.BigDecimal("500.00"), 14);
+
+        assertThat(campaign.getAudienceDescription()).isEqualTo("Adults 25-45 interested in beach travel");
+        assertThat(campaign.getBudgetCapAmount()).isEqualByComparingTo("500.00");
+        assertThat(campaign.getDurationDays()).isEqualTo(14);
+    }
+
+    @Test
+    void submitCampaignInputsIsOnlyValidWhilePendingApprovalADS03() {
+        AdCampaign campaign = newCampaign();
+        campaign.submitForPolicyReview();
+
+        assertThatThrownBy(() -> campaign.submitCampaignInputs("audience", new java.math.BigDecimal("500.00"), 14))
+            .isInstanceOf(IllegalStateException.class);
+    }
 }

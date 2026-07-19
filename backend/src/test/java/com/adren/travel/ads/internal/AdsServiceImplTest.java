@@ -3,23 +3,35 @@ package com.adren.travel.ads.internal;
 import com.adren.travel.ads.AdAccountView;
 import com.adren.travel.ads.AdCampaignView;
 import com.adren.travel.ads.CreateCampaignCommand;
+import com.adren.travel.ads.SubmitCampaignInputsCommand;
 import com.adren.travel.ai.AiApi;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.PackageView;
+import com.adren.travel.security.AdrenPrincipal;
+import com.adren.travel.security.Role;
 import com.adren.travel.shared.CurrencyCode;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -98,5 +110,49 @@ class AdsServiceImplTest {
         ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
         verify(events).publishEvent(eventCaptor.capture());
         assertThat(eventCaptor.getValue()).isInstanceOf(com.adren.travel.ads.event.AdCampaignCreatedEvent.class);
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void submitCampaignInputsSetsFieldsAndPublishesAnEventWhenCalledByTheOwningConsultantADS03() {
+        UUID consultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), consultantId, CurrencyCode.INR);
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        var command = new SubmitCampaignInputsCommand(campaignId, "Adults 25-45", new BigDecimal("500.00"), 14);
+
+        AdCampaignView view = service().submitCampaignInputs(command);
+
+        assertThat(view.audienceDescription()).isEqualTo("Adults 25-45");
+        assertThat(view.budgetCapAmount()).isEqualByComparingTo("500.00");
+        assertThat(view.durationDays()).isEqualTo(14);
+        verify(adCampaignRepository).save(campaign);
+        verify(events).publishEvent(any(com.adren.travel.ads.event.AdCampaignInputsSubmittedEvent.class));
+    }
+
+    @Test
+    void submitCampaignInputsRejectsACallerFromAnotherConsultantADS03() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), ownerConsultantId, CurrencyCode.INR);
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        var command = new SubmitCampaignInputsCommand(campaignId, "Adults 25-45", new BigDecimal("500.00"), 14);
+
+        assertThatThrownBy(() -> service().submitCampaignInputs(command)).isInstanceOf(AccessDeniedException.class);
+    }
+
+    private static void authenticateAs(Role role, UUID consultantId) {
+        AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), role, consultantId);
+        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
+        var authentication = new UsernamePasswordAuthenticationToken(principal, null, authorities);
+        SecurityContext securityContext = SecurityContextHolder.createEmptyContext();
+        securityContext.setAuthentication(authentication);
+        SecurityContextHolder.setContext(securityContext);
     }
 }

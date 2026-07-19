@@ -5,12 +5,15 @@ import com.adren.travel.ads.AdCampaignView;
 import com.adren.travel.ads.AdsApi;
 import com.adren.travel.ads.CreateCampaignCommand;
 import com.adren.travel.ads.GenerateAdCreativeForPackageCommand;
+import com.adren.travel.ads.SubmitCampaignInputsCommand;
 import com.adren.travel.ads.event.AdCampaignCreatedEvent;
+import com.adren.travel.ads.event.AdCampaignInputsSubmittedEvent;
 import com.adren.travel.ai.AdCreativeGenerationResult;
 import com.adren.travel.ai.AiApi;
 import com.adren.travel.ai.GenerateAdCreativeCommand;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.PackageView;
+import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.Money;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -90,6 +93,21 @@ class AdsServiceImpl implements AdsApi {
         adCampaignRepository.save(campaign);
         events.publishEvent(
             new AdCampaignCreatedEvent(campaign.getCampaignId(), campaign.getPackageId(), campaign.getConsultantId()));
+
+        return toView(campaign);
+    }
+
+    @Override
+    @Transactional
+    public AdCampaignView submitCampaignInputs(SubmitCampaignInputsCommand command) {
+        AdCampaign campaign = adCampaignRepository.findById(command.campaignId())
+            .orElseThrow(() -> new IllegalArgumentException("No campaign: " + command.campaignId()));
+        CurrentPrincipal.resolveTenantScope(campaign.getConsultantId());
+
+        campaign.submitCampaignInputs(command.audienceDescription(), command.budgetCapAmount(), command.durationDays());
+        adCampaignRepository.save(campaign);
+        events.publishEvent(new AdCampaignInputsSubmittedEvent(campaign.getCampaignId(),
+            campaign.getAudienceDescription(), campaign.getBudgetCapAmount(), campaign.getDurationDays()));
 
         return toView(campaign);
     }

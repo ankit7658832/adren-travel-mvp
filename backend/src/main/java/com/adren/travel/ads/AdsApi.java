@@ -47,4 +47,17 @@ public interface AdsApi {
         + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
         + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
     AdCampaignView createCampaign(CreateCampaignCommand command);
+
+    /**
+     * Sets a PENDING_APPROVAL campaign's audience/budget/duration inputs
+     * (PRD §14.2 steps 1-2, ADS-03) — same authority shape as {@link
+     * #createCampaign}; tenant-scoped to the campaign's own owning
+     * Consultant inside the implementation (RULES.md §5.2), since the
+     * campaign already exists by this point and the caller is never
+     * trusted to supply their own consultantId.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT') or "
+        + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
+        + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
+    AdCampaignView submitCampaignInputs(SubmitCampaignInputsCommand command);
 }

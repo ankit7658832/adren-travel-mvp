@@ -88,6 +88,25 @@ class AdCampaign {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * ADS-03, PRD §14.2 steps 1-2 — sets the Consultant-provided
+     * audience/budget/duration inputs required before the campaign can
+     * proceed. Not a status transition (PRD §20.13's enum has no separate
+     * "inputs collected" state), but still state-guarded: these fields
+     * only make sense to set while the campaign is still awaiting
+     * Consultant approval.
+     */
+    void submitCampaignInputs(String audienceDescription, BigDecimal budgetCapAmount, Integer durationDays) {
+        if (this.status != AdCampaignStatus.PENDING_APPROVAL) {
+            throw new IllegalStateException(
+                "Campaign inputs can only be submitted while PENDING_APPROVAL, was: " + this.status);
+        }
+        this.audienceDescription = audienceDescription;
+        this.budgetCapAmount = budgetCapAmount;
+        this.durationDays = durationDays;
+        this.updatedAt = Instant.now();
+    }
+
     /** ADS-05 — a Consultant submits the campaign for Super Admin review once every creative variant is approved (checked by the caller; see class Javadoc). */
     void submitForPolicyReview() {
         if (this.status != AdCampaignStatus.PENDING_APPROVAL) {

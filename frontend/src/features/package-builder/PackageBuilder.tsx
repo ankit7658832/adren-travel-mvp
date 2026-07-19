@@ -1,5 +1,5 @@
-import { useState, type FormEvent, type ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { usePackageBuilder, type PackageDetailsInput } from "./usePackageBuilder";
 import { Button } from "@/shared/design-system/Button";
 import { CreditLimitBreachWarning } from "@/features/wallet-billing/CreditLimitBreachWarning";
@@ -46,6 +46,7 @@ function PackageBuilderForQuotation({ quotationId }: { quotationId: string }) {
   const [details, setDetails] = useState<PackageDetailsInput>(EMPTY_DETAILS);
   const [promoteViaAds, setPromoteViaAds] = useState(false);
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
+  const navigate = useNavigate();
   const {
     packageId, atolDisclosureRequired, atolDisclosureCompleted,
     createPackage, completeAtolDisclosure, publish,
@@ -65,7 +66,17 @@ function PackageBuilderForQuotation({ quotationId }: { quotationId: string }) {
     publish.mutate(promoteViaAds);
   }
 
-  if (publish.isSuccess) {
+  // ADS-03's own AC: opting into "Promote this Package" hands off straight
+  // to the Campaign Builder with the Package pre-populated, rather than
+  // landing on a static confirmation the Consultant has to navigate away
+  // from manually.
+  useEffect(() => {
+    if (publish.isSuccess && promoteViaAds && packageId) {
+      navigate(`/campaigns/new?packageId=${packageId}`);
+    }
+  }, [publish.isSuccess, promoteViaAds, packageId, navigate]);
+
+  if (publish.isSuccess && !promoteViaAds) {
     return (
       <main className="mx-auto max-w-2xl px-6 py-8">
         <h1 className="text-2xl font-semibold text-neutral-900">Package published</h1>

@@ -1,6 +1,7 @@
 package com.adren.travel.ads;
 
 import com.adren.travel.ads.event.AdCampaignCreatedEvent;
+import com.adren.travel.ads.event.AdCampaignInputsSubmittedEvent;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.Role;
 import org.junit.jupiter.api.AfterEach;
@@ -164,6 +165,42 @@ class AdsModuleIntegrationTests {
         String status = jdbcTemplate.queryForObject(
             "SELECT status FROM ad_campaign WHERE package_id = ?", String.class, packageId);
         assertThat(status).isEqualTo("PENDING_APPROVAL");
+    }
+
+    @Test
+    void submitCampaignInputsPersistsAllThreeFieldsAgainstARealCampaignADS03(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+        var command = new SubmitCampaignInputsCommand(
+            created.campaignId(), "Adults 25-45 interested in beach travel", new java.math.BigDecimal("500.00"), 14);
+
+        scenario.stimulate(() -> adsApi.submitCampaignInputs(command))
+            .andWaitForEventOfType(AdCampaignInputsSubmittedEvent.class)
+            .matchingMappedValue(AdCampaignInputsSubmittedEvent::campaignId, created.campaignId())
+            .toArrive();
+
+        var row = jdbcTemplate.queryForMap(
+            "SELECT audience_description, budget_cap_amount, duration_days FROM ad_campaign WHERE campaign_id = ?",
+            created.campaignId());
+        assertThat(row.get("audience_description")).isEqualTo("Adults 25-45 interested in beach travel");
+        assertThat(((Number) row.get("budget_cap_amount")).doubleValue()).isEqualTo(500.00);
+        assertThat(row.get("duration_days")).isEqualTo(14);
+    }
+
+    @Test
+    void submitCampaignInputsCannotBeCalledForAnotherConsultantsCampaignADS03() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(ownerConsultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, ownerConsultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        var command = new SubmitCampaignInputsCommand(created.campaignId(), "audience", new java.math.BigDecimal("500.00"), 14);
+
+        assertThatThrownBy(() -> adsApi.submitCampaignInputs(command))
+            .isInstanceOf(AccessDeniedException.class);
     }
 
     private UUID seedPackage(UUID consultantId, String name, String status) {
