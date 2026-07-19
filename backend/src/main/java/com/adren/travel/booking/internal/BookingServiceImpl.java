@@ -696,6 +696,14 @@ class BookingServiceImpl implements BookingApi {
             ticket.getCreatedAt());
     }
 
+    @Override
+    public Page<DisputeTicketView> findDisputeTickets(UUID consultantId, Pageable pageable) {
+        UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(consultantId);
+        return disputeTicketRepository.findByConsultantId(scopedConsultantId, pageable)
+            .map(ticket -> new DisputeTicketView(ticket.getDisputeTicketId(), ticket.getBookingId(),
+                ticket.getReason(), ticket.getStatus().name(), ticket.getCreatedAt()));
+    }
+
     private static CancellationRequestView toCancellationRequestView(CancellationRequest request) {
         return new CancellationRequestView(request.getCancellationRequestId(), request.getBookingId(),
             new Money(request.getRefundAmount(), request.getRefundCurrency()),

@@ -292,6 +292,34 @@ class BookingModuleIntegrationTests {
         assertThat(reason).isEqualTo("Wrong room type delivered");
     }
 
+    @Test
+    void findDisputeTicketsScopesAConsultantToTheirOwnTicketsOnlyHRD06FND03() {
+        Money price = new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR);
+
+        authenticateAsSuperAdmin();
+        UUID consultantA = onboardIndiaConsultant();
+        UUID consultantB = onboardIndiaConsultant();
+        UUID quotationA = savedQuotationWithOneLineItem(consultantA);
+        UUID bookingA = bookingApi.confirmBooking(quotationA, price);
+        UUID quotationB = savedQuotationWithOneLineItem(consultantB);
+        UUID bookingB = bookingApi.confirmBooking(quotationB, price);
+        SecurityContextHolder.clearContext();
+
+        authenticateAs(Role.CONSULTANT, consultantA);
+        bookingApi.flagDispute(bookingA, new FlagDisputeCommand("A's dispute"));
+        SecurityContextHolder.clearContext();
+
+        authenticateAs(Role.CONSULTANT, consultantB);
+        bookingApi.flagDispute(bookingB, new FlagDisputeCommand("B's dispute"));
+        SecurityContextHolder.clearContext();
+
+        authenticateAs(Role.CONSULTANT, consultantA);
+        var page = bookingApi.findDisputeTickets(consultantA, org.springframework.data.domain.PageRequest.of(0, 20));
+
+        assertThat(page.getContent()).extracting(com.adren.travel.booking.DisputeTicketView::reason)
+            .containsExactly("A's dispute");
+    }
+
     /**
      * BOK-01's actual acceptance criterion: {@code confirmBooking}'s
      * {@code @Transactional} boundary means the JPA event publication

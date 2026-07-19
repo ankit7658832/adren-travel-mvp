@@ -931,6 +931,29 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void findDisputeTicketsReturnsTheCallersOwnTicketsHRD06() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        DisputeTicket ticket = new DisputeTicket(UUID.randomUUID(), UUID.randomUUID(), consultantId, "Wrong room type");
+        Pageable pageable = PageRequest.of(0, 20);
+        when(disputeTicketRepository.findByConsultantId(consultantId, pageable))
+            .thenReturn(new PageImpl<>(List.of(ticket)));
+
+        Page<DisputeTicketView> result = service.findDisputeTickets(consultantId, pageable);
+
+        assertThat(result.getContent()).extracting(DisputeTicketView::reason).containsExactly("Wrong room type");
+    }
+
+    @Test
+    void findDisputeTicketsRejectsAConsultantRequestingAnotherConsultantsTicketsFND03() {
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        Pageable pageable = PageRequest.of(0, 20);
+
+        assertThatThrownBy(() -> service.findDisputeTickets(UUID.randomUUID(), pageable))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+    }
+
+    @Test
     void confirmBookingPlacesThenResolvesAWalletHoldForTheDirectPathFIN07() {
         UUID consultantId = UUID.randomUUID();
         UUID quotationId = stubQuotationResolvingTo(consultantId);
