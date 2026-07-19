@@ -1,6 +1,7 @@
 package com.adren.travel.payments;
 
 import com.adren.travel.payments.event.CommissionCalculatedEvent;
+import com.adren.travel.payments.event.CreditThresholdBreachedEvent;
 import com.adren.travel.payments.event.CurrencyBufferAppliedEvent;
 import com.adren.travel.payments.event.FxRateSnapshotTakenEvent;
 import com.adren.travel.payments.event.MarkupRuleConfiguredEvent;
@@ -398,6 +399,36 @@ class PaymentsModuleIntegrationTests {
         WalletView afterRelease = paymentsApi.getWallet(consultantId);
         assertThat(afterRelease.pendingHolds()).isEqualByComparingTo("0");
         assertThat(afterRelease.availableBalance()).isEqualByComparingTo("0");
+    }
+
+    /**
+     * HRD-02: proves the {@code CreditThresholdBreachedEvent} really does
+     * fire against a real Postgres transaction — the interesting part
+     * mocks can't prove, since the whole point of the {@code
+     * REQUIRES_NEW}-transactional publisher is that Modulith's own
+     * event-publication registry write survives a rollback it would
+     * otherwise be part of.
+     */
+    @Test
+    void aRejectedHoldStillPublishesCreditThresholdBreachedEventFIN08HRD02(Scenario scenario) {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        // No seedSufficientCreditLimit call — a freshly auto-provisioned
+        // wallet starts at zero balance/zero credit limit, guaranteeing
+        // this hold breaches it.
+        Money amount = new Money(BigDecimal.valueOf(500), CurrencyCode.INR);
+
+        scenario.stimulate(() -> {
+                try {
+                    paymentsApi.placeHold(new WalletHoldCommand(bookingId, consultantId, amount));
+                } catch (CreditLimitExceededException expected) {
+                    // The block itself is proven elsewhere (FIN-08's own
+                    // tests) — this scenario is about the event surviving it.
+                }
+            })
+            .andWaitForEventOfType(CreditThresholdBreachedEvent.class)
+            .matchingMappedValue(CreditThresholdBreachedEvent::consultantId, consultantId);
     }
 
     @Test

@@ -8,6 +8,7 @@ import com.adren.travel.payments.CalculateSellRateCommand;
 import com.adren.travel.payments.CalculateUkTomsVatCommand;
 import com.adren.travel.payments.ConfigureMarkupCommand;
 import com.adren.travel.payments.CreatePaymentIntentCommand;
+import com.adren.travel.payments.CreditLimitExceededException;
 import com.adren.travel.payments.FxRateSnapshot;
 import com.adren.travel.payments.HandleStripeWebhookCommand;
 import com.adren.travel.payments.IndiaGstTcsCalculation;
@@ -67,13 +68,15 @@ class PaymentsServiceImpl implements PaymentsApi {
     private final StripeClient stripeClient;
     private final IndiaTaxProperties indiaTaxProperties;
     private final UkTomsVatProperties ukTomsVatProperties;
+    private final CreditThresholdBreachEventPublisher creditThresholdBreachEventPublisher;
 
     PaymentsServiceImpl(MarkupRuleRepository markupRuleRepository, WalletRepository walletRepository,
                          PaymentIntentRepository paymentIntentRepository,
                          WalletLedgerEntryRepository walletLedgerEntryRepository,
                          WalletLedgerEntryRecorder walletLedgerEntryRecorder, ApplicationEventPublisher events,
                          PricingPipeline pricingPipeline, StripeClient stripeClient,
-                         IndiaTaxProperties indiaTaxProperties, UkTomsVatProperties ukTomsVatProperties) {
+                         IndiaTaxProperties indiaTaxProperties, UkTomsVatProperties ukTomsVatProperties,
+                         CreditThresholdBreachEventPublisher creditThresholdBreachEventPublisher) {
         this.markupRuleRepository = markupRuleRepository;
         this.walletRepository = walletRepository;
         this.paymentIntentRepository = paymentIntentRepository;
@@ -84,6 +87,7 @@ class PaymentsServiceImpl implements PaymentsApi {
         this.stripeClient = stripeClient;
         this.indiaTaxProperties = indiaTaxProperties;
         this.ukTomsVatProperties = ukTomsVatProperties;
+        this.creditThresholdBreachEventPublisher = creditThresholdBreachEventPublisher;
     }
 
     @Override
@@ -275,7 +279,15 @@ class PaymentsServiceImpl implements PaymentsApi {
 
         Wallet wallet = walletRepository.findById(command.consultantId())
             .orElseGet(() -> provisionWallet(command.consultantId()));
-        wallet.placeHold(command.amount().amount());
+        try {
+            wallet.placeHold(command.amount().amount());
+        } catch (CreditLimitExceededException e) {
+            // HRD-02: notify even though this transaction is about to roll
+            // back — see CreditThresholdBreachEventPublisher's Javadoc for
+            // why that requires its own REQUIRES_NEW transaction.
+            creditThresholdBreachEventPublisher.publish(command.bookingId(), command.consultantId(), command.amount());
+            throw e;
+        }
 
         if (!tryRecordAndApply(command, LedgerEntryType.HOLD, wallet)) {
             return; // FIN-10: lost a concurrent race — the other writer already recorded this hold.

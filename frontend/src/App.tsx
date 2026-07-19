@@ -22,6 +22,9 @@ import { RouteErrorBoundary } from "./shared/components/RouteErrorBoundary";
  *   /storefront          -> Layer 2 placeholder (doc/DESIGN.md §10, §12
  *                           item 4 — not a numbered Part 21 screen; PRD
  *                           gap flagged there)
+ *   /disputes             -> Dispute Ticket Tracker (PRD §12.5) — HRD-06;
+ *                           not a numbered Part 21 screen either, same
+ *                           gap class as /storefront
  */
 const SearchDashboard = lazy(() =>
   import("./features/search-dashboard/SearchDashboard").then((m) => ({ default: m.SearchDashboard }))
@@ -86,6 +89,9 @@ const NotificationPreferences = lazy(() =>
 const ConsultantStorefront = lazy(() =>
   import("./features/consultant-storefront/ConsultantStorefront").then((m) => ({ default: m.ConsultantStorefront }))
 );
+const DisputeTicketTracker = lazy(() =>
+  import("./features/dispute-tracker/DisputeTicketTracker").then((m) => ({ default: m.DisputeTicketTracker }))
+);
 
 function RouteLoadingFallback() {
   return (
@@ -126,6 +132,7 @@ export default function App() {
         <Route path="/pnr" element={routeElement(<PnrSearch />)} />
         <Route path="/notifications" element={routeElement(<NotificationPreferences />)} />
         <Route path="/storefront" element={routeElement(<ConsultantStorefront />)} />
+        <Route path="/disputes" element={routeElement(<DisputeTicketTracker />)} />
       </Routes>
     </Suspense>
   );

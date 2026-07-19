@@ -3,8 +3,6 @@ package com.adren.travel.notification.internal;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
 import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
-import com.adren.travel.whitelabel.Market;
-import com.adren.travel.whitelabel.WhitelabelApi;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -14,103 +12,53 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-/** HRD-01's core acceptance criteria: email always dispatches, and the region-routed secondary channel follows the Consultant's home market. */
+/**
+ * HRD-01 — proves the listener dispatches on {@code BookingConfirmedEvent}
+ * with the right consultant/subject/message; the region-routing logic
+ * itself is {@link NotificationDispatcher}'s own concern, tested there.
+ * HRD-03 — a redelivery of the same event (same bookingId) is a no-op.
+ */
 @ExtendWith(MockitoExtension.class)
 class BookingNotificationListenerTest {
 
     @Mock
-    WhitelabelApi whitelabelApi;
+    NotificationDispatcher dispatcher;
 
     @Mock
-    EmailClient emailClient;
-
-    @Mock
-    WhatsAppClient whatsAppClient;
-
-    @Mock
-    SmsClient smsClient;
+    ProcessedEventDeduplicationService deduplicationService;
 
     BookingNotificationListener listener;
 
     @Test
-    void aDubaiConsultantsBookingConfirmationUsesWhatsAppAsTheSecondaryChannel() {
-        listener = new BookingNotificationListener(whitelabelApi, new SecondaryChannelProvider(),
-            emailClient, whatsAppClient, smsClient);
+    void dispatchesOnBookingConfirmedWithTheBookingIdInTheMessage() {
+        listener = new BookingNotificationListener(dispatcher, deduplicationService);
         UUID consultantId = UUID.randomUUID();
-        when(whitelabelApi.findConsultantMarket(consultantId)).thenReturn(Market.DUBAI_UAE);
+        UUID bookingId = UUID.randomUUID();
+        when(deduplicationService.tryClaim(bookingId.toString(), "BookingNotificationListener")).thenReturn(true);
         BookingConfirmedEvent event = new BookingConfirmedEvent(
-            UUID.randomUUID(), consultantId, new Money(BigDecimal.valueOf(1000), CurrencyCode.INR));
+            bookingId, consultantId, new Money(BigDecimal.valueOf(1000), CurrencyCode.INR));
 
         listener.on(event);
 
-        verify(emailClient).send(eq(consultantId), any(), any());
-        verify(whatsAppClient).send(eq(consultantId), any());
-        verify(smsClient, never()).send(any(), any());
+        verify(dispatcher).dispatch(eq(consultantId), any(), contains(bookingId.toString()), contains(bookingId.toString()));
     }
 
     @Test
-    void aUkConsultantsBookingConfirmationUsesSmsAsTheSecondaryChannel() {
-        listener = new BookingNotificationListener(whitelabelApi, new SecondaryChannelProvider(),
-            emailClient, whatsAppClient, smsClient);
-        UUID consultantId = UUID.randomUUID();
-        when(whitelabelApi.findConsultantMarket(consultantId)).thenReturn(Market.UK);
+    void aRedeliveredEventIsANoOpFIN10HRD03() {
+        listener = new BookingNotificationListener(dispatcher, deduplicationService);
+        UUID bookingId = UUID.randomUUID();
+        when(deduplicationService.tryClaim(bookingId.toString(), "BookingNotificationListener")).thenReturn(false);
         BookingConfirmedEvent event = new BookingConfirmedEvent(
-            UUID.randomUUID(), consultantId, new Money(BigDecimal.valueOf(1000), CurrencyCode.INR));
+            bookingId, UUID.randomUUID(), new Money(BigDecimal.valueOf(1000), CurrencyCode.INR));
 
         listener.on(event);
 
-        verify(emailClient).send(eq(consultantId), any(), any());
-        verify(smsClient).send(eq(consultantId), any());
-        verify(whatsAppClient, never()).send(any(), any());
-    }
-
-    @Test
-    void anIndiaConsultantsBookingConfirmationUsesWhatsAppAsTheSecondaryChannel() {
-        listener = new BookingNotificationListener(whitelabelApi, new SecondaryChannelProvider(),
-            emailClient, whatsAppClient, smsClient);
-        UUID consultantId = UUID.randomUUID();
-        when(whitelabelApi.findConsultantMarket(consultantId)).thenReturn(Market.INDIA);
-        BookingConfirmedEvent event = new BookingConfirmedEvent(
-            UUID.randomUUID(), consultantId, new Money(BigDecimal.valueOf(1000), CurrencyCode.INR));
-
-        listener.on(event);
-
-        verify(whatsAppClient).send(eq(consultantId), any());
-    }
-
-    @Test
-    void emailIsSentRegardlessOfWhichSecondaryChannelApplies() {
-        listener = new BookingNotificationListener(whitelabelApi, new SecondaryChannelProvider(),
-            emailClient, whatsAppClient, smsClient);
-        UUID consultantId = UUID.randomUUID();
-        when(whitelabelApi.findConsultantMarket(consultantId)).thenReturn(Market.USA);
-        BookingConfirmedEvent event = new BookingConfirmedEvent(
-            UUID.randomUUID(), consultantId, new Money(BigDecimal.valueOf(500), CurrencyCode.USD));
-
-        listener.on(event);
-
-        verify(emailClient).send(eq(consultantId), any(), any());
-    }
-
-    @Test
-    void fallsBackToSmsWhenTheConsultantWasNeverOnboarded() {
-        listener = new BookingNotificationListener(whitelabelApi, new SecondaryChannelProvider(),
-            emailClient, whatsAppClient, smsClient);
-        UUID consultantId = UUID.randomUUID();
-        when(whitelabelApi.findConsultantMarket(consultantId))
-            .thenThrow(new IllegalArgumentException("No such consultant: " + consultantId));
-        BookingConfirmedEvent event = new BookingConfirmedEvent(
-            UUID.randomUUID(), consultantId, new Money(BigDecimal.valueOf(1000), CurrencyCode.INR));
-
-        listener.on(event);
-
-        verify(emailClient).send(eq(consultantId), any(), any());
-        verify(smsClient).send(eq(consultantId), any());
-        verify(whatsAppClient, never()).send(any(), any());
+        verifyNoInteractions(dispatcher);
     }
 }

@@ -151,6 +151,16 @@ public interface BookingApi {
     DisputeTicketView flagDispute(UUID bookingId, FlagDisputeCommand command);
 
     /**
+     * Browses a Consultant's dispute tickets (PRD §12.5, HRD-06) — the
+     * trackable-status surface {@link #flagDispute}'s AC requires ("visible
+     * with a status the Consultant and Super Admin can both track to
+     * resolution, not just an emailed notice"). Paginated per RULES.md
+     * §3.4, same shape as {@link #findBookingsByConsultant}.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    Page<DisputeTicketView> findDisputeTickets(UUID consultantId, Pageable pageable);
+
+    /**
      * Paginated per RULES.md §3.4 — never a bare {@code List<UUID>} at a
      * public Api boundary a controller might wire up unbounded, given a
      * Consultant can accumulate thousands of bookings over time.
