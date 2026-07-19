@@ -146,7 +146,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **HRD-09** — build the consultant dashboard
 - [ ] **HRD-10** — show an onboarding checklist instead of empty charts for new consultants
 - [ ] **HRD-11** — build the super admin dashboard
-- [ ] **HRD-12** — tune inventory sync batch cadence per supplier
+- [x] **HRD-12** — tune inventory sync batch cadence per supplier
 - [ ] **HRD-13** — alert super admin on inventory sync staleness beyond threshold
 
 ## Frontend Shell (10)
