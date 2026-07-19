@@ -6,7 +6,9 @@ import com.adren.travel.ads.AdsApi;
 import com.adren.travel.ads.CreateCampaignCommand;
 import com.adren.travel.ads.SubmitCampaignInputsCommand;
 import com.adren.travel.ai.AdCreativeGenerationResult;
+import com.adren.travel.shared.PageResponse;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -60,5 +62,28 @@ class AdCampaignController {
     @PostMapping("/{campaignId}/creative-variants/{variantId}/approval")
     AdCampaignCreativeVariantView approveCreativeVariant(@PathVariable UUID campaignId, @PathVariable UUID variantId) {
         return adsApi.approveCreativeVariant(campaignId, variantId);
+    }
+
+    /**
+     * ADS-06, PRD §14.2 step 5 — not literally named as its own sub-task
+     * (only {@code /policy-review} is), but AC #1 needs a Consultant-facing
+     * trigger into the review queue that no other story provides; see
+     * {@code AdsApi#submitCampaignForPolicyReview}'s own Javadoc.
+     */
+    @PostMapping("/{campaignId}/submit-for-review")
+    AdCampaignView submitCampaignForPolicyReview(@PathVariable UUID campaignId) {
+        return adsApi.submitCampaignForPolicyReview(campaignId);
+    }
+
+    /** ADS-06, PRD §14.2 step 5 — Super Admin's brand-safety/policy review decision. */
+    @PostMapping("/{campaignId}/policy-review")
+    AdCampaignView rejectCampaignPolicyReview(@PathVariable UUID campaignId, @Valid @RequestBody PolicyReviewRejectionRequest request) {
+        return adsApi.rejectCampaignPolicyReview(campaignId, request.reason());
+    }
+
+    /** ADS-06 — the Super Admin Console's brand-safety/policy review queue. */
+    @GetMapping("/pending-policy-review")
+    PageResponse<AdCampaignView> findCampaignsPendingPolicyReview(Pageable pageable) {
+        return PageResponse.of(adsApi.findCampaignsPendingPolicyReview(pageable));
     }
 }

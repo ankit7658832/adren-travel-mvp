@@ -1,6 +1,8 @@
 package com.adren.travel.ads;
 
 import com.adren.travel.ai.AdCreativeGenerationResult;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
@@ -91,4 +93,26 @@ public interface AdsApi {
         + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
         + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
     AdCampaignCreativeVariantView approveCreativeVariant(UUID campaignId, UUID variantId);
+
+    /**
+     * A Consultant submits a fully-variant-approved campaign into the
+     * Super Admin's brand-safety/policy review queue (PRD §14.2 step 5,
+     * ADS-06's own AC #1) — rejects with {@link IllegalStateException} if
+     * any variant still lacks an approval or none exist at all, the same
+     * "business rule checked at the service layer, transition guarded on
+     * the entity" split {@code BookingServiceImpl#saveAsQuotation}
+     * already established for "at least one line item."
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT') or "
+        + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
+        + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
+    AdCampaignView submitCampaignForPolicyReview(UUID campaignId);
+
+    /** Super Admin rejects a campaign at brand-safety/policy review (PRD §14.2 step 5, ADS-06's AC #2) — {@code reason} is surfaced to the Consultant. */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    AdCampaignView rejectCampaignPolicyReview(UUID campaignId, String reason);
+
+    /** The Super Admin's brand-safety/policy review queue (PRD §14.2 step 5, ADS-06's AC #1) — every campaign currently PendingPolicyReview. */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    Page<AdCampaignView> findCampaignsPendingPolicyReview(Pageable pageable);
 }

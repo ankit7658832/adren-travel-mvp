@@ -293,6 +293,70 @@ class AdsModuleIntegrationTests {
             .isInstanceOf(AccessDeniedException.class);
     }
 
+    @Test
+    void submitCampaignForPolicyReviewTransitionsARealCampaignAndAppearsInTheQueueADS06(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+        UUID variantId = UUID.randomUUID();
+        jdbcTemplate.update(
+            "INSERT INTO ad_campaign_creative_variant (variant_id, campaign_id, headline, body_text, approved) "
+                + "VALUES (?, ?, 'Escape to Goa', 'Book now', true)",
+            variantId, created.campaignId());
+
+        scenario.stimulate(() -> adsApi.submitCampaignForPolicyReview(created.campaignId()))
+            .andWaitForEventOfType(com.adren.travel.ads.event.AdCampaignSubmittedForPolicyReviewEvent.class)
+            .matchingMappedValue(com.adren.travel.ads.event.AdCampaignSubmittedForPolicyReviewEvent::campaignId, created.campaignId())
+            .toArrive();
+
+        authenticateAs(Role.SUPER_ADMIN, null);
+        var queue = adsApi.findCampaignsPendingPolicyReview(org.springframework.data.domain.Pageable.unpaged());
+        assertThat(queue.getContent()).extracting(AdCampaignView::campaignId).contains(created.campaignId());
+    }
+
+    @Test
+    void submitCampaignForPolicyReviewRejectsWhenAVariantIsUnapprovedADS05() {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+        jdbcTemplate.update(
+            "INSERT INTO ad_campaign_creative_variant (variant_id, campaign_id, headline, body_text, approved) "
+                + "VALUES (?, ?, 'Escape to Goa', 'Book now', false)",
+            UUID.randomUUID(), created.campaignId());
+
+        assertThatThrownBy(() -> adsApi.submitCampaignForPolicyReview(created.campaignId()))
+            .isInstanceOf(IllegalStateException.class);
+        String status = jdbcTemplate.queryForObject(
+            "SELECT status FROM ad_campaign WHERE campaign_id = ?", String.class, created.campaignId());
+        assertThat(status).isEqualTo("PENDING_APPROVAL");
+    }
+
+    @Test
+    void rejectCampaignPolicyReviewTransitionsARealCampaignAndPublishesTheRealEventADS06(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+        jdbcTemplate.update(
+            "INSERT INTO ad_campaign_creative_variant (variant_id, campaign_id, headline, body_text, approved) "
+                + "VALUES (?, ?, 'Escape to Goa', 'Book now', true)",
+            UUID.randomUUID(), created.campaignId());
+        adsApi.submitCampaignForPolicyReview(created.campaignId());
+        authenticateAs(Role.SUPER_ADMIN, null);
+
+        scenario.stimulate(() -> adsApi.rejectCampaignPolicyReview(created.campaignId(), "Unverified pricing claim"))
+            .andWaitForEventOfType(com.adren.travel.ads.event.AdCampaignPolicyReviewRejectedEvent.class)
+            .matchingMappedValue(com.adren.travel.ads.event.AdCampaignPolicyReviewRejectedEvent::campaignId, created.campaignId())
+            .toArrive();
+
+        var row = jdbcTemplate.queryForMap(
+            "SELECT status, rejection_reason FROM ad_campaign WHERE campaign_id = ?", created.campaignId());
+        assertThat(row.get("status")).isEqualTo("REJECTED");
+        assertThat(row.get("rejection_reason")).isEqualTo("Unverified pricing claim");
+    }
+
     private UUID seedPackage(UUID consultantId, String name, String status) {
         java.sql.Timestamp now = java.sql.Timestamp.from(Instant.now());
         UUID itineraryId = UUID.randomUUID();

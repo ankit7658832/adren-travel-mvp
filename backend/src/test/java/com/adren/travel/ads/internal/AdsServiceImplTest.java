@@ -34,6 +34,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -255,6 +256,85 @@ class AdsServiceImplTest {
 
         assertThatThrownBy(() -> service().approveCreativeVariant(campaignId, variantId))
             .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void submitCampaignForPolicyReviewTransitionsWhenEveryVariantIsApprovedADS06() {
+        UUID consultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), consultantId, CurrencyCode.INR);
+        AdCampaignCreativeVariant variant =
+            new AdCampaignCreativeVariant(UUID.randomUUID(), campaignId, "Escape to Goa", "Book now", null);
+        variant.approve();
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        when(creativeVariantRepository.findByCampaignId(campaignId)).thenReturn(List.of(variant));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        AdCampaignView view = service().submitCampaignForPolicyReview(campaignId);
+
+        assertThat(view.status()).isEqualTo("PENDING_POLICY_REVIEW");
+        verify(events).publishEvent(any(com.adren.travel.ads.event.AdCampaignSubmittedForPolicyReviewEvent.class));
+    }
+
+    @Test
+    void submitCampaignForPolicyReviewBlocksSubmissionWhenAVariantIsNotYetApprovedADS05() {
+        UUID consultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), consultantId, CurrencyCode.INR);
+        AdCampaignCreativeVariant approved =
+            new AdCampaignCreativeVariant(UUID.randomUUID(), campaignId, "Escape to Goa", "Book now", null);
+        approved.approve();
+        AdCampaignCreativeVariant unapproved =
+            new AdCampaignCreativeVariant(UUID.randomUUID(), campaignId, "Goa Awaits", "Sun and sand", null);
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        when(creativeVariantRepository.findByCampaignId(campaignId)).thenReturn(List.of(approved, unapproved));
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        assertThatThrownBy(() -> service().submitCampaignForPolicyReview(campaignId))
+            .isInstanceOf(IllegalStateException.class);
+        verify(events, never()).publishEvent(any(com.adren.travel.ads.event.AdCampaignSubmittedForPolicyReviewEvent.class));
+    }
+
+    @Test
+    void submitCampaignForPolicyReviewBlocksSubmissionWhenNoVariantsExistAtAllADS05() {
+        UUID consultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), consultantId, CurrencyCode.INR);
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        when(creativeVariantRepository.findByCampaignId(campaignId)).thenReturn(List.of());
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        assertThatThrownBy(() -> service().submitCampaignForPolicyReview(campaignId))
+            .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void rejectCampaignPolicyReviewTransitionsAndStoresTheReasonADS06() {
+        UUID consultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), consultantId, CurrencyCode.INR);
+        campaign.submitForPolicyReview();
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+
+        AdCampaignView view = service().rejectCampaignPolicyReview(campaignId, "Unverified claim in headline");
+
+        assertThat(view.status()).isEqualTo("REJECTED");
+        assertThat(view.rejectionReason()).isEqualTo("Unverified claim in headline");
+        verify(events).publishEvent(any(com.adren.travel.ads.event.AdCampaignPolicyReviewRejectedEvent.class));
+    }
+
+    @Test
+    void findCampaignsPendingPolicyReviewReturnsOnlyThatStatusADS06() {
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), UUID.randomUUID(), CurrencyCode.INR);
+        campaign.submitForPolicyReview();
+        when(adCampaignRepository.findByStatus(eq(AdCampaignStatus.PENDING_POLICY_REVIEW), any()))
+            .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(campaign)));
+
+        var page = service().findCampaignsPendingPolicyReview(org.springframework.data.domain.Pageable.unpaged());
+
+        assertThat(page.getContent()).hasSize(1);
+        assertThat(page.getContent().get(0).campaignId()).isEqualTo(campaignId);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

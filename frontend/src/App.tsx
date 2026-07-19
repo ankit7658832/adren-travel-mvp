@@ -99,6 +99,11 @@ const ConsultantStorefront = lazy(() =>
 const DisputeTicketTracker = lazy(() =>
   import("./features/dispute-tracker/DisputeTicketTracker").then((m) => ({ default: m.DisputeTicketTracker }))
 );
+const CampaignPolicyReviewQueue = lazy(() =>
+  import("./features/campaign-policy-review/CampaignPolicyReviewQueue").then((m) => ({
+    default: m.CampaignPolicyReviewQueue,
+  }))
+);
 
 function RouteLoadingFallback() {
   return (
@@ -159,6 +164,10 @@ export default function App() {
         <Route
           path="/admin/ai-governance"
           element={protectedRouteElement(<AiGovernanceLogViewer />, ["SUPER_ADMIN"])}
+        />
+        <Route
+          path="/admin/campaigns/policy-review"
+          element={protectedRouteElement(<CampaignPolicyReviewQueue />, ["SUPER_ADMIN"])}
         />
         <Route path="/local-dmc" element={protectedRouteElement(<LocalDmcOnboarding />, ["CONSULTANT"])} />
         <Route

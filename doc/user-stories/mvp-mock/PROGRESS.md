@@ -122,7 +122,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **ADS-03** — build the campaign builder screen package selector audience budget duration inputs
 - [x] **ADS-04** — generate and display ai creative variant gallery in the campaign builder
 - [x] **ADS-05** — require consultant approval per creative variant before submission
-- [ ] **ADS-06** — route approved campaigns through super admin brand safety policy review
+- [x] **ADS-06** — route approved campaigns through super admin brand safety policy review
 - [ ] **ADS-07** — launch an approved campaign under the adren managed meta account
 - [ ] **ADS-08** — display a campaign status stepper matching the status enum
 - [ ] **ADS-09** — flow campaign performance data back to the consultant dashboard

@@ -10,6 +10,8 @@ import com.adren.travel.ads.SubmitCampaignInputsCommand;
 import com.adren.travel.ads.event.AdCampaignCreatedEvent;
 import com.adren.travel.ads.event.AdCampaignCreativeVariantApprovedEvent;
 import com.adren.travel.ads.event.AdCampaignInputsSubmittedEvent;
+import com.adren.travel.ads.event.AdCampaignPolicyReviewRejectedEvent;
+import com.adren.travel.ads.event.AdCampaignSubmittedForPolicyReviewEvent;
 import com.adren.travel.ai.AdCreativeGenerationResult;
 import com.adren.travel.ai.AdCreativeSuggestion;
 import com.adren.travel.ai.AdCreativeVariant;
@@ -20,6 +22,8 @@ import com.adren.travel.booking.PackageView;
 import com.adren.travel.security.CurrentPrincipal;
 import com.adren.travel.shared.Money;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -171,6 +175,50 @@ class AdsServiceImpl implements AdsApi {
 
         return new AdCampaignCreativeVariantView(variant.getVariantId(), variant.getCampaignId(),
             variant.getHeadline(), variant.getBodyText(), variant.getImageRef(), variant.isApproved());
+    }
+
+    @Override
+    @Transactional
+    public AdCampaignView submitCampaignForPolicyReview(UUID campaignId) {
+        AdCampaign campaign = adCampaignRepository.findById(campaignId)
+            .orElseThrow(() -> new IllegalArgumentException("No campaign: " + campaignId));
+        CurrentPrincipal.resolveTenantScope(campaign.getConsultantId());
+
+        // ADS-05's own AC, enforced here as the actual gate on submission —
+        // service-layer business rule check, entity-owned status guard,
+        // same split BookingServiceImpl#saveAsQuotation established for
+        // "at least one line item."
+        List<AdCampaignCreativeVariant> variants = creativeVariantRepository.findByCampaignId(campaignId);
+        if (variants.isEmpty() || variants.stream().anyMatch(v -> !v.isApproved())) {
+            throw new IllegalStateException(
+                "Campaign " + campaignId + " cannot be submitted for policy review: every creative variant must be approved first");
+        }
+
+        campaign.submitForPolicyReview();
+        adCampaignRepository.save(campaign);
+        events.publishEvent(new AdCampaignSubmittedForPolicyReviewEvent(campaign.getCampaignId(), campaign.getConsultantId()));
+
+        return toView(campaign);
+    }
+
+    @Override
+    @Transactional
+    public AdCampaignView rejectCampaignPolicyReview(UUID campaignId, String reason) {
+        AdCampaign campaign = adCampaignRepository.findById(campaignId)
+            .orElseThrow(() -> new IllegalArgumentException("No campaign: " + campaignId));
+
+        campaign.rejectPolicyReview(reason);
+        adCampaignRepository.save(campaign);
+        events.publishEvent(
+            new AdCampaignPolicyReviewRejectedEvent(campaign.getCampaignId(), campaign.getConsultantId(), reason));
+
+        return toView(campaign);
+    }
+
+    @Override
+    public Page<AdCampaignView> findCampaignsPendingPolicyReview(Pageable pageable) {
+        return adCampaignRepository.findByStatus(AdCampaignStatus.PENDING_POLICY_REVIEW, pageable)
+            .map(AdsServiceImpl::toView);
     }
 
     private static AdCampaignView toView(AdCampaign campaign) {
