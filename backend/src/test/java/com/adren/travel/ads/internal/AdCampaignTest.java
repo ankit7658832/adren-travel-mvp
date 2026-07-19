@@ -161,4 +161,22 @@ class AdCampaignTest {
         assertThatThrownBy(() -> campaign.recordSpend(new java.math.BigDecimal("10.00")))
             .isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    void pauseTransitionsALiveCampaignToPausedADS12() {
+        AdCampaign campaign = newCampaign();
+        campaign.submitForPolicyReview();
+        campaign.launch("meta-ref-123");
+
+        campaign.pause();
+
+        assertThat(campaign.getStatus()).isEqualTo(AdCampaignStatus.PAUSED);
+    }
+
+    @Test
+    void pauseIsOnlyValidWhileLiveADS12() {
+        AdCampaign campaign = newCampaign();
+
+        assertThatThrownBy(campaign::pause).isInstanceOf(IllegalStateException.class);
+    }
 }

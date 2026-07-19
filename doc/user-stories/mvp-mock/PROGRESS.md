@@ -128,7 +128,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **ADS-09** — flow campaign performance data back to the consultant dashboard
 - [x] **ADS-10** — enforce near real time spend cap on active campaigns
 - [x] **ADS-11** — implement campaign approval workflow guardrails and billing transparency
-- [ ] **ADS-12** — auto pause a campaign when its linked package price changes
+- [x] **ADS-12** — auto pause a campaign when its linked package price changes
 - [ ] **ADS-13** — surface a clear suspended action required status on meta account suspension
 - [ ] **ADS-14** — define ad spend billing model per settlement currency
 - [ ] **ADS-15** — apply brand safety policy template guardrails to campaign submissions

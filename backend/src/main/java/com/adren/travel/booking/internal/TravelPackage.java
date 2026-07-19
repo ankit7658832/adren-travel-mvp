@@ -122,6 +122,20 @@ class TravelPackage {
         this.atolDisclosureCompleted = true;
     }
 
+    /**
+     * ADS-12, PRD §23.5 Edge Case #11 — a Consultant edits the
+     * Consultant-set markup on an already-published Package. No status
+     * guard: editing price is legitimate at any status, unlike the
+     * one-way {@link #publish} transition — it's the caller's
+     * responsibility (see {@code BookingServiceImpl#updatePackagePrice})
+     * to react to this when the Package is currently promoted via a Live
+     * ad campaign, which this entity has no visibility into (that's
+     * {@code ads}' own module boundary, per RULES.md §4.1).
+     */
+    void updateMarkupPrice(BigDecimal newMarkupPrice) {
+        this.markupPrice = newMarkupPrice;
+    }
+
     UUID getPackageId() {
         return packageId;
     }

@@ -7,6 +7,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -362,4 +363,23 @@ public interface BookingApi {
      */
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
     PackageView findPackageById(UUID packageId);
+
+    /**
+     * A Consultant edits a Package's markup price (PRD §23.5 Edge Case
+     * #11, ADS-12) — not itself a story any prior BOK-* covers (none of
+     * BOK-10/11/12 exposes a price-edit endpoint), but a real capability
+     * ADS-12's own AC requires a trigger for ("A campaign's linked
+     * Package is edited (price change) ... the system detects the
+     * mismatch"), same "no other story provides this, so this one builds
+     * it" reasoning ADS-06's {@code submitCampaignForPolicyReview}
+     * already established. Always publishes {@link
+     * com.adren.travel.booking.event.PackagePriceChangedEvent} regardless
+     * of the Package's status — whether a Live campaign actually needs to
+     * react is {@code ads}' own module boundary to decide (RULES.md
+     * §4.1), not something {@code booking} can or should know.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT') or "
+        + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
+        + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
+    void updatePackagePrice(UUID packageId, BigDecimal newMarkupPrice);
 }

@@ -2,6 +2,7 @@ package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.PackageView;
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,6 +35,12 @@ class PackageController {
     @PostMapping("/{packageId}/atol-disclosure")
     void completeAtolDisclosure(@PathVariable UUID packageId) {
         bookingApi.completeAtolDisclosure(packageId);
+    }
+
+    /** PRD §23.5 Edge Case #11, ADS-12 — editing a Package's price; {@code ads} reacts by auto-pausing any Live campaign promoting it. */
+    @PostMapping("/{packageId}/price")
+    void updatePrice(@PathVariable UUID packageId, @Valid @RequestBody UpdatePackagePriceRequest request) {
+        bookingApi.updatePackagePrice(packageId, request.markupPrice());
     }
 
     @GetMapping

@@ -146,6 +146,28 @@ class AdCampaign {
     }
 
     /**
+     * ADS-12, PRD §23.5 Edge Case #11 — auto-pauses a Live campaign once
+     * its linked Package's price changes, until the Consultant re-submits
+     * updated pricing/creative for a fresh policy review (the class
+     * Javadoc's launch()-doubles-as-approval reasoning means there is no
+     * separate "resume" transition here; re-approval is the same
+     * submit-for-review -> launch path every other campaign takes).
+     * Guarded to LIVE only, matching {@code RULES.md §2.2}'s "state-check
+     * beats infrastructure idempotency": the caller (an
+     * {@code @ApplicationModuleListener}, at-least-once delivery) can call
+     * this on every retry without a dedup table, since a second call on an
+     * already-PAUSED campaign is simply not made by the caller (it
+     * checks status first) rather than this method silently no-op'ing.
+     */
+    void pause() {
+        if (this.status != AdCampaignStatus.LIVE) {
+            throw new IllegalStateException("Only a LIVE campaign can be paused, was: " + this.status);
+        }
+        this.status = AdCampaignStatus.PAUSED;
+        this.updatedAt = Instant.now();
+    }
+
+    /**
      * ADS-09, PRD §14.2 step 7 — accumulates the mocked performance feed's
      * latest increment onto the running {@code performance_snapshot}
      * (PRD §20.13). Guarded to LIVE since that's the only status the mock

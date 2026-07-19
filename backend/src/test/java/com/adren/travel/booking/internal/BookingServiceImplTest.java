@@ -1992,6 +1992,44 @@ class BookingServiceImplTest {
     }
 
     @Test
+    void updatingAPackagesPriceSetsTheNewMarkupAndPublishesTheEventADS12() {
+        UUID packageId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        TravelPackage travelPackage = new TravelPackage(packageId, UUID.randomUUID(), consultantId, "Goa Getaway",
+            null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(11_371.20), BigDecimal.valueOf(500), CurrencyCode.INR, 4);
+        travelPackage.publish(false);
+        when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+
+        service.updatePackagePrice(packageId, BigDecimal.valueOf(750));
+
+        assertThat(travelPackage.getMarkupPrice()).isEqualByComparingTo("750");
+        verify(travelPackageRepository).save(travelPackage);
+
+        ArgumentCaptor<com.adren.travel.booking.event.PackagePriceChangedEvent> captor =
+            ArgumentCaptor.forClass(com.adren.travel.booking.event.PackagePriceChangedEvent.class);
+        verify(events).publishEvent(captor.capture());
+        assertThat(captor.getValue().packageId()).isEqualTo(packageId);
+        assertThat(captor.getValue().consultantId()).isEqualTo(consultantId);
+    }
+
+    @Test
+    void aConsultantCannotUpdateAnotherConsultantsPackagePriceADS12() {
+        UUID packageId = UUID.randomUUID();
+        UUID ownerConsultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        TravelPackage travelPackage = new TravelPackage(packageId, UUID.randomUUID(), ownerConsultantId, "Goa Getaway",
+            null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(11_371.20), BigDecimal.valueOf(500), CurrencyCode.INR, 4);
+        when(travelPackageRepository.findById(packageId)).thenReturn(Optional.of(travelPackage));
+
+        assertThatThrownBy(() -> service.updatePackagePrice(packageId, BigDecimal.valueOf(750)))
+            .isInstanceOf(AccessDeniedException.class);
+        verify(travelPackageRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
     void aConsultantCannotPublishAnotherConsultantsPackageBOK12() {
         UUID packageId = UUID.randomUUID();
         UUID ownerConsultantId = UUID.randomUUID();

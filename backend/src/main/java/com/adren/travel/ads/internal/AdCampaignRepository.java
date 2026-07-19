@@ -17,4 +17,14 @@ interface AdCampaignRepository extends JpaRepository<AdCampaign, UUID> {
 
     /** ADS-10's spend-cap poller / ADS-09's performance-feed poller — every campaign the mock feeds must visit this run. */
     List<AdCampaign> findByStatus(AdCampaignStatus status);
+
+    /**
+     * ADS-12 — the Live campaign(s) promoting a given Package, the moment
+     * its price changes. {@code List} rather than a single optional
+     * result: PRD §20.13 doesn't forbid more than one campaign ever
+     * referencing the same {@code package_id} over a Package's lifetime
+     * (a rejected/paused campaign's replacement), so this must not assume
+     * uniqueness.
+     */
+    List<AdCampaign> findByPackageIdAndStatus(UUID packageId, AdCampaignStatus status);
 }

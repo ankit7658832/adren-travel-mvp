@@ -2,7 +2,12 @@ package com.adren.travel.ads;
 
 import com.adren.travel.ads.event.AdCampaignCreatedEvent;
 import com.adren.travel.ads.event.AdCampaignInputsSubmittedEvent;
+import com.adren.travel.ads.event.AdCampaignPausedEvent;
+import com.adren.travel.booking.BookingApi;
 import com.adren.travel.security.AdrenPrincipal;
+import com.adren.travel.whitelabel.Market;
+import com.adren.travel.whitelabel.OnboardConsultantCommand;
+import com.adren.travel.whitelabel.WhitelabelApi;
 import com.adren.travel.security.Role;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +29,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,6 +72,20 @@ class AdsModuleIntegrationTests {
 
     @Autowired
     JdbcTemplate jdbcTemplate;
+
+    // Field injection is fine for this test's own module's Api (AdsApi
+    // above), but Spring Modulith's architecture check flags field
+    // injection of ANOTHER module's type from outside it — BookingApi is
+    // booking's own, so constructor injection here, same reasoning as
+    // StripeWebhookConfirmsBookingEndToEndIT's identical fix.
+    final BookingApi bookingApi;
+    final WhitelabelApi whitelabelApi;
+
+    @Autowired
+    AdsModuleIntegrationTests(BookingApi bookingApi, WhitelabelApi whitelabelApi) {
+        this.bookingApi = bookingApi;
+        this.whitelabelApi = whitelabelApi;
+    }
 
     @AfterEach
     void clearSecurityContext() {
@@ -457,6 +477,38 @@ class AdsModuleIntegrationTests {
 
         assertThatThrownBy(() -> adsApi.findCampaignBillingDetail(created.campaignId()))
             .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void aPackagePriceChangeAutoPausesItsRealLiveCampaignADS12(Scenario scenario) {
+        // updatePackagePrice (unlike every other write path this test class
+        // otherwise exercises through AdsApi alone) goes through
+        // BookingServiceImpl#requireActiveUnlessSuperAdmin, which requires a
+        // REAL, onboarded, ACTIVE consultant row — a bare UUID.randomUUID()
+        // (every other test's consultantId) fails whitelabel's own lookup.
+        authenticateAs(Role.SUPER_ADMIN, null);
+        UUID consultantId = whitelabelApi.onboardConsultant(new OnboardConsultantCommand("Goa Getaways", Market.INDIA,
+            Map.of("gstRegistration", "GST123", "businessPan", "PAN123", "bankDetails", "IFSC0001/12345")));
+        UUID packageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+        jdbcTemplate.update(
+            "INSERT INTO ad_campaign_creative_variant (variant_id, campaign_id, headline, body_text, approved) "
+                + "VALUES (?, ?, 'Escape to Goa', 'Book now', true)",
+            UUID.randomUUID(), created.campaignId());
+        adsApi.submitCampaignForPolicyReview(created.campaignId());
+        authenticateAs(Role.SUPER_ADMIN, null);
+        adsApi.launchCampaign(created.campaignId());
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        scenario.stimulate(() -> bookingApi.updatePackagePrice(packageId, new BigDecimal("6000.00")))
+            .andWaitForEventOfType(AdCampaignPausedEvent.class)
+            .matchingMappedValue(AdCampaignPausedEvent::campaignId, created.campaignId())
+            .toArrive();
+
+        String status = jdbcTemplate.queryForObject(
+            "SELECT status FROM ad_campaign WHERE campaign_id = ?", String.class, created.campaignId());
+        assertThat(status).isEqualTo("PAUSED");
     }
 
     private UUID seedPackage(UUID consultantId, String name, String status) {

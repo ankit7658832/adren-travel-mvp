@@ -35,6 +35,7 @@ import com.adren.travel.booking.event.ItineraryQuotationSavedEvent;
 import com.adren.travel.booking.InventoryNoLongerAvailableException;
 import com.adren.travel.booking.event.TransferLineItemAddedEvent;
 import com.adren.travel.booking.event.PackageCreatedEvent;
+import com.adren.travel.booking.event.PackagePriceChangedEvent;
 import com.adren.travel.booking.event.PackagePublishedEvent;
 import com.adren.travel.booking.event.QuotationRecalculatedEvent;
 import com.adren.travel.booking.event.TravelerProfileCreatedEvent;
@@ -867,6 +868,20 @@ class BookingServiceImpl implements BookingApi {
 
         travelPackage.completeAtolDisclosure();
         travelPackageRepository.save(travelPackage);
+    }
+
+    @Override
+    @Transactional
+    public void updatePackagePrice(UUID packageId, BigDecimal newMarkupPrice) {
+        TravelPackage travelPackage = travelPackageRepository.findById(packageId)
+            .orElseThrow(() -> new IllegalArgumentException("No package: " + packageId));
+        CurrentPrincipal.resolveTenantScope(travelPackage.getConsultantId());
+        requireActiveUnlessSuperAdmin(travelPackage.getConsultantId());
+
+        travelPackage.updateMarkupPrice(newMarkupPrice);
+        travelPackageRepository.save(travelPackage);
+
+        events.publishEvent(new PackagePriceChangedEvent(packageId, travelPackage.getConsultantId()));
     }
 
     @Override
