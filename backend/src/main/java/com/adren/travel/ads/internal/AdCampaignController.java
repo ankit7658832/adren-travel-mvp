@@ -86,4 +86,10 @@ class AdCampaignController {
     PageResponse<AdCampaignView> findCampaignsPendingPolicyReview(Pageable pageable) {
         return PageResponse.of(adsApi.findCampaignsPendingPolicyReview(pageable));
     }
+
+    /** ADS-07, PRD §14.2 step 6. */
+    @PostMapping("/{campaignId}/launch")
+    AdCampaignView launchCampaign(@PathVariable UUID campaignId) {
+        return adsApi.launchCampaign(campaignId);
+    }
 }

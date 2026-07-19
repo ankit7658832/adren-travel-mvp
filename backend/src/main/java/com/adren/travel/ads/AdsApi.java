@@ -115,4 +115,14 @@ public interface AdsApi {
     /** The Super Admin's brand-safety/policy review queue (PRD §14.2 step 5, ADS-06's AC #1) — every campaign currently PendingPolicyReview. */
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     Page<AdCampaignView> findCampaignsPendingPolicyReview(Pageable pageable);
+
+    /**
+     * Launches a policy-reviewed campaign under the Adren-managed Meta
+     * account (PRD §14.2 step 6, ADS-07) — Super Admin only, since this IS
+     * the approval action per {@code AdCampaign#launch}'s own Javadoc
+     * (no separate "approved" state exists between PendingPolicyReview and
+     * Live). Uses {@code MetaAdsClient}'s mocked launch call in MVP scope.
+     */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    AdCampaignView launchCampaign(UUID campaignId);
 }

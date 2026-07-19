@@ -10,6 +10,7 @@ import com.adren.travel.ads.SubmitCampaignInputsCommand;
 import com.adren.travel.ads.event.AdCampaignCreatedEvent;
 import com.adren.travel.ads.event.AdCampaignCreativeVariantApprovedEvent;
 import com.adren.travel.ads.event.AdCampaignInputsSubmittedEvent;
+import com.adren.travel.ads.event.AdCampaignLaunchedEvent;
 import com.adren.travel.ads.event.AdCampaignPolicyReviewRejectedEvent;
 import com.adren.travel.ads.event.AdCampaignSubmittedForPolicyReviewEvent;
 import com.adren.travel.ai.AdCreativeGenerationResult;
@@ -219,6 +220,31 @@ class AdsServiceImpl implements AdsApi {
     public Page<AdCampaignView> findCampaignsPendingPolicyReview(Pageable pageable) {
         return adCampaignRepository.findByStatus(AdCampaignStatus.PENDING_POLICY_REVIEW, pageable)
             .map(AdsServiceImpl::toView);
+    }
+
+    @Override
+    @Transactional
+    public AdCampaignView launchCampaign(UUID campaignId) {
+        AdCampaign campaign = adCampaignRepository.findById(campaignId)
+            .orElseThrow(() -> new IllegalArgumentException("No campaign: " + campaignId));
+
+        // Validate eligibility BEFORE calling out to the (mocked) Meta API —
+        // campaign.launch() itself guards this same precondition, but only
+        // after the external call would already have happened; checking
+        // here first means an ineligible campaign never reaches the launch
+        // call at all, not just that its result gets discarded.
+        if (campaign.getStatus() != AdCampaignStatus.PENDING_POLICY_REVIEW) {
+            throw new IllegalStateException(
+                "Only a PENDING_POLICY_REVIEW campaign can launch, was: " + campaign.getStatus());
+        }
+
+        String metaCampaignRef = metaAdsClient.launchCampaign(campaignId);
+        campaign.launch(metaCampaignRef);
+        adCampaignRepository.save(campaign);
+        events.publishEvent(
+            new AdCampaignLaunchedEvent(campaign.getCampaignId(), campaign.getConsultantId(), metaCampaignRef));
+
+        return toView(campaign);
     }
 
     private static AdCampaignView toView(AdCampaign campaign) {

@@ -357,6 +357,45 @@ class AdsModuleIntegrationTests {
         assertThat(row.get("rejection_reason")).isEqualTo("Unverified pricing claim");
     }
 
+    @Test
+    void launchCampaignTransitionsARealCampaignToLiveAndStoresTheRealMetaRefADS07(Scenario scenario) {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+        jdbcTemplate.update(
+            "INSERT INTO ad_campaign_creative_variant (variant_id, campaign_id, headline, body_text, approved) "
+                + "VALUES (?, ?, 'Escape to Goa', 'Book now', true)",
+            UUID.randomUUID(), created.campaignId());
+        adsApi.submitCampaignForPolicyReview(created.campaignId());
+        authenticateAs(Role.SUPER_ADMIN, null);
+
+        scenario.stimulate(() -> adsApi.launchCampaign(created.campaignId()))
+            .andWaitForEventOfType(com.adren.travel.ads.event.AdCampaignLaunchedEvent.class)
+            .matchingMappedValue(com.adren.travel.ads.event.AdCampaignLaunchedEvent::campaignId, created.campaignId())
+            .toArrive();
+
+        var row = jdbcTemplate.queryForMap(
+            "SELECT status, meta_campaign_ref FROM ad_campaign WHERE campaign_id = ?", created.campaignId());
+        assertThat(row.get("status")).isEqualTo("LIVE");
+        assertThat(row.get("meta_campaign_ref")).isNotNull();
+    }
+
+    @Test
+    void launchCampaignRejectsACampaignThatIsStillPendingApprovalADS07() {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+        authenticateAs(Role.SUPER_ADMIN, null);
+
+        assertThatThrownBy(() -> adsApi.launchCampaign(created.campaignId()))
+            .isInstanceOf(IllegalStateException.class);
+        String status = jdbcTemplate.queryForObject(
+            "SELECT status FROM ad_campaign WHERE campaign_id = ?", String.class, created.campaignId());
+        assertThat(status).isEqualTo("PENDING_APPROVAL");
+    }
+
     private UUID seedPackage(UUID consultantId, String name, String status) {
         java.sql.Timestamp now = java.sql.Timestamp.from(Instant.now());
         UUID itineraryId = UUID.randomUUID();

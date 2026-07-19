@@ -337,6 +337,33 @@ class AdsServiceImplTest {
         assertThat(page.getContent().get(0).campaignId()).isEqualTo(campaignId);
     }
 
+    @Test
+    void launchCampaignTransitionsToLiveStoresTheMetaRefAndPublishesAnEventADS07() {
+        UUID consultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), consultantId, CurrencyCode.INR);
+        campaign.submitForPolicyReview();
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        when(metaAdsClient.launchCampaign(campaignId)).thenReturn("stub-campaign-abc");
+
+        AdCampaignView view = service().launchCampaign(campaignId);
+
+        assertThat(view.status()).isEqualTo("LIVE");
+        assertThat(view.metaCampaignRef()).isEqualTo("stub-campaign-abc");
+        verify(events).publishEvent(any(com.adren.travel.ads.event.AdCampaignLaunchedEvent.class));
+    }
+
+    @Test
+    void launchCampaignRejectsACampaignThatHasNotPassedPolicyReviewADS07() {
+        UUID consultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), consultantId, CurrencyCode.INR);
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+
+        assertThatThrownBy(() -> service().launchCampaign(campaignId)).isInstanceOf(IllegalStateException.class);
+        verify(metaAdsClient, never()).launchCampaign(any());
+    }
+
     private static void authenticateAs(Role role, UUID consultantId) {
         AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), role, consultantId);
         List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
