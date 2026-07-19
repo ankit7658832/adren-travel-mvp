@@ -158,7 +158,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **FES-05** — build shared mappanel resultspanel layout primitives
 - [ ] **FES-06** — implement runtime configurable white label theme tokens
 - [ ] **FES-07** — add an auth session context with per role route guards
-- [ ] **FES-08** — adopt react hook form zod as the form validation standard
+- [x] **FES-08** — adopt react hook form zod as the form validation standard
 - [ ] **FES-09** — build a schema driven market dependent onboarding wizard field engine
 - [ ] **FES-10** — add a global toast notification queue for async operation feedback
 

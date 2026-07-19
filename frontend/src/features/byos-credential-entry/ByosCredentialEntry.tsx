@@ -1,7 +1,23 @@
-import { useState, type FormEvent } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 import { Badge } from "@/shared/design-system/Badge";
 import { Button } from "@/shared/design-system/Button";
+import { Select } from "@/shared/design-system/Select";
+import { TextField } from "@/shared/design-system/TextField";
 import { BYOS_SUPPLIER_IDS, useByosCredentialEntry, type ByosSupplierId } from "./useByosCredentialEntry";
+
+/**
+ * FES-08 — reference migration proving the react-hook-form + zod pattern
+ * ahead of BOK-11/BOK-13/ADS-03/FES-09 all needing it, in place of the
+ * bespoke per-field `useState` this screen used before.
+ */
+const byosCredentialFormSchema = z.object({
+  supplierId: z.enum(BYOS_SUPPLIER_IDS),
+  secretValue: z.string().min(1, "Credential value is required"),
+});
+
+type ByosCredentialFormValues = z.infer<typeof byosCredentialFormSchema>;
 
 /**
  * PRD §10.4, DMC-06 — a Consultant enters their own supplier API
@@ -11,13 +27,19 @@ import { BYOS_SUPPLIER_IDS, useByosCredentialEntry, type ByosSupplierId } from "
  * summary (FND-12's row-level encryption). All 5 PRD Part 21 states.
  */
 export function ByosCredentialEntry() {
-  const [selectedSupplier, setSelectedSupplier] = useState<ByosSupplierId>("HOTELBEDS");
-  const [secretValue, setSecretValue] = useState("");
   const { listQuery, save } = useByosCredentialEntry();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<ByosCredentialFormValues>({
+    resolver: zodResolver(byosCredentialFormSchema),
+    defaultValues: { supplierId: "HOTELBEDS", secretValue: "" },
+  });
 
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    save.mutate({ supplierId: selectedSupplier, secretValue }, { onSuccess: () => setSecretValue("") });
+  function onSubmit(values: ByosCredentialFormValues) {
+    save.mutate(values, { onSuccess: () => reset({ supplierId: values.supplierId, secretValue: "" }) });
   }
 
   const summaryFor = (supplierId: ByosSupplierId) => listQuery.data?.find((c) => c.supplierId === supplierId);
@@ -29,35 +51,19 @@ export function ByosCredentialEntry() {
         Connect your own supplier accounts — inventory from these credentials is available only to you.
       </p>
 
-      <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
-        <div>
-          <label htmlFor="byos-supplier-select" className="mb-1 block text-sm font-medium text-neutral-700">
-            Supplier
-          </label>
-          <select
-            id="byos-supplier-select"
-            value={selectedSupplier}
-            onChange={(e) => setSelectedSupplier(e.target.value as ByosSupplierId)}
-            className="h-10 rounded-md border border-neutral-300 bg-surface px-3 text-base text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
-          >
-            {BYOS_SUPPLIER_IDS.map((id) => (
-              <option key={id} value={id}>
-                {id}
-              </option>
-            ))}
-          </select>
-        </div>
+      <form onSubmit={handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
+        <Select
+          label="Supplier"
+          options={BYOS_SUPPLIER_IDS.map((id) => ({ value: id, label: id }))}
+          error={errors.supplierId?.message}
+          {...register("supplierId")}
+        />
         <div className="flex-1">
-          <label htmlFor="byos-secret-value" className="mb-1 block text-sm font-medium text-neutral-700">
-            Your credential value
-          </label>
-          <input
-            id="byos-secret-value"
+          <TextField
+            label="Your credential value"
             type="password"
-            required
-            value={secretValue}
-            onChange={(e) => setSecretValue(e.target.value)}
-            className="h-10 w-full rounded-md border border-neutral-300 bg-surface px-3 text-base text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+            error={errors.secretValue?.message}
+            {...register("secretValue")}
           />
         </div>
         <Button type="submit" disabled={save.isPending}>
