@@ -11,6 +11,7 @@ import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -76,6 +77,12 @@ class AdCampaign {
     @Column(name = "meta_suspended")
     private boolean metaSuspended;
 
+    @Column(name = "policy_template_flagged")
+    private boolean policyTemplateFlagged;
+
+    @Column(name = "policy_template_flag_reason")
+    private String policyTemplateFlagReason;
+
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -114,6 +121,24 @@ class AdCampaign {
         this.budgetCapAmount = budgetCapAmount;
         this.durationDays = durationDays;
         this.updatedAt = Instant.now();
+    }
+
+    /**
+     * ADS-15, PRD §14.3 — records the rule-based brand-safety template
+     * check's result (run by the caller; see {@code
+     * AdsServiceImpl#submitCampaignForPolicyReview}), ahead of the
+     * {@link #submitForPolicyReview} transition it's always called
+     * alongside. Never blocks the transition itself — this story's own AC
+     * is explicit: flag for the reviewer, never auto-reject. Called with
+     * an empty list clears any stale flag from a prior rejected-and-
+     * resubmitted cycle, so a fixed creative doesn't carry forward an
+     * outdated warning.
+     */
+    void recordPolicyTemplateCheck(List<String> violatedPhrases) {
+        this.policyTemplateFlagged = !violatedPhrases.isEmpty();
+        this.policyTemplateFlagReason = violatedPhrases.isEmpty()
+            ? null
+            : "Contains policy-flagged phrase(s): " + String.join(", ", violatedPhrases);
     }
 
     /** ADS-05 — a Consultant submits the campaign for Super Admin review once every creative variant is approved (checked by the caller; see class Javadoc). */
@@ -286,6 +311,14 @@ class AdCampaign {
 
     boolean isMetaSuspended() {
         return metaSuspended;
+    }
+
+    boolean isPolicyTemplateFlagged() {
+        return policyTemplateFlagged;
+    }
+
+    String getPolicyTemplateFlagReason() {
+        return policyTemplateFlagReason;
     }
 
     Instant getCreatedAt() {

@@ -188,4 +188,25 @@ class AdCampaignTest {
 
         assertThat(campaign.isMetaSuspended()).isTrue();
     }
+
+    @Test
+    void recordPolicyTemplateCheckFlagsWithAReasonWhenViolationsExistADS15() {
+        AdCampaign campaign = newCampaign();
+
+        campaign.recordPolicyTemplateCheck(java.util.List.of("guaranteed", "risk-free"));
+
+        assertThat(campaign.isPolicyTemplateFlagged()).isTrue();
+        assertThat(campaign.getPolicyTemplateFlagReason()).contains("guaranteed", "risk-free");
+    }
+
+    @Test
+    void recordPolicyTemplateCheckClearsTheFlagWhenNoViolationsExistADS15() {
+        AdCampaign campaign = newCampaign();
+        campaign.recordPolicyTemplateCheck(java.util.List.of("guaranteed"));
+
+        campaign.recordPolicyTemplateCheck(java.util.List.of());
+
+        assertThat(campaign.isPolicyTemplateFlagged()).isFalse();
+        assertThat(campaign.getPolicyTemplateFlagReason()).isNull();
+    }
 }

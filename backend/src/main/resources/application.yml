@@ -94,6 +94,18 @@ adren:
     ad-spend:
       enabled: ${ADREN_AD_SPEND_BILLING_ENABLED:false}
       managed-service-fee-percent: 15
+  ads:
+    # ADS-15, PRD §14.3: a rule-based first-pass brand-safety check ahead
+    # of the Super Admin's manual policy-review queue — data-driven (RULES.md
+    # §24.7's reasoning) so the phrase list can change without a release.
+    # Illustrative starter set, not a legally-reviewed policy list.
+    brand-safety:
+      banned-phrases:
+        - guaranteed
+        - risk-free
+        - best price ever
+        - 100% safe
+        - no cancellation fee ever
 
 server:
   port: 8080

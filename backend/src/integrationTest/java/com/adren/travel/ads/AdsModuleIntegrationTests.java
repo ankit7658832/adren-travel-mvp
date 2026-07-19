@@ -537,6 +537,32 @@ class AdsModuleIntegrationTests {
     }
 
     @Test
+    void submitCampaignForPolicyReviewFlagsARealPolicyTemplateViolationAgainstTheRealConfiguredPhraseListADS15() {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+        jdbcTemplate.update(
+            "INSERT INTO ad_campaign_creative_variant (variant_id, campaign_id, headline, body_text, approved) "
+                + "VALUES (?, ?, 'Guaranteed lowest price!', 'Book now', true)",
+            UUID.randomUUID(), created.campaignId());
+
+        AdCampaignView reviewed = adsApi.submitCampaignForPolicyReview(created.campaignId());
+
+        // Flagged, never blocked — the real application.yml's
+        // banned-phrases list includes "guaranteed".
+        assertThat(reviewed.status()).isEqualTo("PENDING_POLICY_REVIEW");
+        assertThat(reviewed.policyTemplateFlagged()).isTrue();
+        assertThat(reviewed.policyTemplateFlagReason()).contains("guaranteed");
+
+        var row = jdbcTemplate.queryForMap(
+            "SELECT policy_template_flagged, policy_template_flag_reason FROM ad_campaign WHERE campaign_id = ?",
+            created.campaignId());
+        assertThat(row.get("policy_template_flagged")).isEqualTo(true);
+        assertThat(row.get("policy_template_flag_reason").toString()).contains("guaranteed");
+    }
+
+    @Test
     void findCampaignByIdRejectsAnotherConsultantsQueryADS13() {
         UUID ownerConsultantId = UUID.randomUUID();
         UUID packageId = seedPackage(ownerConsultantId, "Goa Beach Escape", "PUBLISHED");

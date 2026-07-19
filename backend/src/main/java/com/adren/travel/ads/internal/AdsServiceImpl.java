@@ -55,12 +55,14 @@ class AdsServiceImpl implements AdsApi {
     private final AdCampaignRepository adCampaignRepository;
     private final AdCampaignCreativeVariantRepository creativeVariantRepository;
     private final AdCampaignSpendTransactionRepository spendTransactionRepository;
+    private final BrandSafetyPolicyTemplateChecker brandSafetyPolicyTemplateChecker;
     private final ApplicationEventPublisher events;
 
     AdsServiceImpl(BookingApi bookingApi, AiApi aiApi, AdAccountRepository adAccountRepository,
                    MetaAdsClient metaAdsClient, AdCampaignRepository adCampaignRepository,
                    AdCampaignCreativeVariantRepository creativeVariantRepository,
-                   AdCampaignSpendTransactionRepository spendTransactionRepository, ApplicationEventPublisher events) {
+                   AdCampaignSpendTransactionRepository spendTransactionRepository,
+                   BrandSafetyPolicyTemplateChecker brandSafetyPolicyTemplateChecker, ApplicationEventPublisher events) {
         this.bookingApi = bookingApi;
         this.aiApi = aiApi;
         this.adAccountRepository = adAccountRepository;
@@ -68,6 +70,7 @@ class AdsServiceImpl implements AdsApi {
         this.adCampaignRepository = adCampaignRepository;
         this.creativeVariantRepository = creativeVariantRepository;
         this.spendTransactionRepository = spendTransactionRepository;
+        this.brandSafetyPolicyTemplateChecker = brandSafetyPolicyTemplateChecker;
         this.events = events;
     }
 
@@ -201,6 +204,12 @@ class AdsServiceImpl implements AdsApi {
                 "Campaign " + campaignId + " cannot be submitted for policy review: every creative variant must be approved first");
         }
 
+        // ADS-15, PRD §14.3 — the rule-based brand-safety pre-check runs
+        // ahead of the transition into the manual review queue, flagging
+        // (never blocking) so the Super Admin sees the warning the moment
+        // the campaign appears in their queue.
+        campaign.recordPolicyTemplateCheck(brandSafetyPolicyTemplateChecker.checkViolations(variants));
+
         campaign.submitForPolicyReview();
         adCampaignRepository.save(campaign);
         events.publishEvent(new AdCampaignSubmittedForPolicyReviewEvent(campaign.getCampaignId(), campaign.getConsultantId()));
@@ -298,6 +307,7 @@ class AdsServiceImpl implements AdsApi {
             campaign.getStatus().name(), campaign.getAudienceDescription(), campaign.getBudgetCapAmount(),
             campaign.getBudgetCapCurrency(), campaign.getDurationDays(), campaign.getMetaCampaignRef(),
             campaign.getSpendToDateAmount(), campaign.getRejectionReason(), campaign.getImpressions(),
-            campaign.getClicks(), campaign.getBookingsAttributed(), campaign.isMetaSuspended());
+            campaign.getClicks(), campaign.getBookingsAttributed(), campaign.isMetaSuspended(),
+            campaign.isPolicyTemplateFlagged(), campaign.getPolicyTemplateFlagReason());
     }
 }

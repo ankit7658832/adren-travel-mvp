@@ -21,6 +21,8 @@ public record AdCampaignView(
     int impressions,
     int clicks,
     int bookingsAttributed,
-    boolean metaSuspended
+    boolean metaSuspended,
+    boolean policyTemplateFlagged,
+    String policyTemplateFlagReason
 ) {
 }

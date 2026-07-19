@@ -66,9 +66,15 @@ class AdsServiceImplTest {
     @Mock
     ApplicationEventPublisher events;
 
+    // A real collaborator with an empty phrase list, not a mock — tests
+    // that aren't about ADS-15's own behavior shouldn't need to stub
+    // checkViolations just to avoid an unstubbed-mock NPE.
+    private final BrandSafetyPolicyTemplateChecker brandSafetyPolicyTemplateChecker =
+        new BrandSafetyPolicyTemplateChecker(new BrandSafetyPolicyTemplateProperties(List.of()));
+
     private AdsServiceImpl service() {
         return new AdsServiceImpl(bookingApi, aiApi, adAccountRepository, metaAdsClient, adCampaignRepository,
-            creativeVariantRepository, spendTransactionRepository, events);
+            creativeVariantRepository, spendTransactionRepository, brandSafetyPolicyTemplateChecker, events);
     }
 
     @Test
@@ -277,6 +283,29 @@ class AdsServiceImplTest {
 
         assertThat(view.status()).isEqualTo("PENDING_POLICY_REVIEW");
         verify(events).publishEvent(any(com.adren.travel.ads.event.AdCampaignSubmittedForPolicyReviewEvent.class));
+    }
+
+    @Test
+    void submitCampaignForPolicyReviewFlagsAPolicyTemplateViolationWithoutBlockingTheTransitionADS15() {
+        UUID consultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), consultantId, CurrencyCode.INR);
+        AdCampaignCreativeVariant variant =
+            new AdCampaignCreativeVariant(UUID.randomUUID(), campaignId, "Guaranteed lowest price!", "Book now", null);
+        variant.approve();
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        when(creativeVariantRepository.findByCampaignId(campaignId)).thenReturn(List.of(variant));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AdsServiceImpl flaggingService = new AdsServiceImpl(bookingApi, aiApi, adAccountRepository, metaAdsClient,
+            adCampaignRepository, creativeVariantRepository, spendTransactionRepository,
+            new BrandSafetyPolicyTemplateChecker(new BrandSafetyPolicyTemplateProperties(List.of("guaranteed"))), events);
+
+        AdCampaignView view = flaggingService.submitCampaignForPolicyReview(campaignId);
+
+        // Flagged, never blocked — this story's own AC.
+        assertThat(view.status()).isEqualTo("PENDING_POLICY_REVIEW");
+        assertThat(view.policyTemplateFlagged()).isTrue();
+        assertThat(view.policyTemplateFlagReason()).contains("guaranteed");
     }
 
     @Test
