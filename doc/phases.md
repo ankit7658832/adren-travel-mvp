@@ -92,7 +92,7 @@ Every `⚠️ NEEDS CLARIFICATION` flag in the story catalogues, consolidated in
 
 This is the ongoing tracker, now backed by `doc/user-stories/mvp-mock/PROGRESS.md` (created in Stage 1; §5's "gap" note above predates it and is left as historical record). Update as stories close.
 
-### Mock phase (149 stories / 748 points, updated Stage 5 — 2026-07-18)
+### Mock phase (149 stories / 748 points, updated Stage 6 — 2026-07-19)
 
 | Epic | Stories | Points | Status |
 |---|---|---|---|
@@ -102,11 +102,11 @@ This is the ongoing tracker, now backed by `doc/user-stories/mvp-mock/PROGRESS.m
 | AI Layer | 13 | 72 | **100% (13/13)** — completed Stage 4 |
 | Local DMC + BYOS | 11 | 57 | **100% (11/11)** — completed Stage 5 |
 | Ads/Campaign Management | 15 | 80 | 0% (0/15) |
-| Hardening | 13 | 76 | 8% (1/13, 8 pts) |
+| Hardening | 13 | 76 | **77% (10/13, 57/76 pts)** — everything unblocked by Stage 6 is done; `HRD-09/10/11` (19 pts) remain gated on `ADS-09` |
 | Frontend Shell | 10 | 55 | 20% (2/10, 10 pts) |
 | DevOps/Infra | 9 | 30 | 0% (0/9) |
 | Test Infrastructure | 9 | 38 | 0% (0/9) |
-| **Total** | **149** | **748** | **64% (96/149 stories, 487/748 pts)** |
+| **Total** | **149** | **748** | **70% (105/149 stories, 536/748 pts)** |
 
 ## 7a. Stage 1 & Stage 2 actual velocity, and a revised remaining-timeline estimate (Stage 3, Step A)
 
@@ -268,6 +268,51 @@ Verified directly against the dependency graph (every `FES-*`/`ADS-*`/`HRD-*`/`T
 3. **Building it unblocks two other epics at once, not just one.** `FES-08` is `ADS-03`'s specific gate (per point 1) — closing it reopens the PRD-stated next epic. It's also `TST-04`'s gate (`TST-04` depends on `FES-08`; `TST-05` chains off `TST-04`) — Test Infrastructure is otherwise still 0/9 and partially blocked by the same story. No other single epic in this catalogue unblocks two others simultaneously.
 4. **This deviates from PRD §8's literal epic-label order** ("... → Local DMC+BYOS → Ads/Campaign → Hardening" — Frontend Shell isn't named as a phase in that list at all), but not from its intent: PRD §8 describes feature-epic sequencing, not the tooling/scaffolding work those epics assume already exists. §2's own derived build order already treats `Frontend Shell` as interleaved with `Foundation` at the start, not a separate later phase — the same "this is infrastructure the named epics depend on, not a competing epic" reasoning applies here to its remaining 8 stories.
 5. **Hardening (9/13 stories: `HRD-02` through `HRD-08`, `HRD-12`, `HRD-13`) is the other fully-available option** — genuinely unblocked now that Booking Core/Financial Layer/AI Layer/Local DMC+BYOS are all done, and could run as a parallel track if a second work-stream exists. It's not the primary recommendation because it doesn't unblock anything else (`HRD-09/10/11` still need `ADS-09`, so even finishing all 9 available Hardening stories leaves the epic at 10/13, still gated on Ads/Campaign) — lower leverage than Frontend Shell's double-unblock.
+
+**Stopping here per Step D's own instruction — not starting Frontend Shell without an explicit go-ahead.**
+
+## 7f. Stage 6 (Hardening) completion, a sixth velocity data point, and the next-epic recommendation (Stage 6, Step D — 2026-07-19)
+
+**What landed:** 9 of Hardening's 13 stories (49 points) across two checkpointed batches — Batch 1 (`HRD-02, 03, 04, 06` — trigger-event notification wiring, listener idempotency, the preferences screen, dispute ticketing; 23 points) and Batch 2 (`HRD-07, 08, 05, 12, 13` — PNR/booking search backend+frontend, full cancellation-workflow notification, config-driven sync cadence, sync-staleness alerting; 26 points). Combined with `HRD-01` (already done in Stage 2), Hardening is now **10/13 stories, 57/76 points (77%)**. Mock-phase total is now **105/149 stories, 536/748 points (70%)**.
+
+**What this stage revealed, flagged rather than smoothed over:**
+
+- **This epic's own name undersells how much of it was "prove a pre-existing thing actually works" rather than new mechanism** — the same pattern §7e flagged for Stage 5's `FND-12`. `HRD-05`'s literal scope ("implement the full cancellation workflow") turned out to already exist: `BookingServiceImpl.submitCancellation`/`approveCancellation` had fully orchestrated FIN-16's policy-check → refund-calculation → approval-if-needed → refund state machine in an earlier stage, and `BookingCancelledEvent`'s own pre-existing Javadoc had already flagged the one missing piece (notification dispatch) as HRD-05's actual job. `HRD-12`'s literal scope ("make sync cadence config-driven") was likewise already done — BOK-27's `@Scheduled(cron = "${...:default}")` placeholders were already operator-tunable; the real remaining work for both stories was proving the acceptance criteria true (new tests), not building new mechanism.
+- **Step C's adversarial validation targeted the epic's dominant theme — idempotency under real redelivery — and caught a real flaw in the validation itself before it caught anything in the code.** The first version of the before/after test passed even with `BookingCancelledNotificationListener`'s dedup guard deliberately disabled, because the manually-redelivered event still routed through the `@Async` proxy onto its own thread, and the assertion ran before that second dispatch landed — a false pass that would have shipped a broken adversarial test. Fixed with an explicit `Awaitility` poll delay; re-ran against the disabled guard and got a genuine failure (`Expected size: 1 but was: 2`), then confirmed green again with the guard restored. Worth remembering for any future adversarial test that manually re-invokes an `@Async`-annotated bean method through its Spring-proxied reference: an immediate post-call assertion is not evidence of anything.
+- **Testcontainers remains non-executable in this sandbox** (same identified, pre-existing Docker API-version-negotiation gap as Stages 3/5 — `client version 1.32 too old, minimum 1.41`) — confirmed again this stage via `HRD-12`'s new `SupplierContentSyncCadenceIT`, which compiles clean and fails identically to the untouched `CreditLimitBreachIT`, not a regression. The real-Postgres `@ApplicationModuleTest` tier (used for every other new integration test this stage, including a from-scratch one added for `HRD-13`'s new JPA column) continues to carry the actual verification load in this environment.
+
+**Stage 6 velocity** (same method as §7a–§7e — git commit timestamps, `AD-stage6` + `AD-stage6-batch2-hardening-search-cancellation-sync` branches):
+- Commits: `aba6c04` (2026-07-19 11:36:28) through `74c37ed` (2026-07-19 13:48:34, Step C's before/after commit).
+- Delivered **9 stories / 49 points** — Batch 1 + Batch 2 of Hardening — plus Step C's adversarial validation (no story points).
+- Calendar-day span: 2026-07-19 only (1 distinct date). Wall-clock elapsed: ~2h12m.
+
+| Basis | Elapsed | Points | Velocity |
+|---|---|---|---|
+| Wall-clock hours | ~2.20h (0.092 days) | 49 | 534.1 pts/day → **~3,739 pts/week** |
+
+**⚠️ Another outlier, same driver as Stage 5's — not a new sustainable rate.** Two of Batch 2's five stories (`HRD-05`, `HRD-12`) were substantially pre-existing mechanism plus new test coverage, per the finding above — materially less new-code volume per point than a from-scratch story. Treat this stage's raw velocity the same way §7e treated Stage 5's: informative about *why* it was fast, not a number to extrapolate from.
+
+**Combined actual delivery (all six stages):** 105 stories / **536 points**. Summing each stage's own raw wall-clock span: 10h17m + 14h54m + 24h38m + 15h5m + 2h7m + 2h12m ≈ **69h13m (≈2.88 days)**, across 6 distinct calendar dates (2026-07-14 through 2026-07-19).
+
+| Basis | Elapsed | Points | Velocity |
+|---|---|---|---|
+| Summed wall-clock | ~69.2h (2.88 days) | 536 | 185.9 pts/day → **~1,301 pts/week** |
+| Calendar-date count (crude) | 6 distinct dates | 536 | 89.3 pts/day → **~625 pts/week** |
+
+**Revised remaining-timeline estimate:** Remaining: **212 points** (748 total − 536 done). Stage 4's own demonstrated rate (114.6 pts/day) remains the most defensible non-outlier single-stage basis, per §7d/§7e's same reasoning (both Stage 5 and Stage 6 are flagged outliers above): 212 / 114.6 ≈ **1.85 more days of active work**. The cumulative summed-wall-clock rate (186.1 pts/day, inflated by two outlier stages now) gives a more optimistic ≈1.14 days — reported for completeness, not recommended as the planning number.
+
+**Epic-completion flag, per the standing Step D instruction:** Hardening is **not** among the completed epics — 10/13 stories, 3 remaining (`HRD-09/10/11`, 19 points) genuinely blocked on `ADS-09` (Ads/Campaign, still 0/15). So the trigger condition ("Booking Core, Financial Layer, AI Layer, Local DMC+BYOS, Ads/Campaign, and Hardening all complete") is **not met** — Ads/Campaign hasn't started, and Hardening can't finish without it. What's actually true now: **every mock-phase story not gated on Ads/Campaign is done.** The only path to closing out Hardening, Ads/Campaign, and (per point 3 below) part of Test Infrastructure runs through the same single blocker.
+
+**Recommendation: build Frontend Shell next (8 remaining stories, 45 points) — same recommendation as §7e, now with Hardening's available scope exhausted.**
+
+Re-verified directly against the dependency graph, not carried over unchecked from §7e:
+
+1. **Ads/Campaign Management is still genuinely blocked on exactly the same story.** `ADS-03` depends on `FES-08` ("adopt React Hook Form + Zod as the form validation standard") — confirmed **still not done** (`PROGRESS.md`: only `FES-01`/`FES-03` checked off, unchanged since §7d/§7e) — and `ADS-04` through `ADS-15` chain off it. Hardening's Batch 1/2 work did not touch this blocker.
+2. **Frontend Shell's remaining 8 stories are still fully unblocked, buildable top-to-bottom, right now** — same finding as §7e, re-checked: every dependency resolves to `FND-*` (done) or an earlier `FES-*` story in its own chain.
+3. **Building `FES-08` specifically unblocks three things at once, not two.** It's `ADS-03`'s gate (point 1) *and* `TST-04`'s gate (`TST-04` depends on `FES-08`; `TST-05` chains off `TST-04`) *and*, transitively, `HRD-09/10/11`'s gate (`HRD-09` depends on `ADS-09`, which is downstream of `ADS-03`) — closing one story reopens paths in three separate epics (Ads/Campaign, Test Infrastructure, and the last of Hardening). No other single remaining story in the catalogue has that reach.
+4. **DevOps/Infra (9 stories, 30 points) is also fully unblocked right now** (every `OPS-*` dependency resolves to `FND-*`/earlier `OPS-*`, all done) and **7 of Test Infrastructure's 9 stories (32 of 38 points)** are unblocked too (`TST-01/02/03/06/07/08/09`; only `TST-04/05` wait on `FES-08`) — both are legitimate parallel-track candidates if a second work-stream exists, matching the user's own framing that remaining scope is "primarily Frontend Shell, DevOps/Infra, and Test Infrastructure." Frontend Shell remains the primary recommendation over these two because of point 3's triple-unblock; DevOps/Infra and Test Infrastructure don't unblock anything else.
+
+**Once Ads/Campaign is unblocked and built out, Hardening's final 3 stories (`HRD-09/10/11`, 19 points) become buildable and should be swept up as a short closing batch** — they're Consultant/Super Admin dashboard screens with no further hidden dependencies beyond `ADS-09`.
 
 **Stopping here per Step D's own instruction — not starting Frontend Shell without an explicit go-ahead.**
 
