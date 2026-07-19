@@ -120,7 +120,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **ADS-01** — provision a meta ad account business manager for a consultant
 - [x] **ADS-02** — model the ad campaign entity and its status state machine
 - [x] **ADS-03** — build the campaign builder screen package selector audience budget duration inputs
-- [ ] **ADS-04** — generate and display ai creative variant gallery in the campaign builder
+- [x] **ADS-04** — generate and display ai creative variant gallery in the campaign builder
 - [ ] **ADS-05** — require consultant approval per creative variant before submission
 - [ ] **ADS-06** — route approved campaigns through super admin brand safety policy review
 - [ ] **ADS-07** — launch an approved campaign under the adren managed meta account

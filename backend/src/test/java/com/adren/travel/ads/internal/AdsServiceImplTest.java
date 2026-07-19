@@ -56,10 +56,14 @@ class AdsServiceImplTest {
     AdCampaignRepository adCampaignRepository;
 
     @Mock
+    AdCampaignCreativeVariantRepository creativeVariantRepository;
+
+    @Mock
     ApplicationEventPublisher events;
 
     private AdsServiceImpl service() {
-        return new AdsServiceImpl(bookingApi, aiApi, adAccountRepository, metaAdsClient, adCampaignRepository, events);
+        return new AdsServiceImpl(bookingApi, aiApi, adAccountRepository, metaAdsClient, adCampaignRepository,
+            creativeVariantRepository, events);
     }
 
     @Test
@@ -145,6 +149,62 @@ class AdsServiceImplTest {
         var command = new SubmitCampaignInputsCommand(campaignId, "Adults 25-45", new BigDecimal("500.00"), 14);
 
         assertThatThrownBy(() -> service().submitCampaignInputs(command)).isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void generateCreativeForCampaignPersistsEverySurvivingVariantADS04() {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, packageId, consultantId, CurrencyCode.INR);
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        PackageView travelPackage = new PackageView(packageId, UUID.randomUUID(), consultantId, "Goa Escape",
+            "A relaxing package", LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(20000), BigDecimal.valueOf(5000), CurrencyCode.INR, 4, false);
+        when(bookingApi.findPackageById(packageId)).thenReturn(travelPackage);
+        UUID auditLogId = UUID.randomUUID();
+        when(aiApi.generateAdCreative(any())).thenReturn(new com.adren.travel.ai.AdCreativeSuggestion(auditLogId,
+            List.of(new com.adren.travel.ai.AdCreativeVariant("Escape to Goa", "Book now at INR 25000"),
+                new com.adren.travel.ai.AdCreativeVariant("Goa Awaits", "Sun, sand, and savings"))));
+
+        var result = service().generateCreativeForCampaign(campaignId, 2);
+
+        assertThat(result).isInstanceOf(com.adren.travel.ai.AdCreativeSuggestion.class);
+        verify(creativeVariantRepository, org.mockito.Mockito.times(2)).save(any());
+    }
+
+    @Test
+    void generateCreativeForCampaignPersistsNothingWhenNoViableCreativeSurvivesADS04() {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, packageId, consultantId, CurrencyCode.INR);
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        authenticateAs(Role.CONSULTANT, consultantId);
+        PackageView travelPackage = new PackageView(packageId, UUID.randomUUID(), consultantId, "Goa Escape",
+            "A relaxing package", LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(20000), BigDecimal.valueOf(5000), CurrencyCode.INR, 4, false);
+        when(bookingApi.findPackageById(packageId)).thenReturn(travelPackage);
+        when(aiApi.generateAdCreative(any()))
+            .thenReturn(new com.adren.travel.ai.NoViableAdCreative(UUID.randomUUID(), "No candidate referenced the real price"));
+
+        var result = service().generateCreativeForCampaign(campaignId, 2);
+
+        assertThat(result).isInstanceOf(com.adren.travel.ai.NoViableAdCreative.class);
+        verify(creativeVariantRepository, never()).save(any());
+    }
+
+    @Test
+    void findCreativeVariantsForCampaignRejectsACallerFromAnotherConsultantADS04() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID campaignId = UUID.randomUUID();
+        AdCampaign campaign = new AdCampaign(campaignId, UUID.randomUUID(), ownerConsultantId, CurrencyCode.INR);
+        when(adCampaignRepository.findById(campaignId)).thenReturn(Optional.of(campaign));
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> service().findCreativeVariantsForCampaign(campaignId))
+            .isInstanceOf(AccessDeniedException.class);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

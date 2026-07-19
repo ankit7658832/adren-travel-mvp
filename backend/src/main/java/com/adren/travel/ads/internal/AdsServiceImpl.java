@@ -1,6 +1,7 @@
 package com.adren.travel.ads.internal;
 
 import com.adren.travel.ads.AdAccountView;
+import com.adren.travel.ads.AdCampaignCreativeVariantView;
 import com.adren.travel.ads.AdCampaignView;
 import com.adren.travel.ads.AdsApi;
 import com.adren.travel.ads.CreateCampaignCommand;
@@ -9,6 +10,8 @@ import com.adren.travel.ads.SubmitCampaignInputsCommand;
 import com.adren.travel.ads.event.AdCampaignCreatedEvent;
 import com.adren.travel.ads.event.AdCampaignInputsSubmittedEvent;
 import com.adren.travel.ai.AdCreativeGenerationResult;
+import com.adren.travel.ai.AdCreativeSuggestion;
+import com.adren.travel.ai.AdCreativeVariant;
 import com.adren.travel.ai.AiApi;
 import com.adren.travel.ai.GenerateAdCreativeCommand;
 import com.adren.travel.booking.BookingApi;
@@ -19,6 +22,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -40,16 +44,18 @@ class AdsServiceImpl implements AdsApi {
     private final AdAccountRepository adAccountRepository;
     private final MetaAdsClient metaAdsClient;
     private final AdCampaignRepository adCampaignRepository;
+    private final AdCampaignCreativeVariantRepository creativeVariantRepository;
     private final ApplicationEventPublisher events;
 
     AdsServiceImpl(BookingApi bookingApi, AiApi aiApi, AdAccountRepository adAccountRepository,
                    MetaAdsClient metaAdsClient, AdCampaignRepository adCampaignRepository,
-                   ApplicationEventPublisher events) {
+                   AdCampaignCreativeVariantRepository creativeVariantRepository, ApplicationEventPublisher events) {
         this.bookingApi = bookingApi;
         this.aiApi = aiApi;
         this.adAccountRepository = adAccountRepository;
         this.metaAdsClient = metaAdsClient;
         this.adCampaignRepository = adCampaignRepository;
+        this.creativeVariantRepository = creativeVariantRepository;
         this.events = events;
     }
 
@@ -110,6 +116,39 @@ class AdsServiceImpl implements AdsApi {
             campaign.getAudienceDescription(), campaign.getBudgetCapAmount(), campaign.getDurationDays()));
 
         return toView(campaign);
+    }
+
+    @Override
+    @Transactional
+    public AdCreativeGenerationResult generateCreativeForCampaign(UUID campaignId, int variantCount) {
+        AdCampaign campaign = adCampaignRepository.findById(campaignId)
+            .orElseThrow(() -> new IllegalArgumentException("No campaign: " + campaignId));
+        CurrentPrincipal.resolveTenantScope(campaign.getConsultantId());
+
+        AdCreativeGenerationResult result = generateAdCreativeForPackage(
+            new GenerateAdCreativeForPackageCommand(campaign.getPackageId(), variantCount));
+
+        // AI-05: NoViableAdCreative is a legitimate outcome, not an error —
+        // nothing to persist, the caller sees the explicit failure state.
+        if (result instanceof AdCreativeSuggestion suggestion) {
+            for (AdCreativeVariant variant : suggestion.variants()) {
+                creativeVariantRepository.save(new AdCampaignCreativeVariant(
+                    UUID.randomUUID(), campaignId, variant.headline(), variant.bodyText(), null));
+            }
+        }
+        return result;
+    }
+
+    @Override
+    public List<AdCampaignCreativeVariantView> findCreativeVariantsForCampaign(UUID campaignId) {
+        AdCampaign campaign = adCampaignRepository.findById(campaignId)
+            .orElseThrow(() -> new IllegalArgumentException("No campaign: " + campaignId));
+        CurrentPrincipal.resolveTenantScope(campaign.getConsultantId());
+
+        return creativeVariantRepository.findByCampaignId(campaignId).stream()
+            .map(v -> new AdCampaignCreativeVariantView(
+                v.getVariantId(), v.getCampaignId(), v.getHeadline(), v.getBodyText(), v.getImageRef(), v.isApproved()))
+            .toList();
     }
 
     private static AdCampaignView toView(AdCampaign campaign) {

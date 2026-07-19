@@ -74,3 +74,52 @@ export function useSubmitCampaignInputs() {
     },
   });
 }
+
+export interface AdCreativeVariantDto {
+  headline: string;
+  bodyText: string;
+}
+
+/**
+ * Mirrors the backend's {@code AdCreativeGenerationResult} sealed
+ * interface (AI-05's explicit-failure-state principle) — "no viable
+ * creative" is a legitimate, well-typed outcome the gallery renders as an
+ * empty state, never an error.
+ */
+export type AdCreativeGenerationResult =
+  | { type: "AD_CREATIVE_SUGGESTION"; auditLogId: string; variants: AdCreativeVariantDto[] }
+  | { type: "NO_VIABLE_AD_CREATIVE"; auditLogId: string; reason: string };
+
+/** ADS-04, PRD §14.2 step 3. */
+export function useGenerateCreativeVariants() {
+  return useMutation({
+    mutationFn: async (input: { campaignId: string; variantCount: number }) => {
+      const { data } = await apiClient.post<AdCreativeGenerationResult>(
+        `/campaigns/${input.campaignId}/creative-variants`,
+        { variantCount: input.variantCount }
+      );
+      return data;
+    },
+  });
+}
+
+export interface PersistedCreativeVariant {
+  variantId: string;
+  campaignId: string;
+  headline: string;
+  bodyText: string;
+  imageRef: string | null;
+  approved: boolean;
+}
+
+/** ADS-04 — re-fetches whatever variants a prior generation call already persisted, e.g. after a page reload. */
+export function useCreativeVariants(campaignId: string | null) {
+  return useQuery({
+    queryKey: ["campaign-creative-variants", campaignId],
+    queryFn: async () => {
+      const { data } = await apiClient.get<PersistedCreativeVariant[]>(`/campaigns/${campaignId}/creative-variants`);
+      return data;
+    },
+    enabled: campaignId !== null,
+  });
+}

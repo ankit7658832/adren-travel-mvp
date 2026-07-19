@@ -3,6 +3,7 @@ package com.adren.travel.ads;
 import com.adren.travel.ai.AdCreativeGenerationResult;
 import org.springframework.security.access.prepost.PreAuthorize;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -60,4 +61,22 @@ public interface AdsApi {
         + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
         + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
     AdCampaignView submitCampaignInputs(SubmitCampaignInputsCommand command);
+
+    /**
+     * Generates grounded ad-creative variants for a campaign's own Package
+     * (PRD §14.2 step 3, ADS-04) and persists each surviving variant
+     * against the campaign (PRD §20.13's {@code creative_variants[]}) —
+     * reuses {@link #generateAdCreativeForPackage}'s own grounding, never
+     * re-deriving it. A {@link com.adren.travel.ai.NoViableAdCreative}
+     * result is a legitimate outcome (AI-05's explicit-failure-state
+     * principle) that persists nothing, not an error.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT') or "
+        + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
+        + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
+    AdCreativeGenerationResult generateCreativeForCampaign(UUID campaignId, int variantCount);
+
+    /** The persisted creative variants for a campaign (PRD §20.13), tenant-scoped to the campaign's owning Consultant. */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    List<AdCampaignCreativeVariantView> findCreativeVariantsForCampaign(UUID campaignId);
 }

@@ -6,6 +6,7 @@ import { Button } from "@/shared/design-system/Button";
 import { Select } from "@/shared/design-system/Select";
 import { TextField } from "@/shared/design-system/TextField";
 import { usePublishedPackages, useCreateCampaign, useSubmitCampaignInputs } from "./useCampaignBuilder";
+import { CreativeVariantGallery } from "./CreativeVariantGallery";
 
 const campaignInputsSchema = z.object({
   packageId: z.string().min(1, "Select a package to promote"),
@@ -106,6 +107,7 @@ export function CampaignBuilder() {
         <p role="status" className="mt-4 text-sm text-neutral-600">
           Your campaign is now pending approval — generate ad creative next.
         </p>
+        <CreativeVariantGallery campaignId={submitInputs.data.campaignId} />
       </main>
     );
   }

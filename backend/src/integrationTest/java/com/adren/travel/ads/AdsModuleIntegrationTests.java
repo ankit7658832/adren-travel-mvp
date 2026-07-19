@@ -203,6 +203,56 @@ class AdsModuleIntegrationTests {
             .isInstanceOf(AccessDeniedException.class);
     }
 
+    @Test
+    void generateCreativeForCampaignPropagatesTheRealGroqFailureAndPersistsNothingADS04() {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+
+        // Same real (dummy-keyed) Groq 401 as generateAdCreativeForPackage's
+        // own coverage — nothing new to mock, this proves the campaign-scoped
+        // wrapper propagates the same failure rather than swallowing it.
+        assertThatThrownBy(() -> adsApi.generateCreativeForCampaign(created.campaignId(), 2))
+            .isInstanceOf(RuntimeException.class);
+
+        Long variantCount = jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM ad_campaign_creative_variant WHERE campaign_id = ?", Long.class, created.campaignId());
+        assertThat(variantCount).isZero();
+    }
+
+    @Test
+    void findCreativeVariantsForCampaignReturnsRealPersistedVariantsADS04() {
+        UUID consultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, consultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+        UUID variantId = UUID.randomUUID();
+        jdbcTemplate.update(
+            "INSERT INTO ad_campaign_creative_variant (variant_id, campaign_id, headline, body_text, approved) "
+                + "VALUES (?, ?, 'Escape to Goa', 'Book now', false)",
+            variantId, created.campaignId());
+
+        var variants = adsApi.findCreativeVariantsForCampaign(created.campaignId());
+
+        assertThat(variants).hasSize(1);
+        assertThat(variants.get(0).variantId()).isEqualTo(variantId);
+        assertThat(variants.get(0).approved()).isFalse();
+    }
+
+    @Test
+    void findCreativeVariantsForCampaignRejectsAnotherConsultantADS04() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        UUID packageId = seedPackage(ownerConsultantId, "Goa Beach Escape", "PUBLISHED");
+        authenticateAs(Role.CONSULTANT, ownerConsultantId);
+        AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));
+
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> adsApi.findCreativeVariantsForCampaign(created.campaignId()))
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
     private UUID seedPackage(UUID consultantId, String name, String status) {
         java.sql.Timestamp now = java.sql.Timestamp.from(Instant.now());
         UUID itineraryId = UUID.randomUUID();
