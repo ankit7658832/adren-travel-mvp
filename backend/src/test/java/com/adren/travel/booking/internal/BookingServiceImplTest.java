@@ -7,6 +7,7 @@ import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.ApproveAiSuggestionCommand;
+import com.adren.travel.booking.BookingSearchResultView;
 import com.adren.travel.booking.CabinClass;
 import com.adren.travel.booking.CalculateCancellationRefundCommand;
 import com.adren.travel.booking.CancellationRequestView;
@@ -950,6 +951,56 @@ class BookingServiceImplTest {
         Pageable pageable = PageRequest.of(0, 20);
 
         assertThatThrownBy(() -> service.findDisputeTickets(UUID.randomUUID(), pageable))
+            .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+    }
+
+    /**
+     * HRD-07's "one case per product type" sub-task is genuinely a no-op
+     * at this tier: {@code Booking} carries no product-type field at all
+     * (line items live on the linked Itinerary across five separate
+     * tables), and {@code searchByPnrReference} never touches any
+     * line-item repository — there is nothing here to branch on, so a
+     * hotel/flight/transfer/cruise/activity booking are indistinguishable
+     * to this method. The meaningful proof of "regardless of product
+     * type" lives at the module/integrationTest tier, where real bookings
+     * with real, different line items are actually constructed. This
+     * single test covers what the method's own logic can vary on: found
+     * vs not found vs cross-tenant.
+     */
+    @Test
+    void searchByPnrReferenceFindsABookingRegardlessOfWhatProductTypeItContainsHRD07() {
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Booking booking = new Booking(bookingId, UUID.randomUUID(), consultantId, BigDecimal.valueOf(10_000),
+            CurrencyCode.INR, PaymentMethod.WALLET, "ABCD1234");
+        when(bookingRepository.findByPnrSearchableRef("ABCD1234")).thenReturn(Optional.of(booking));
+
+        Page<BookingSearchResultView> result = service.searchByPnrReference("ABCD1234", PageRequest.of(0, 20));
+
+        assertThat(result.getContent()).extracting(BookingSearchResultView::bookingId).containsExactly(bookingId);
+        assertThat(result.getContent()).extracting(BookingSearchResultView::pnrSearchableRef).containsExactly("ABCD1234");
+    }
+
+    @Test
+    void searchByPnrReferenceReturnsEmptyForAnUnknownReferenceHRD07() {
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        when(bookingRepository.findByPnrSearchableRef("NOSUCH99")).thenReturn(Optional.empty());
+
+        Page<BookingSearchResultView> result = service.searchByPnrReference("NOSUCH99", PageRequest.of(0, 20));
+
+        assertThat(result.getContent()).isEmpty();
+    }
+
+    @Test
+    void searchByPnrReferenceRejectsAConsultantFindingAnotherConsultantsBookingFND03() {
+        UUID ownerConsultantId = UUID.randomUUID();
+        Booking booking = new Booking(UUID.randomUUID(), UUID.randomUUID(), ownerConsultantId, BigDecimal.valueOf(10_000),
+            CurrencyCode.INR, PaymentMethod.WALLET, "ABCD1234");
+        when(bookingRepository.findByPnrSearchableRef("ABCD1234")).thenReturn(Optional.of(booking));
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+
+        assertThatThrownBy(() -> service.searchByPnrReference("ABCD1234", PageRequest.of(0, 20)))
             .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
     }
 

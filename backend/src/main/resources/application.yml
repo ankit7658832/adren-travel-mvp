@@ -60,6 +60,16 @@ adren:
       cancellation-rate-threshold: ${ADREN_LOCAL_DMC_CANCELLATION_RATE_THRESHOLD:0.2}
       complaint-count-threshold: ${ADREN_LOCAL_DMC_COMPLAINT_COUNT_THRESHOLD:3}
       inventory-staleness-threshold-days: ${ADREN_LOCAL_DMC_INVENTORY_STALENESS_THRESHOLD_DAYS:30}
+    content-sync:
+      # HRD-13 — a supplier's cached content is flagged stale once it hasn't
+      # refreshed within this window; one threshold per sync cadence
+      # category (hotels/activities sync nightly, cruise syncs weekly per
+      # SupplierContentSyncService) so a weekly cadence isn't falsely
+      # flagged against a threshold sized for a nightly one. Set generously
+      # above the underlying cadence so one missed run doesn't alert.
+      hotels-staleness-threshold: ${ADREN_SUPPLIER_HOTELS_STALENESS_THRESHOLD:48h}
+      cruise-staleness-threshold: ${ADREN_SUPPLIER_CRUISE_STALENESS_THRESHOLD:14d}
+      activities-staleness-threshold: ${ADREN_SUPPLIER_ACTIVITIES_STALENESS_THRESHOLD:48h}
   payments:
     tax:
       # FIN-17, PRD §12.1 Worked Example C / §19: illustrative rates only —

@@ -139,15 +139,15 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **HRD-02** — wire all prd 15 notification trigger events
 - [x] **HRD-03** — make every notification listener idempotent
 - [x] **HRD-04** — build the notification preferences screen
-- [ ] **HRD-05** — implement the full cancellation workflow across policy check approval and refund
+- [x] **HRD-05** — implement the full cancellation workflow across policy check approval and refund
 - [x] **HRD-06** — track disputes as tickets not email handoffs
-- [ ] **HRD-07** — implement pnr booking search across all product types
-- [ ] **HRD-08** — build the pnr booking search screen
+- [x] **HRD-07** — implement pnr booking search across all product types
+- [x] **HRD-08** — build the pnr booking search screen
 - [ ] **HRD-09** — build the consultant dashboard
 - [ ] **HRD-10** — show an onboarding checklist instead of empty charts for new consultants
 - [ ] **HRD-11** — build the super admin dashboard
-- [ ] **HRD-12** — tune inventory sync batch cadence per supplier
-- [ ] **HRD-13** — alert super admin on inventory sync staleness beyond threshold
+- [x] **HRD-12** — tune inventory sync batch cadence per supplier
+- [x] **HRD-13** — alert super admin on inventory sync staleness beyond threshold
 
 ## Frontend Shell (10)
 

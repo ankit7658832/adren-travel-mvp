@@ -14,6 +14,7 @@ import com.adren.travel.booking.AddHotelLineItemCommand;
 import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
+import com.adren.travel.booking.BookingSearchResultView;
 import com.adren.travel.booking.CalculateCancellationRefundCommand;
 import com.adren.travel.booking.CancellationRequestView;
 import com.adren.travel.booking.ConsolidateCheckoutTotalCommand;
@@ -702,6 +703,20 @@ class BookingServiceImpl implements BookingApi {
         return disputeTicketRepository.findByConsultantId(scopedConsultantId, pageable)
             .map(ticket -> new DisputeTicketView(ticket.getDisputeTicketId(), ticket.getBookingId(),
                 ticket.getReason(), ticket.getStatus().name(), ticket.getCreatedAt()));
+    }
+
+    @Override
+    public Page<BookingSearchResultView> searchByPnrReference(String pnrReference, Pageable pageable) {
+        List<BookingSearchResultView> results = bookingRepository.findByPnrSearchableRef(pnrReference)
+            .map(booking -> {
+                CurrentPrincipal.resolveTenantScope(booking.getConsultantId());
+                return new BookingSearchResultView(booking.getBookingId(), booking.getPnrSearchableRef(),
+                    booking.getStatus().name(), new Money(booking.getTotalSellPriceAmount(), booking.getTotalSellCurrency()),
+                    booking.getPaymentMethod().name(), booking.getCreatedAt());
+            })
+            .map(List::of)
+            .orElseGet(List::of);
+        return new org.springframework.data.domain.PageImpl<>(results, pageable, results.size());
     }
 
     private static CancellationRequestView toCancellationRequestView(CancellationRequest request) {

@@ -40,6 +40,9 @@ class SupplierContentCache {
     @Column(name = "last_synced_at")
     private Instant lastSyncedAt;
 
+    /** HRD-13 — the persisted, queryable staleness signal a Super Admin alert screen surfaces. */
+    private boolean stale;
+
     protected SupplierContentCache() {
         // JPA
     }
@@ -54,6 +57,10 @@ class SupplierContentCache {
         this.name = name;
         this.rating = rating;
         this.lastSyncedAt = Instant.now();
+    }
+
+    void setStale(boolean stale) {
+        this.stale = stale;
     }
 
     SupplierId getSupplierId() {
@@ -74,5 +81,9 @@ class SupplierContentCache {
 
     Instant getLastSyncedAt() {
         return lastSyncedAt;
+    }
+
+    boolean isStale() {
+        return stale;
     }
 }

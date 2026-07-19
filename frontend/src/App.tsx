@@ -78,8 +78,8 @@ const WalletBilling = lazy(() =>
 const CampaignBuilder = lazy(() =>
   import("./features/campaign-builder/CampaignBuilder").then((m) => ({ default: m.CampaignBuilder }))
 );
-const PnrSearch = lazy(() =>
-  import("./features/pnr-search/PnrSearch").then((m) => ({ default: m.PnrSearch }))
+const PnrBookingSearch = lazy(() =>
+  import("./features/pnr-search/PnrBookingSearch").then((m) => ({ default: m.PnrBookingSearch }))
 );
 const NotificationPreferences = lazy(() =>
   import("./features/notification-preferences/NotificationPreferences").then((m) => ({
@@ -129,7 +129,7 @@ export default function App() {
         <Route path="/byos-credentials" element={routeElement(<ByosCredentialEntry />)} />
         <Route path="/wallet" element={routeElement(<WalletBilling />)} />
         <Route path="/campaigns/new" element={routeElement(<CampaignBuilder />)} />
-        <Route path="/pnr" element={routeElement(<PnrSearch />)} />
+        <Route path="/pnr" element={routeElement(<PnrBookingSearch />)} />
         <Route path="/notifications" element={routeElement(<NotificationPreferences />)} />
         <Route path="/storefront" element={routeElement(<ConsultantStorefront />)} />
         <Route path="/disputes" element={routeElement(<DisputeTicketTracker />)} />

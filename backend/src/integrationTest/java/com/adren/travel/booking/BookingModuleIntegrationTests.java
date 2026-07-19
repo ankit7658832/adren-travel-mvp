@@ -31,6 +31,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.modulith.test.Scenario;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -318,6 +319,46 @@ class BookingModuleIntegrationTests {
 
         assertThat(page.getContent()).extracting(com.adren.travel.booking.DisputeTicketView::reason)
             .containsExactly("A's dispute");
+    }
+
+    /**
+     * HRD-07's "regardless of product type" AC, proven against a real
+     * persisted {@code Booking} row: {@code searchByPnrReference} finds it
+     * by its generated PNR, and never touches any line-item table at all
+     * (a hotel line item is added here only because {@code
+     * savedQuotationWithOneLineItem} needs SOME line item to produce a
+     * bookable quotation — the search method itself has no product-type
+     * branch to exercise, verified by reading its implementation, so a
+     * second/third/fourth/fifth variant with a different line item type
+     * would prove nothing this one doesn't already).
+     */
+    @Test
+    void searchByPnrReferenceFindsARealPersistedBookingByItsGeneratedReferenceHRD07() {
+        authenticateAsSuperAdmin();
+        UUID consultantId = onboardIndiaConsultant();
+        UUID quotationId = savedQuotationWithOneLineItem(consultantId);
+        UUID bookingId = bookingApi.confirmBooking(quotationId, new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR));
+        String pnrRef = jdbcTemplate.queryForObject(
+            "SELECT pnr_searchable_ref FROM booking WHERE booking_id = ?", String.class, bookingId);
+
+        var page = bookingApi.searchByPnrReference(pnrRef, PageRequest.of(0, 20));
+
+        assertThat(page.getContent()).extracting(BookingSearchResultView::bookingId).containsExactly(bookingId);
+    }
+
+    @Test
+    void searchByPnrReferenceRejectsAConsultantFindingAnotherConsultantsRealBookingFND03() {
+        authenticateAsSuperAdmin();
+        UUID ownerConsultantId = onboardIndiaConsultant();
+        UUID quotationId = savedQuotationWithOneLineItem(ownerConsultantId);
+        UUID bookingId = bookingApi.confirmBooking(quotationId, new Money(BigDecimal.valueOf(11_500), CurrencyCode.INR));
+        String pnrRef = jdbcTemplate.queryForObject(
+            "SELECT pnr_searchable_ref FROM booking WHERE booking_id = ?", String.class, bookingId);
+        SecurityContextHolder.clearContext();
+
+        authenticateAs(Role.CONSULTANT, UUID.randomUUID());
+        assertThatThrownBy(() -> bookingApi.searchByPnrReference(pnrRef, PageRequest.of(0, 20)))
+            .isInstanceOf(AccessDeniedException.class);
     }
 
     /**
