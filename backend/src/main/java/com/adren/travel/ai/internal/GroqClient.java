@@ -15,10 +15,10 @@ import java.util.concurrent.TimeoutException;
  * HotelbedsClient} etc. are for suppliers pending sandbox credentials) —
  * this module's whole purpose is validating a genuine external LLM
  * integration, so the client must actually reach Groq's API, authenticate,
- * and handle its real response/error shapes, even when {@code
- * adren.ai.groq.api-key} is a placeholder value pending a real key (see
- * this story's own commit message for what was verified against the real
- * API with a deliberately-invalid key).
+ * and handle its real response/error shapes, even when the {@link
+ * GroqApiKeyResolver}-resolved key (OPS-07) is a placeholder value pending
+ * a real key (see this story's own commit message for what was verified
+ * against the real API with a deliberately-invalid key).
  * <p>
  * Distinct exception types per failure mode (backend-best-practices §2,
  * mirroring {@code HotelbedsClient.HotelbedsRateExpiredException}) rather
@@ -33,10 +33,12 @@ class GroqClient {
 
     private final WebClient webClient;
     private final GroqProperties properties;
+    private final String apiKey;
 
-    GroqClient(WebClient.Builder webClientBuilder, GroqProperties properties) {
+    GroqClient(WebClient.Builder webClientBuilder, GroqProperties properties, GroqApiKeyResolver apiKeyResolver) {
         this.webClient = webClientBuilder.baseUrl(properties.baseUrl()).build();
         this.properties = properties;
+        this.apiKey = apiKeyResolver.resolveApiKey();
     }
 
     /**
@@ -58,7 +60,7 @@ class GroqClient {
         try {
             GroqChatCompletionResponse response = webClient.post()
                 .uri("/chat/completions")
-                .header("Authorization", "Bearer " + properties.apiKey())
+                .header("Authorization", "Bearer " + apiKey)
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(GroqChatCompletionResponse.class)

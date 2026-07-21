@@ -28,7 +28,9 @@ adren:
   ai:
     groq:
       base-url: https://api.groq.com/openai/v1
-      api-key: ${GROQ_API_KEY:}
+      # OPS-07 — no plaintext api-key property here (RULES.md S5.3):
+      # GroqApiKeyResolver resolves it from Secrets Manager (adren/ai/groq-api-key),
+      # which docker-compose.yml seeds locally from GROQ_API_KEY if set.
       model: llama-3.3-70b-versatile
       # AI-13, PRD S24.3/S9.6 — bounded per-segment timeout so a slow/hung
       # Groq call can't blow the 10-minute itinerary-build target.

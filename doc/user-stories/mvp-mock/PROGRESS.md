@@ -170,7 +170,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **OPS-04** — establish flyway migration discipline across all modules
 - [ ] **OPS-05** — wire gradlew check and npm test coverage lint into ci on every pr
 - [ ] **OPS-06** — bump the gradle build to the java 25 toolchain once available
-- [ ] **OPS-07** — configure the groq api key as a proper secret boundary
+- [x] **OPS-07** — configure the groq api key as a proper secret boundary
 - [ ] **OPS-08** — wire module documentation generation into the release checklist
 - [ ] **OPS-09** — define per environment application yml profiles
 

@@ -102,7 +102,7 @@ class AiServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        GroqProperties groqProperties = new GroqProperties("https://api.groq.com/openai/v1", "test-key",
+        GroqProperties groqProperties = new GroqProperties("https://api.groq.com/openai/v1",
             "llama-3.3-70b-versatile", 15, 2);
         service = new AiServiceImpl(groqClient, supplierSearchApi, auditLogRepository, auditLogRecorder,
             approvalRepository, adCreativeAuditLogRecorder, groqProperties, new ObjectMapper(), events);

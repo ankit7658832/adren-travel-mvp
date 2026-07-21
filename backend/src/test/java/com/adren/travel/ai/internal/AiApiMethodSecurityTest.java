@@ -72,7 +72,7 @@ class AiApiMethodSecurityTest {
 
         @Bean
         GroqProperties groqProperties() {
-            return new GroqProperties("https://api.groq.com/openai/v1", "test-key", "llama-3.3-70b-versatile", 15, 2);
+            return new GroqProperties("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", 15, 2);
         }
 
         @Bean

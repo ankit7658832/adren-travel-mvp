@@ -11,6 +11,8 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.kms.KmsClient;
 import software.amazon.awssdk.services.kms.model.CreateKeyRequest;
+import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
+import software.amazon.awssdk.services.secretsmanager.model.CreateSecretRequest;
 
 import java.net.URI;
 
@@ -66,6 +68,22 @@ public class TestInfrastructure implements ApplicationContextInitializer<Configu
             .description("adren-travel-test BYOS credential envelope key")
             .build()).keyMetadata().keyId();
         bootstrapKmsClient.close();
+
+        // OPS-07 — GroqClient is a singleton @Component eagerly wired into
+        // every full-app-context integration test, so SecretsManagerGroqApiKeyResolver
+        // needs adren/ai/groq-api-key to already exist here, the same way
+        // real local dev gets it from docker-compose.yml's localstack-groq-secret-init.
+        try (SecretsManagerClient bootstrapSecretsManagerClient = SecretsManagerClient.builder()
+            .endpointOverride(URI.create(LOCALSTACK.getEndpoint().toString()))
+            .region(Region.of(LOCALSTACK.getRegion()))
+            .credentialsProvider(StaticCredentialsProvider.create(
+                AwsBasicCredentials.create(LOCALSTACK.getAccessKey(), LOCALSTACK.getSecretKey())))
+            .build()) {
+            bootstrapSecretsManagerClient.createSecret(CreateSecretRequest.builder()
+                .name("adren/ai/groq-api-key")
+                .secretString("test-groq-key-testcontainers")
+                .build());
+        }
     }
 
     @Override

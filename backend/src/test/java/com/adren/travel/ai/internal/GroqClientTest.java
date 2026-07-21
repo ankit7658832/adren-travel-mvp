@@ -23,7 +23,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class GroqClientTest {
 
     private static final GroqProperties PROPERTIES =
-        new GroqProperties("https://api.groq.com/openai/v1", "test-key", "llama-3.3-70b-versatile", 2, 2);
+        new GroqProperties("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", 2, 2);
+    private static final GroqApiKeyResolver API_KEY_RESOLVER = () -> "test-key";
 
     @Test
     void returnsTheAssistantMessageContentFromASuccessfulCompletion() {
@@ -37,7 +38,7 @@ class GroqClientTest {
                     """)
                 .build());
         });
-        GroqClient client = new GroqClient(builder, PROPERTIES);
+        GroqClient client = new GroqClient(builder, PROPERTIES, API_KEY_RESOLVER);
 
         String result = client.chatCompletion("system prompt", "user prompt", true);
 
@@ -57,7 +58,7 @@ class GroqClientTest {
                     {"error":{"message":"Invalid API Key","type":"invalid_request_error","code":"invalid_api_key"}}
                     """)
                 .build()));
-        GroqClient client = new GroqClient(builder, PROPERTIES);
+        GroqClient client = new GroqClient(builder, PROPERTIES, API_KEY_RESOLVER);
 
         assertThatThrownBy(() -> client.chatCompletion("s", "u", true))
             .isInstanceOf(GroqClient.GroqAuthenticationException.class)
@@ -68,7 +69,7 @@ class GroqClientTest {
     void throwsAGroqRateLimitExceptionOnA429() {
         WebClient.Builder builder = WebClient.builder().exchangeFunction(request ->
             Mono.just(ClientResponse.create(HttpStatus.TOO_MANY_REQUESTS).build()));
-        GroqClient client = new GroqClient(builder, PROPERTIES);
+        GroqClient client = new GroqClient(builder, PROPERTIES, API_KEY_RESOLVER);
 
         assertThatThrownBy(() -> client.chatCompletion("s", "u", true))
             .isInstanceOf(GroqClient.GroqRateLimitException.class);
@@ -78,7 +79,7 @@ class GroqClientTest {
     void throwsAGroqApiExceptionOnA500() {
         WebClient.Builder builder = WebClient.builder().exchangeFunction(request ->
             Mono.just(ClientResponse.create(HttpStatus.INTERNAL_SERVER_ERROR).build()));
-        GroqClient client = new GroqClient(builder, PROPERTIES);
+        GroqClient client = new GroqClient(builder, PROPERTIES, API_KEY_RESOLVER);
 
         assertThatThrownBy(() -> client.chatCompletion("s", "u", true))
             .isInstanceOf(GroqClient.GroqApiException.class);
@@ -87,7 +88,7 @@ class GroqClientTest {
     @Test
     void throwsAGroqTimeoutExceptionWhenTheResponseTakesLongerThanTheConfiguredTimeoutAI13() {
         GroqProperties shortTimeout = new GroqProperties(
-            "https://api.groq.com/openai/v1", "test-key", "llama-3.3-70b-versatile", 1, 2);
+            "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", 1, 2);
         WebClient.Builder builder = WebClient.builder().exchangeFunction(request ->
             Mono.just(ClientResponse.create(HttpStatus.OK)
                     .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
@@ -96,7 +97,7 @@ class GroqClientTest {
                         """)
                     .build())
                 .delayElement(Duration.ofSeconds(3)));
-        GroqClient client = new GroqClient(builder, shortTimeout);
+        GroqClient client = new GroqClient(builder, shortTimeout, API_KEY_RESOLVER);
 
         assertThatThrownBy(() -> client.chatCompletion("s", "u", true))
             .isInstanceOf(GroqClient.GroqTimeoutException.class)
@@ -110,7 +111,7 @@ class GroqClientTest {
                 .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
                 .body("{\"choices\":[]}")
                 .build()));
-        GroqClient client = new GroqClient(builder, PROPERTIES);
+        GroqClient client = new GroqClient(builder, PROPERTIES, API_KEY_RESOLVER);
 
         assertThatThrownBy(() -> client.chatCompletion("s", "u", true))
             .isInstanceOf(GroqClient.GroqApiException.class)
