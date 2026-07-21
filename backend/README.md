@@ -40,12 +40,15 @@ docker compose up -d          # Postgres + LocalStack
 ## Testing
 
 ```bash
-./gradlew test                # unit tests + @ApplicationModuleTest slices (fast, no Docker required except for Modulith's embedded test DB)
+docker compose up -d           # required before integrationTest — see note below
+./gradlew test                 # unit tests + @ApplicationModuleTest slices (fast, no Docker required except for Modulith's embedded test DB)
 ./gradlew integrationTest      # Testcontainers-backed end-to-end tests (requires Docker)
 ./gradlew check                # both, plus module boundary verification (ModularityTests)
 ```
 
 See the `testing-strategy` Claude Code skill for the full test-tier convention.
+
+**`docker compose up -d` must already be running before `./gradlew integrationTest`.** The integration-test suite has two different infrastructure-provisioning paths that both need to be up: `*IT` classes (e.g. `CreditLimitBreachIT`) use `TestInfrastructure`, which spins up its own ephemeral Testcontainers-managed Postgres/LocalStack on random ports; `@ApplicationModuleTest` module-slice classes (e.g. `SupplierModuleIntegrationTests`) have no such bootstrap and instead connect to the *ambient* fixed-port stack (`localhost:5432`/`localhost:4566`) that `docker-compose.yml` starts. Skipping `docker compose up -d` doesn't fail loudly — it surfaces as `FlywaySqlUnableToConnectToDbException`/`ConnectException` on exactly the module-slice classes, which looks like flaky parallel-execution resource contention rather than a missing prerequisite. It isn't — start the compose stack first.
 
 ### Testcontainers on non-Docker-Desktop backends (Rancher Desktop, Colima, Lima, Podman)
 
