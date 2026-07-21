@@ -172,7 +172,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [ ] **OPS-06** — bump the gradle build to the java 25 toolchain once available
 - [x] **OPS-07** — configure the groq api key as a proper secret boundary
 - [ ] **OPS-08** — wire module documentation generation into the release checklist
-- [ ] **OPS-09** — define per environment application yml profiles
+- [x] **OPS-09** — define per environment application yml profiles
 
 ## Test Infrastructure (9)
 

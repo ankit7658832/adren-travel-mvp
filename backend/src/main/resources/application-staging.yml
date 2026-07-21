@@ -1,0 +1,17 @@
+# OPS-09 — deliberately NOT grouped with "local" (application.yml's
+# spring.profiles.group only lists dev/test): SPRING_PROFILES_ACTIVE=staging
+# gets none of application-local.yml's plaintext defaults. Every credential
+# either has no default at all (spring.datasource.*, adren.security.jwt.secret
+# — startup fails on the unresolved placeholder if the real env var isn't
+# supplied) or resolves via Secrets Manager against real AWS, since
+# adren.aws.endpoint-override stays unset here (RULES.md S5.3).
+#
+# No real staging infrastructure exists yet (mock phase) — this file is the
+# structural guarantee OPS-09's acceptance criteria ask for, not a deployed
+# environment. Whoever stands up staging supplies SPRING_DATASOURCE_URL/
+# SPRING_DATASOURCE_USERNAME/SPRING_DATASOURCE_PASSWORD/ADREN_JWT_SECRET as
+# real secrets (env vars from the deployment platform's own secret store,
+# never committed here), and adren/supplier-credentials/*, adren/ai/groq-api-key,
+# and alias/adren-byos-credentials (or whatever ADREN_KMS_KEY_ID points to)
+# must already exist in the real Secrets Manager/KMS this profile's
+# adren.aws.region resolves to.

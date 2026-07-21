@@ -1,0 +1,19 @@
+# OPS-09 — the "local Docker Compose only" plaintext exception RULES.md
+# S5.3 explicitly names (adren/adren DB user, a dev JWT secret). Activated
+# whenever SPRING_PROFILES_ACTIVE isn't explicitly set to something else
+# (application.yml's spring.profiles.default), or implicitly via the
+# "dev"/"test" profile groups — see application.yml's comment for why.
+# Never used unless "local" is actually in the active profile set.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/adren_travel
+    username: adren
+    password: adren
+
+adren:
+  security:
+    jwt:
+      secret: ${ADREN_JWT_SECRET:dev-only-secret-key-not-for-production-use-change-me-32bytes}
+  aws:
+    # LocalStack, provisioned by docker-compose.yml (OPS-01/02/03/07).
+    endpoint-override: http://localhost:4566

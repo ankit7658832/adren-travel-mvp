@@ -1,0 +1,8 @@
+# OPS-09 — the "test" profile group (application.yml: spring.profiles.group.test)
+# includes "local", so SPRING_PROFILES_ACTIVE=test alone already gets
+# application-local.yml's Docker-Compose-pointing defaults (the test tier
+# targets the same local Postgres/LocalStack docker-compose.yml starts, not
+# a separate environment) without duplicating them here. This file exists
+# as its own profile document — not merged into application-local.yml —
+# so test-tier-only config (e.g. future CI-specific tuning, OPS-05) has an
+# obvious place to live without touching what local dev/bootRun uses.

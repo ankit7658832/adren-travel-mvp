@@ -2,10 +2,27 @@ spring:
   application:
     name: adren-travel-backend
 
+  # OPS-09, RULES.md S5.3 — "local" activates whenever SPRING_PROFILES_ACTIVE
+  # isn't explicitly set (application-local.yml supplies the local-Docker-Compose
+  # plaintext defaults this base file deliberately does NOT). "dev"/"test" are
+  # profile groups over "local" so their existing single-flag activation
+  # (SPRING_PROFILES_ACTIVE=dev, SPRING_PROFILES_ACTIVE=test) keeps getting
+  # local's infra defaults without duplicating them — only "staging" (or any
+  # other real, non-local profile) is deliberately NOT grouped with "local",
+  # so it gets zero plaintext fallback and fails fast on a missing env var
+  # instead of silently reusing a dev credential.
+  profiles:
+    default: local
+    group:
+      dev: local
+      test: local
+
   datasource:
-    url: jdbc:postgresql://localhost:5432/adren_travel
-    username: adren
-    password: adren
+    # No default url/username/password here — see the group note above for
+    # why "local"/"dev"/"test" still work zero-config.
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
   jpa:
     hibernate:
       ddl-auto: validate
@@ -38,14 +55,17 @@ adren:
       max-retries: ${GROQ_MAX_RETRIES:2}
   security:
     jwt:
-      # Local/dev only default — every non-local environment MUST override this
-      # via env var per RULES.md §5.3 (never a plaintext secret outside local Compose).
-      secret: ${ADREN_JWT_SECRET:dev-only-secret-key-not-for-production-use-change-me-32bytes}
+      # OPS-09 — no plaintext default here; application-local.yml supplies
+      # one for local/dev/test. Any other profile (e.g. staging) MUST set
+      # ADREN_JWT_SECRET or startup fails on the unresolved placeholder,
+      # rather than silently reusing a dev secret (RULES.md S5.3).
+      secret: ${ADREN_JWT_SECRET}
       expiration-minutes: ${ADREN_JWT_EXPIRATION_MINUTES:60}
   aws:
-    # LocalStack endpoint for local/dev/test — point at real AWS endpoints
-    # in production by overriding this property per environment.
-    endpoint-override: http://localhost:4566
+    # OPS-09 — no endpoint-override default here (see AwsProperties'
+    # Javadoc): unset means the AWS SDK resolves the real regional
+    # endpoint via DefaultCredentialsProvider. application-local.yml points
+    # this at LocalStack for local/dev/test.
     region: ap-south-1
     # FND-12 — the CMK BYOS credentials' data keys are wrapped with. This
     # alias must exist in whichever KMS (LocalStack or real AWS) endpoint-override
