@@ -154,9 +154,18 @@ class ByosCredentialCrossTenantIT {
      * The exact call {@code SupplierAggregationService.searchHotels} makes
      * at the top of every search request — full real chain (Postgres + KMS),
      * not just {@code ByosCredentialService} in isolation. Consultant B's
-     * search resolves no credential at all here (no Adren-owned Hotelbeds
-     * credential exists in this test's Postgres either) rather than ever
-     * falling through to Consultant A's BYOS row.
+     * search must never fall through to Consultant A's BYOS row — whatever
+     * it resolves to (empty, or Adren's own Hotelbeds credential if some
+     * other test in this shared-Postgres suite happened to provision one
+     * first via {@code SupplierSecretsManagerIT}) is fine; only Consultant
+     * A's specific BYOS value would indicate a cross-tenant leak. TST-01 —
+     * this used to assert {@code isEmpty()} outright, which is only true
+     * when no Adren-owned Hotelbeds credential exists yet in this test
+     * run's shared TestInfrastructure Postgres — an assumption that broke
+     * whenever SupplierSecretsManagerIT (which provisions exactly that)
+     * happened to run first, since *IT classes share one container by
+     * design (TST-01's own scope). Fixed to assert the actual invariant
+     * this test is named for, not an incidental one.
      */
     @Test
     void credentialResolverNeverResolvesAnotherConsultantsByosCredentialDuringSearchDMC09() {
@@ -168,7 +177,8 @@ class ByosCredentialCrossTenantIT {
         SecurityContextHolder.clearContext();
 
         authenticateAs(Role.CONSULTANT, consultantB);
-        assertThat(credentialResolver.resolve(SupplierId.HOTELBEDS)).isEmpty();
+        assertThat(credentialResolver.resolve(SupplierId.HOTELBEDS))
+            .isNotEqualTo(java.util.Optional.of("consultant-a-hotelbeds-key"));
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

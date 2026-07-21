@@ -140,6 +140,21 @@ tasks.withType<Test> {
         System.getenv("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE") ?: "/var/run/docker.sock"
     )
 
+    // TST-01 — root cause of the parallel-integrationTest flakiness flagged
+    // in OPS-05/RULES.md S8: 17 @ApplicationModuleTest classes each open
+    // their own Spring context (own HikariCP pool, default max-pool-size
+    // 10) against the SAME shared Postgres (the ambient docker-compose one
+    // for module-slice tests, TestInfrastructure's ephemeral one for *IT
+    // classes) — with junit.jupiter.execution.parallel.enabled=true firing
+    // several of those contexts at once, that's up to 170/110 concurrent
+    // connections against a default max_connections=100. Fixed via headroom
+    // (docker-compose.yml / TestInfrastructure raise max_connections to
+    // 200), NOT by shrinking the per-context pool size — an earlier attempt
+    // at that broke BookingConcurrentConfirmationIT/WalletLedgerConcurrentWriteIT,
+    // which deliberately race 8 concurrent connections from a single
+    // context to test locking behavior and need real headroom within one
+    // context, not just in aggregate.
+
     // OPS-06 — JDK 25 tightened dynamic Java-agent loading (Mockito's
     // inline-mock-maker self-attaches at runtime rather than being
     // declared as a build-time -javaagent). Without this, every test run

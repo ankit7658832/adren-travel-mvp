@@ -35,7 +35,11 @@ public class TestInfrastructure implements ApplicationContextInitializer<Configu
         new PostgreSQLContainer<>(DockerImageName.parse("postgres:16-alpine"))
             .withDatabaseName("adren_travel_test")
             .withUsername("adren")
-            .withPassword("adren");
+            .withPassword("adren")
+            // TST-01 — headroom on top of (not instead of) build.gradle.kts'
+            // per-context HikariCP pool-size cap: 11 *IT classes all share
+            // this one container's connections.
+            .withCommand("postgres", "-c", "max_connections=200");
 
     static final LocalStackContainer LOCALSTACK =
         new LocalStackContainer(DockerImageName.parse("localstack/localstack:3.8"))
