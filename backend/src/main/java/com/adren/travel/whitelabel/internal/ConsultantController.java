@@ -42,8 +42,8 @@ class ConsultantController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     Map<String, UUID> onboard(@Valid @RequestBody OnboardConsultantRequest request) {
-        UUID consultantId = whitelabelApi.onboardConsultant(
-            new OnboardConsultantCommand(request.businessName(), request.homeMarket(), request.kycFields()));
+        UUID consultantId = whitelabelApi.onboardConsultant(new OnboardConsultantCommand(
+            request.businessName(), request.homeMarket(), request.kycFields(), request.email(), request.initialPassword()));
         return Map.of("consultantId", consultantId);
     }
 

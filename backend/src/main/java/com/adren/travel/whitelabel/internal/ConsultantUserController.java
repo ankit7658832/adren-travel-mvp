@@ -37,7 +37,7 @@ class ConsultantUserController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     Map<String, UUID> addUser(@Valid @RequestBody AddUserRequest request) {
-        UUID userId = whitelabelApi.addUser(new AddUserCommand(request.email(), request.displayName()));
+        UUID userId = whitelabelApi.addUser(new AddUserCommand(request.email(), request.displayName(), request.password()));
         return Map.of("userId", userId);
     }
 

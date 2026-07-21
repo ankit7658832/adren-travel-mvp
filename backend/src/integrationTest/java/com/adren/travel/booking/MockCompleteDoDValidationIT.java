@@ -177,7 +177,9 @@ class MockCompleteDoDValidationIT {
     private UUID onboardUkConsultant(String businessName, String token) {
         Map<String, Object> response = postJson("/api/v1/consultants",
             Map.of("businessName", businessName, "homeMarket", "UK", "kycFields",
-                Map.of("companiesHouseNumber", "CH12345678", "bankDetails", "SORT12-34-56/12345678")),
+                Map.of("companiesHouseNumber", "CH12345678", "bankDetails", "SORT12-34-56/12345678"),
+                "email", "owner-" + UUID.randomUUID() + "@example.com",
+                "initialPassword", "InitialPassword1!"),
             token);
         return UUID.fromString((String) response.get("consultantId"));
     }

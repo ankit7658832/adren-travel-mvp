@@ -125,7 +125,8 @@ class NotificationPreferenceIntegrationTest {
     private UUID onboardAsSuperAdmin(Market market) {
         authenticateAsSuperAdmin();
         UUID consultantId = whitelabelApi.onboardConsultant(new OnboardConsultantCommand(
-            "India Co", market, Map.of("gstRegistration", "GST1", "businessPan", "PAN1", "bankDetails", "x")));
+            "India Co", market, Map.of("gstRegistration", "GST1", "businessPan", "PAN1", "bankDetails", "x"),
+            "owner-" + UUID.randomUUID() + "@example.com", "InitialPassword1!"));
         SecurityContextHolder.clearContext();
         return consultantId;
     }

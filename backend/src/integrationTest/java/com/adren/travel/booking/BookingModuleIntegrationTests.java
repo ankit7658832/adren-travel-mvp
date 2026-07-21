@@ -590,7 +590,8 @@ class BookingModuleIntegrationTests {
     /** INDIA's required KYC fields (gstRegistration/businessPan/bankDetails per MarketKycRuleProvider) must all be present. */
     private UUID onboardIndiaConsultant() {
         return whitelabelApi.onboardConsultant(new OnboardConsultantCommand("Goa Getaways", Market.INDIA,
-            Map.of("gstRegistration", "GST123", "businessPan", "PAN123", "bankDetails", "IFSC0001/12345")));
+            Map.of("gstRegistration", "GST123", "businessPan", "PAN123", "bankDetails", "IFSC0001/12345"),
+            "owner-" + UUID.randomUUID() + "@example.com", "InitialPassword1!"));
     }
 
     private UUID savedQuotationWithOneLineItem(UUID consultantId) {

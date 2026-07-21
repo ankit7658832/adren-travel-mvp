@@ -429,7 +429,9 @@ class FullVerticalSliceEndToEndIT {
     private UUID onboardConsultant(String businessName, String homeMarket, String token) {
         Map<String, Object> response = postJson("/api/v1/consultants",
             Map.of("businessName", businessName, "homeMarket", homeMarket, "kycFields",
-                Map.of("gstRegistration", "GST123", "businessPan", "PAN123", "bankDetails", "IFSC0001/12345")),
+                Map.of("gstRegistration", "GST123", "businessPan", "PAN123", "bankDetails", "IFSC0001/12345"),
+                "email", "owner-" + UUID.randomUUID() + "@example.com",
+                "initialPassword", "InitialPassword1!"),
             token);
         return UUID.fromString((String) response.get("consultantId"));
     }

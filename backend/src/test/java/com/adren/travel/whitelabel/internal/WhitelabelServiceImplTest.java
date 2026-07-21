@@ -3,7 +3,9 @@ package com.adren.travel.whitelabel.internal;
 import com.adren.travel.security.AdrenPrincipal;
 import com.adren.travel.security.CapabilityGrantService;
 import com.adren.travel.security.CapabilityGrantService.Capability;
+import com.adren.travel.security.RegisterCredentialCommand;
 import com.adren.travel.security.Role;
+import com.adren.travel.security.SecurityApi;
 import com.adren.travel.shared.LocaleCode;
 import com.adren.travel.whitelabel.AddUserCommand;
 import com.adren.travel.whitelabel.BrandingProfileView;
@@ -65,6 +67,9 @@ class WhitelabelServiceImplTest {
     CapabilityGrantService capabilityGrantService;
 
     @Mock
+    SecurityApi securityApi;
+
+    @Mock
     ApplicationEventPublisher events;
 
     WhitelabelServiceImpl service;
@@ -72,7 +77,8 @@ class WhitelabelServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new WhitelabelServiceImpl(consultantRepository, consultantUserRepository, brandingProfileRepository,
-            brandingCache, new MarketKycRuleProvider(), new MarketLocaleProvider(), capabilityGrantService, events);
+            brandingCache, new MarketKycRuleProvider(), new MarketLocaleProvider(), capabilityGrantService, securityApi,
+            events);
     }
 
     @AfterEach
@@ -86,12 +92,19 @@ class WhitelabelServiceImplTest {
             "gstRegistration", "GST123",
             "businessPan", "PAN123",
             "bankDetails", "Bank ABC"
-        ));
+        ), "owner@testtravel.example", "InitialPassword1!");
 
         var consultantId = service.onboardConsultant(command);
 
         assertThat(consultantId).isNotNull();
         verify(consultantRepository).save(any());
+
+        ArgumentCaptor<RegisterCredentialCommand> credentialCaptor = ArgumentCaptor.forClass(RegisterCredentialCommand.class);
+        verify(securityApi).registerCredential(credentialCaptor.capture());
+        assertThat(credentialCaptor.getValue().principalUserId()).isEqualTo(consultantId);
+        assertThat(credentialCaptor.getValue().consultantId()).isEqualTo(consultantId);
+        assertThat(credentialCaptor.getValue().role()).isEqualTo(Role.CONSULTANT);
+        assertThat(credentialCaptor.getValue().email()).isEqualTo("owner@testtravel.example");
 
         ArgumentCaptor<ConsultantOnboardedEvent> captor = ArgumentCaptor.forClass(ConsultantOnboardedEvent.class);
         verify(events).publishEvent(captor.capture());
@@ -104,7 +117,7 @@ class WhitelabelServiceImplTest {
         var command = new OnboardConsultantCommand("Test Travel Co", Market.INDIA, Map.of(
             "gstRegistration", "GST123"
             // missing businessPan, bankDetails
-        ));
+        ), "owner@testtravel.example", "InitialPassword1!");
 
         assertThatThrownBy(() -> service.onboardConsultant(command))
             .isInstanceOf(IllegalArgumentException.class)
@@ -113,7 +126,7 @@ class WhitelabelServiceImplTest {
 
     @Test
     void rejectsOnboardingWhenKycFieldsIsNullEntirely() {
-        var command = new OnboardConsultantCommand("Test Travel Co", Market.DENMARK, null);
+        var command = new OnboardConsultantCommand("Test Travel Co", Market.DENMARK, null, "owner@testtravel.example", "InitialPassword1!");
 
         assertThatThrownBy(() -> service.onboardConsultant(command))
             .isInstanceOf(IllegalArgumentException.class)
@@ -131,12 +144,18 @@ class WhitelabelServiceImplTest {
         UUID consultantId = UUID.randomUUID();
         authenticateAs(Role.CONSULTANT, consultantId);
 
-        service.addUser(new AddUserCommand("staff@example.com", "Staff Member"));
+        service.addUser(new AddUserCommand("staff@example.com", "Staff Member", "StaffPassword1!"));
 
         ArgumentCaptor<ConsultantUser> captor = ArgumentCaptor.forClass(ConsultantUser.class);
         verify(consultantUserRepository).save(captor.capture());
         assertThat(captor.getValue().getConsultantId()).isEqualTo(consultantId);
         assertThat(captor.getValue().getEmail()).isEqualTo("staff@example.com");
+
+        ArgumentCaptor<RegisterCredentialCommand> credentialCaptor = ArgumentCaptor.forClass(RegisterCredentialCommand.class);
+        verify(securityApi).registerCredential(credentialCaptor.capture());
+        assertThat(credentialCaptor.getValue().principalUserId()).isEqualTo(captor.getValue().getUserId());
+        assertThat(credentialCaptor.getValue().consultantId()).isEqualTo(consultantId);
+        assertThat(credentialCaptor.getValue().role()).isEqualTo(Role.USER);
     }
 
     @Test

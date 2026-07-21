@@ -19,6 +19,10 @@ export interface OnboardConsultantInput {
   businessName: string;
   homeMarket: Market;
   kycFields: Record<string, string>;
+  // AUTH-01 — the new Consultant's own real login credential, set by the
+  // onboarding Super Admin.
+  email: string;
+  initialPassword: string;
 }
 
 /**

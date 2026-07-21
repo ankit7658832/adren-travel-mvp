@@ -78,10 +78,15 @@ describe("UserManagement", () => {
 
     fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: "staff@example.com" } });
     fireEvent.change(screen.getByLabelText(/display name/i), { target: { value: "Staff Member" } });
+    fireEvent.change(screen.getByLabelText(/initial password/i), { target: { value: "StaffPassword1!" } });
     fireEvent.click(screen.getByRole("button", { name: /add user/i }));
 
     await waitFor(() => {
-      expect(apiClient.post).toHaveBeenCalledWith("/users", { email: "staff@example.com", displayName: "Staff Member" });
+      expect(apiClient.post).toHaveBeenCalledWith("/users", {
+        email: "staff@example.com",
+        displayName: "Staff Member",
+        password: "StaffPassword1!",
+      });
     });
   });
 });

@@ -12,6 +12,8 @@ export function ConsultantOnboardingWizard() {
   const [businessName, setBusinessName] = useState("");
   const [market, setMarket] = useState<Market | null>(null);
   const [kycFieldValues, setKycFieldValues] = useState<Record<string, string>>({});
+  const [email, setEmail] = useState("");
+  const [initialPassword, setInitialPassword] = useState("");
 
   const kycRulesQuery = useKycRules(market);
   const onboardMutation = useOnboardConsultant();
@@ -26,7 +28,7 @@ export function ConsultantOnboardingWizard() {
     if (!market) {
       return;
     }
-    onboardMutation.mutate({ businessName, homeMarket: market, kycFields: kycFieldValues });
+    onboardMutation.mutate({ businessName, homeMarket: market, kycFields: kycFieldValues, email, initialPassword });
   }
 
   if (onboardMutation.isSuccess) {
@@ -77,6 +79,35 @@ export function ConsultantOnboardingWizard() {
               </option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label htmlFor="consultant-email" className="mb-1 block text-sm font-medium text-neutral-700">
+            Login email
+          </label>
+          <input
+            id="consultant-email"
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="h-10 w-full rounded-md border border-neutral-300 bg-surface px-3 text-base text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="consultant-initial-password" className="mb-1 block text-sm font-medium text-neutral-700">
+            Initial password
+          </label>
+          <input
+            id="consultant-initial-password"
+            type="password"
+            required
+            minLength={8}
+            value={initialPassword}
+            onChange={(e) => setInitialPassword(e.target.value)}
+            className="h-10 w-full rounded-md border border-neutral-300 bg-surface px-3 text-base text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          />
         </div>
 
         {market && kycRulesQuery.isLoading && (

@@ -3,6 +3,9 @@ package com.adren.travel.whitelabel.internal;
 import com.adren.travel.security.CapabilityGrantService;
 import com.adren.travel.security.CapabilityGrantService.Capability;
 import com.adren.travel.security.CurrentPrincipal;
+import com.adren.travel.security.RegisterCredentialCommand;
+import com.adren.travel.security.Role;
+import com.adren.travel.security.SecurityApi;
 import com.adren.travel.shared.LocaleCode;
 import com.adren.travel.whitelabel.AddUserCommand;
 import com.adren.travel.whitelabel.BrandingProfileView;
@@ -39,12 +42,14 @@ class WhitelabelServiceImpl implements WhitelabelApi {
     private final MarketKycRuleProvider kycRuleProvider;
     private final MarketLocaleProvider localeProvider;
     private final CapabilityGrantService capabilityGrantService;
+    private final SecurityApi securityApi;
     private final ApplicationEventPublisher events;
 
     WhitelabelServiceImpl(ConsultantRepository consultantRepository, ConsultantUserRepository consultantUserRepository,
                            BrandingProfileRepository brandingProfileRepository, BrandingCache brandingCache,
                            MarketKycRuleProvider kycRuleProvider, MarketLocaleProvider localeProvider,
-                           CapabilityGrantService capabilityGrantService, ApplicationEventPublisher events) {
+                           CapabilityGrantService capabilityGrantService, SecurityApi securityApi,
+                           ApplicationEventPublisher events) {
         this.consultantRepository = consultantRepository;
         this.consultantUserRepository = consultantUserRepository;
         this.brandingProfileRepository = brandingProfileRepository;
@@ -52,6 +57,7 @@ class WhitelabelServiceImpl implements WhitelabelApi {
         this.kycRuleProvider = kycRuleProvider;
         this.localeProvider = localeProvider;
         this.capabilityGrantService = capabilityGrantService;
+        this.securityApi = securityApi;
         this.events = events;
     }
 
@@ -71,6 +77,12 @@ class WhitelabelServiceImpl implements WhitelabelApi {
         Consultant consultant = new Consultant(consultantId, command.businessName(), command.homeMarket(), kycFields);
         consultantRepository.save(consultant);
 
+        // AUTH-01 — the onboarding Super Admin sets the new Consultant's own
+        // real login credential in the same transaction; a Consultant with
+        // no credential row could never log in at all.
+        securityApi.registerCredential(new RegisterCredentialCommand(
+            consultantId, command.email(), command.initialPassword(), Role.CONSULTANT, consultantId));
+
         events.publishEvent(new ConsultantOnboardedEvent(consultantId, command.homeMarket()));
         return consultantId;
     }
@@ -87,6 +99,8 @@ class WhitelabelServiceImpl implements WhitelabelApi {
         UUID userId = UUID.randomUUID();
         ConsultantUser user = new ConsultantUser(userId, consultantId, command.email(), command.displayName());
         consultantUserRepository.save(user);
+        securityApi.registerCredential(
+            new RegisterCredentialCommand(userId, command.email(), command.password(), Role.USER, consultantId));
         return userId;
     }
 

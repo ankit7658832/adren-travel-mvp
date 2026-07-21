@@ -99,7 +99,8 @@ class NotificationRegionRoutingIntegrationTest {
         startCapturing();
         authenticateAsSuperAdmin();
         UUID consultantId = whitelabelApi.onboardConsultant(new OnboardConsultantCommand(
-            "Dubai Co", Market.DUBAI_UAE, Map.of("dtcmTradeLicense", "DTCM1", "bankDetails", "x")));
+            "Dubai Co", Market.DUBAI_UAE, Map.of("dtcmTradeLicense", "DTCM1", "bankDetails", "x"),
+            "owner-" + UUID.randomUUID() + "@example.com", "InitialPassword1!"));
         UUID quotationId = insertQuotationForANewDraftItinerary(consultantId);
 
         scenario.stimulate(() -> bookingApi.confirmBooking(quotationId, new Money(BigDecimal.valueOf(1000), CurrencyCode.INR)))
@@ -116,7 +117,8 @@ class NotificationRegionRoutingIntegrationTest {
         startCapturing();
         authenticateAsSuperAdmin();
         UUID consultantId = whitelabelApi.onboardConsultant(new OnboardConsultantCommand(
-            "UK Co", Market.UK, Map.of("companiesHouseNumber", "CH1", "bankDetails", "x")));
+            "UK Co", Market.UK, Map.of("companiesHouseNumber", "CH1", "bankDetails", "x"),
+            "owner-" + UUID.randomUUID() + "@example.com", "InitialPassword1!"));
         UUID quotationId = insertQuotationForANewDraftItinerary(consultantId);
 
         scenario.stimulate(() -> bookingApi.confirmBooking(quotationId, new Money(BigDecimal.valueOf(1000), CurrencyCode.INR)))

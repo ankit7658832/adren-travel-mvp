@@ -1,6 +1,8 @@
 # MVP-Mock Story Progress
 
-Tracks all 149 mock-phase stories across 10 epics. Checked = story fully implemented, tested, acceptance criteria verified, and committed.
+Tracks all 151 mock-phase stories across 10 epics. Checked = story fully implemented, tested, acceptance criteria verified, and committed.
+
+**2026-07-21 (Stage 10):** added `HRD-14`/`HRD-15` — two gaps identified during the mock-complete Definition of Done walkthrough (`doc/phases.md` §5): no login screen or real credential-checked login endpoint existed anywhere (every prior stage relied on the local-dev-only `DevAuthController` shortcut), and `BOK-13`'s frontend was left a placeholder. See each file's frontmatter for dependency wiring.
 
 **2026-07-16 (Stage 3, Step B):** added `BOK-21`–`BOK-27` (STUBA/TBO/Transferz/Widgety/HBActivities client stubs, a circuit-breaker story, and a static-content sync/caching story) — a gap identified in Stage 2's report: BOK-20 and HRD-12 already referenced `StubaClient`/`TboClient`/content-sync as if they existed, but no story ever built them. See each file's frontmatter for dependency wiring; `BOK-20` and `HRD-12` were updated to depend on the new stories.
 
@@ -133,7 +135,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **ADS-14** — define ad spend billing model per settlement currency
 - [x] **ADS-15** — apply brand safety policy template guardrails to campaign submissions
 
-## Hardening (13)
+## Hardening (15)
 
 - [x] **HRD-01** — implement notification dispatch for email plus region configurable secondary channel
 - [x] **HRD-02** — wire all prd 15 notification trigger events
@@ -148,6 +150,8 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **HRD-11** — build the super admin dashboard
 - [x] **HRD-12** — tune inventory sync batch cadence per supplier
 - [x] **HRD-13** — alert super admin on inventory sync staleness beyond threshold
+- [ ] **HRD-14** — implement a real credential checked login screen and endpoint
+- [ ] **HRD-15** — build the direct booking payment flow frontend completing bok 13
 
 ## Frontend Shell (10)
 
@@ -187,4 +191,4 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **TST-09** — build an ai governance audit log test harness asserting the 100 logged invariant
 
 ---
-Total: 149 stories.
+Total: 151 stories.

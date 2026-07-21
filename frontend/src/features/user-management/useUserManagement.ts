@@ -32,7 +32,8 @@ export function useUserManagement() {
 export function useAddUser() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { email: string; displayName: string }) => {
+    // AUTH-01 — password is the new User's real login credential.
+    mutationFn: async (input: { email: string; displayName: string; password: string }) => {
       const { data } = await apiClient.post<{ userId: string }>("/users", input);
       return data;
     },

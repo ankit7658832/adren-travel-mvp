@@ -62,7 +62,7 @@ class WhitelabelModuleIntegrationTests {
     @Test
     void onboardingAConsultantPublishesConsultantOnboardedEvent(Scenario scenario) {
         authenticateAs(Role.SUPER_ADMIN);
-        var command = new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x"));
+        var command = new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x"), uniqueEmail(), "InitialPassword1!");
 
         scenario.stimulate(() -> whitelabelApi.onboardConsultant(command))
             .andWaitForEventOfType(ConsultantOnboardedEvent.class)
@@ -72,7 +72,7 @@ class WhitelabelModuleIntegrationTests {
     @Test
     void aConsultantPrincipalCannotOnboardAnotherConsultant() {
         authenticateAs(Role.CONSULTANT);
-        var command = new OnboardConsultantCommand("Test Co", Market.INDIA, Map.of());
+        var command = new OnboardConsultantCommand("Test Co", Market.INDIA, Map.of(), uniqueEmail(), "InitialPassword1!");
 
         assertThatThrownBy(() -> whitelabelApi.onboardConsultant(command))
             .isInstanceOf(AccessDeniedException.class);
@@ -85,10 +85,10 @@ class WhitelabelModuleIntegrationTests {
         // unlike the pure-authorization tests above.
         authenticateAs(Role.SUPER_ADMIN, null);
         UUID consultantId = whitelabelApi.onboardConsultant(
-            new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x")));
+            new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x"), uniqueEmail(), "InitialPassword1!"));
 
         authenticateAs(Role.CONSULTANT, consultantId);
-        UUID userId = whitelabelApi.addUser(new AddUserCommand("staff@example.com", "Staff"));
+        UUID userId = whitelabelApi.addUser(new AddUserCommand(uniqueEmail(), "Staff", "StaffPassword1!"));
 
         var page = whitelabelApi.findUsersByConsultant(PageRequest.of(0, 20));
         assertThat(page.getContent()).extracting(ConsultantUserView::userId).contains(userId);
@@ -98,7 +98,7 @@ class WhitelabelModuleIntegrationTests {
     void updatingBrandingPublishesBrandingUpdatedEvent(Scenario scenario) {
         authenticateAs(Role.SUPER_ADMIN, null);
         UUID consultantId = whitelabelApi.onboardConsultant(
-            new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x")));
+            new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x"), uniqueEmail(), "InitialPassword1!"));
         // branding_profile.domain is UNIQUE and this local Postgres persists
         // across test runs (unlike Testcontainers) — a fixed literal here
         // would collide with a previous run's row.
@@ -126,7 +126,7 @@ class WhitelabelModuleIntegrationTests {
     void aSecondBrandingSaveIsVisibleOnTheNextReadWithoutWaitingForTheCacheTtlFND07() {
         authenticateAs(Role.SUPER_ADMIN, null);
         UUID consultantId = whitelabelApi.onboardConsultant(
-            new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x")));
+            new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x"), uniqueEmail(), "InitialPassword1!"));
         String firstDomain = uniqueDomain();
         String secondDomain = uniqueDomain();
         whitelabelApi.updateBranding(new UpdateBrandingCommand(consultantId, "https://cdn/logo.png", null,
@@ -158,7 +158,7 @@ class WhitelabelModuleIntegrationTests {
     void aConsultantCanChangeTheirOwnPreferredLocaleToOneOfferedForTheirMarket() {
         authenticateAs(Role.SUPER_ADMIN, null);
         UUID consultantId = whitelabelApi.onboardConsultant(
-            new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x")));
+            new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x"), uniqueEmail(), "InitialPassword1!"));
 
         authenticateAs(Role.CONSULTANT, consultantId);
         assertThat(whitelabelApi.availableLocalesFor(Market.DENMARK)).contains(com.adren.travel.shared.LocaleCode.DA);
@@ -169,7 +169,7 @@ class WhitelabelModuleIntegrationTests {
     void theRealCorsConfigurationSourceAllowsAMappedDomainAndRejectsAnUnmappedOneFND08() {
         authenticateAs(Role.SUPER_ADMIN, null);
         UUID consultantId = whitelabelApi.onboardConsultant(
-            new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x")));
+            new OnboardConsultantCommand("Test Co", Market.DENMARK, Map.of("cvrRegistrationNumber", "CVR1", "bankDetails", "x"), uniqueEmail(), "InitialPassword1!"));
         String domain = uniqueDomain();
         whitelabelApi.updateBranding(new UpdateBrandingCommand(consultantId, "https://cdn/logo.png", null,
             "#FFFFFF", "#000000", "#111111", domain));
@@ -191,6 +191,11 @@ class WhitelabelModuleIntegrationTests {
     /** branding_profile.domain is UNIQUE and this local Postgres persists across test runs. */
     private static String uniqueDomain() {
         return "consultant-" + UUID.randomUUID() + ".example.com";
+    }
+
+    /** principal_credential.email is UNIQUE and this local Postgres persists across test runs. */
+    private static String uniqueEmail() {
+        return "owner-" + UUID.randomUUID() + "@example.com";
     }
 
     private static void authenticateAs(Role role) {

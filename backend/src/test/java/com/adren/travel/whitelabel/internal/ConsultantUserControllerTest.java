@@ -54,7 +54,7 @@ class ConsultantUserControllerTest {
 
         mockMvc.perform(post("/api/v1/users")
                 .contentType("application/json")
-                .content("{\"email\": \"staff@example.com\", \"displayName\": \"Staff\"}"))
+                .content("{\"email\": \"staff@example.com\", \"displayName\": \"Staff\", \"password\": \"StaffPassword1!\"}"))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.userId").value(userId.toString()));
     }
@@ -63,7 +63,7 @@ class ConsultantUserControllerTest {
     void rejectsAnInvalidEmail() throws Exception {
         mockMvc.perform(post("/api/v1/users")
                 .contentType("application/json")
-                .content("{\"email\": \"not-an-email\", \"displayName\": \"Staff\"}"))
+                .content("{\"email\": \"not-an-email\", \"displayName\": \"Staff\", \"password\": \"StaffPassword1!\"}"))
             .andExpect(status().isBadRequest());
     }
 
@@ -73,7 +73,7 @@ class ConsultantUserControllerTest {
 
         mockMvc.perform(post("/api/v1/users")
                 .contentType("application/json")
-                .content("{\"email\": \"not-an-email\", \"displayName\": \"Staff\"}"))
+                .content("{\"email\": \"not-an-email\", \"displayName\": \"Staff\", \"password\": \"StaffPassword1!\"}"))
             .andExpect(status().isBadRequest())
             .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
             .andExpect(jsonPath("$.type").value("https://docs.adren.travel/errors/validation-failed"))

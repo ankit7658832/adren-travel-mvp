@@ -489,7 +489,8 @@ class AdsModuleIntegrationTests {
         // (every other test's consultantId) fails whitelabel's own lookup.
         authenticateAs(Role.SUPER_ADMIN, null);
         UUID consultantId = whitelabelApi.onboardConsultant(new OnboardConsultantCommand("Goa Getaways", Market.INDIA,
-            Map.of("gstRegistration", "GST123", "businessPan", "PAN123", "bankDetails", "IFSC0001/12345")));
+            Map.of("gstRegistration", "GST123", "businessPan", "PAN123", "bankDetails", "IFSC0001/12345"),
+            "owner-" + UUID.randomUUID() + "@example.com", "InitialPassword1!"));
         UUID packageId = seedPackage(consultantId, "Goa Beach Escape", "PUBLISHED");
         authenticateAs(Role.CONSULTANT, consultantId);
         AdCampaignView created = adsApi.createCampaign(new CreateCampaignCommand(packageId));

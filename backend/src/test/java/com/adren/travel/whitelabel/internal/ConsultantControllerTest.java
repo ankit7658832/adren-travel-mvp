@@ -55,7 +55,8 @@ class ConsultantControllerTest {
     void rejectsAnOnboardingRequestMissingABusinessName() throws Exception {
         mockMvc.perform(post("/api/v1/consultants")
                 .contentType("application/json")
-                .content("{\"homeMarket\": \"INDIA\", \"kycFields\": {}}"))
+                .content("{\"homeMarket\": \"INDIA\", \"kycFields\": {}, "
+                    + "\"email\": \"owner@testco.example\", \"initialPassword\": \"InitialPassword1!\"}"))
             .andExpect(status().isBadRequest());
     }
 
@@ -65,7 +66,8 @@ class ConsultantControllerTest {
 
         mockMvc.perform(post("/api/v1/consultants")
                 .contentType("application/json")
-                .content("{\"homeMarket\": \"INDIA\", \"kycFields\": {}}"))
+                .content("{\"homeMarket\": \"INDIA\", \"kycFields\": {}, "
+                    + "\"email\": \"owner@testco.example\", \"initialPassword\": \"InitialPassword1!\"}"))
             .andExpect(status().isBadRequest())
             .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
             .andExpect(jsonPath("$.type").value("https://docs.adren.travel/errors/validation-failed"))
@@ -81,7 +83,8 @@ class ConsultantControllerTest {
         mockMvc.perform(post("/api/v1/consultants")
                 .contentType("application/json")
                 .content("{\"businessName\": \"Test Co\", \"homeMarket\": \"INDIA\", "
-                    + "\"kycFields\": {\"gstRegistration\": \"GST1\"}}"))
+                    + "\"kycFields\": {\"gstRegistration\": \"GST1\"}, "
+                    + "\"email\": \"owner@testco.example\", \"initialPassword\": \"InitialPassword1!\"}"))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.consultantId").value(consultantId.toString()));
     }

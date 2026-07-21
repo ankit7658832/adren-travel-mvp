@@ -11,6 +11,7 @@ import { useAddUser, useSetUserCapability, useUserManagement } from "./useUserMa
 export function UserManagement() {
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [password, setPassword] = useState("");
   const usersQuery = useUserManagement();
   const addUserMutation = useAddUser();
   const setCapabilityMutation = useSetUserCapability();
@@ -18,8 +19,8 @@ export function UserManagement() {
   function handleAddUser(e: FormEvent) {
     e.preventDefault();
     addUserMutation.mutate(
-      { email, displayName },
-      { onSuccess: () => { setEmail(""); setDisplayName(""); } }
+      { email, displayName, password },
+      { onSuccess: () => { setEmail(""); setDisplayName(""); setPassword(""); } }
     );
   }
 
@@ -50,6 +51,20 @@ export function UserManagement() {
             required
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
+            className="h-10 w-full rounded-md border border-neutral-300 bg-surface px-3 text-base text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
+          />
+        </div>
+        <div className="flex-1">
+          <label htmlFor="user-password" className="mb-1 block text-sm font-medium text-neutral-700">
+            Initial password
+          </label>
+          <input
+            id="user-password"
+            type="password"
+            required
+            minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             className="h-10 w-full rounded-md border border-neutral-300 bg-surface px-3 text-base text-neutral-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2"
           />
         </div>

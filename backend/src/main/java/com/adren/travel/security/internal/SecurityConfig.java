@@ -6,6 +6,8 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.session.DisableEncodeUrlFilter;
@@ -48,7 +50,12 @@ class SecurityConfig {
         // — the bean doesn't exist at all outside that profile, so this
         // path 404s as an ordinary unmapped route everywhere else; listing
         // it here permitAll never bypasses auth on any real endpoint).
-        "/dev-auth/**"
+        "/dev-auth/**",
+        // AUTH-01 — the real login endpoint must itself be reachable
+        // without a bearer token; it verifies the submitted password and
+        // mints one, same shape as every other public-endpoint exception
+        // in this list.
+        "/api/v1/auth/login"
     };
 
     @Bean
@@ -95,5 +102,12 @@ class SecurityConfig {
     @Bean
     RestAccessDeniedHandler restAccessDeniedHandler(ObjectMapper objectMapper) {
         return new RestAccessDeniedHandler(objectMapper);
+    }
+
+    // AUTH-01 — the one PasswordEncoder for every password this app ever
+    // hashes or checks (SecurityApiImpl on write, AuthController on login).
+    @Bean
+    PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
     }
 }

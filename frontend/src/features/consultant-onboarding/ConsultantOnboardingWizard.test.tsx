@@ -132,6 +132,8 @@ describe("ConsultantOnboardingWizard", () => {
 
     fireEvent.change(screen.getByLabelText(/business name/i), { target: { value: "Test Co" } });
     fireEvent.change(screen.getByLabelText(/home market/i), { target: { value: "INDIA" } });
+    fireEvent.change(screen.getByLabelText(/login email/i), { target: { value: "owner@testco.example" } });
+    fireEvent.change(screen.getByLabelText(/initial password/i), { target: { value: "InitialPassword1!" } });
 
     await waitFor(() => expect(screen.getByLabelText(/gst registration/i)).toBeInTheDocument());
     fireEvent.change(screen.getByLabelText(/gst registration/i), { target: { value: "GST1" } });
@@ -144,6 +146,8 @@ describe("ConsultantOnboardingWizard", () => {
       businessName: "Test Co",
       homeMarket: "INDIA",
       kycFields: { gstRegistration: "GST1" },
+      email: "owner@testco.example",
+      initialPassword: "InitialPassword1!",
     });
   });
 });
