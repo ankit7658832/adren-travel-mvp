@@ -7,6 +7,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.LocalDate;
 
+import static com.adren.travel.supplier.SupplierSearchResultContractAssertions.assertConformsToNormalizedContract;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -19,8 +20,10 @@ class TboClientTest {
     void searchReturnsNormalizedResultsTaggedTbo() {
         TboClient.TboSearchResponse response = client.search("BOM", LocalDate.now(), LocalDate.now().plusDays(3), null);
 
-        assertThat(response.results()).isNotEmpty();
         assertThat(response.results()).allSatisfy(result -> assertThat(result.supplierId()).isEqualTo(SupplierId.TBO));
+        // TST-08 — same shared contract check HotelbedsClientTest applies;
+        // proves the harness isn't Hotelbeds-specific.
+        assertConformsToNormalizedContract(response.results());
     }
 
     @Test
