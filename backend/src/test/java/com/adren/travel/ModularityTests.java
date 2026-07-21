@@ -4,6 +4,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.modulith.core.ApplicationModules;
 import org.springframework.modulith.docs.Documenter;
 
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
 /**
  * Architecture test — fails the build if any module reaches into another
  * module's {@code .internal} package, or if a cyclic dependency between
@@ -22,6 +28,32 @@ class ModularityTests {
     @Test
     void moduleBoundariesAreRespected() {
         MODULES.verify();
+    }
+
+    /**
+     * TST-02 — {@code ApplicationModules.of(...)} scans the compiled
+     * package structure itself, not a hand-maintained module list, so
+     * {@code moduleBoundariesAreRespected()} above automatically starts
+     * covering a module the moment it moves past a package-info-only stub —
+     * no test file needs editing when that happens. This regression test
+     * proves that mechanism actually covers every module with real content
+     * as of today (every module except {@code compliance}, still a
+     * package-info stub — PRD Section 17 is out of mock-phase scope
+     * entirely, no {@code CMP-*}-equivalent mock story exists), so a
+     * silent gap (a module quietly never getting scanned) would show up
+     * here as a regression, not go unnoticed.
+     */
+    @Test
+    void everyModuleWithRealContentIsAutoDiscoveredWithNoManualListToMaintain() {
+        Set<String> discoveredModuleNames = StreamSupport.stream(MODULES.spliterator(), false)
+            .map(module -> module.getIdentifier().toString())
+            .collect(Collectors.toSet());
+
+        Set<String> modulesWithRealContent = Set.of(
+            "ads", "ai", "booking", "dashboard", "notification",
+            "payments", "security", "shared", "supplier", "whitelabel");
+
+        assertThat(discoveredModuleNames).containsAll(modulesWithRealContent);
     }
 
     @Test

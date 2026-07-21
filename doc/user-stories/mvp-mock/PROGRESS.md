@@ -177,7 +177,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 ## Test Infrastructure (9)
 
 - [x] **TST-01** — extend the testcontainers base infrastructure for new modules
-- [ ] **TST-02** — extend modularitytests coverage as stub modules become real
+- [x] **TST-02** — extend modularitytests coverage as stub modules become real
 - [ ] **TST-03** — scaffold playwright e2e specs for flow b and flow c journeys
 - [ ] **TST-04** — wire msw into the frontend test setup for realistic api mocking
 - [ ] **TST-05** — raise vitest coverage thresholds as real feature coverage grows
