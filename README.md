@@ -24,6 +24,10 @@ npm install
 npm run dev
 ```
 
+## Continuous integration
+
+`.github/workflows/ci.yml` (OPS-05) runs `./gradlew check` and `npm run test:coverage` + `npm run lint` on every PR — see `doc/architecture/RULES.md` §8 for what that covers and a known pre-existing `integrationTest` flakiness gap (`TST-01`'s scope, not introduced by CI wiring itself).
+
 ## Claude Code skills
 
 Three skills live in `.claude/skills/` and load automatically when Claude

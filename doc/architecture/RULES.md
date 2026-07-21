@@ -292,6 +292,8 @@ No `ErrorBoundary` component exists anywhere in the codebase, and `main.tsx`'s p
 
 Copy the relevant block into a PR description, or use this as a reviewer's pass/fail list. Not every item applies to every PR — say so explicitly rather than silently skipping.
 
+**Automated (OPS-05):** `.github/workflows/ci.yml` runs `./gradlew check` (backend — unit tests, `integrationTest`, `ModularityTests`, OPS-04's `verifyMigrationDiscipline`) and `npm run test:coverage` + `npm run lint` (frontend) on every PR. This makes the checks run and report status; it does **not** by itself block a merge on a red check — that additionally needs a one-time GitHub branch-protection rule (Settings → Branches → require status checks: `backend`, `frontend`) that only a repo admin can set, not something a workflow file can express. **Known gap the CI job will currently surface, not introduce:** the `integrationTest` tier has pre-existing flakiness under full-suite parallel execution — several `@ApplicationModuleTest`/`*IT` classes intermittently fail with Postgres connection errors when many Testcontainers-backed Spring contexts start concurrently (confirmed non-deterministic: the specific failing classes vary run to run, and each passes cleanly in isolation). This is `TST-01`'s scope ("extend the Testcontainers base infrastructure for new modules"), deliberately not fixed here — flagging so a red CI run isn't mistaken for a regression in the PR that triggered it before `TST-01` lands.
+
 **Module boundaries (backend)**
 - [ ] No import reaches into another module's `.internal` package.
 - [ ] Any new public class beyond `<Module>Api`/`event` is deliberate and named-interfaced, not accidental surface growth.

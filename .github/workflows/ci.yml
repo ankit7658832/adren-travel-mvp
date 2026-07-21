@@ -1,0 +1,85 @@
+name: CI
+
+# OPS-05, PRD S8 PR/Code Review Checklist — every PR runs the full backend
+# (./gradlew check, which already depends on integrationTest and OPS-04's
+# verifyMigrationDiscipline) and frontend (npm run test:coverage, npm run
+# lint) gates. This file makes the checks run and report status on every
+# PR; it does NOT by itself block merging on a red check — that additionally
+# requires a one-time GitHub branch-protection rule (Settings > Branches >
+# require status checks: "backend", "frontend") that only a repo admin can
+# set, and isn't something this workflow file can express. Flagged here
+# rather than silently assumed done.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # verifyMigrationDiscipline (OPS-04) diffs migrations against
+          # origin/main — needs real history, not a shallow clone.
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      # OPS-01/02/03/07's docker-compose.yml is the single source of truth
+      # for local infra provisioning — reused as-is here rather than
+      # duplicating service/init-container definitions in this workflow.
+      - name: Start local infra (Postgres + LocalStack)
+        run: docker compose up -d
+
+      - name: Wait for LocalStack and its init containers
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4566/_localstack/health && break
+            sleep 2
+          done
+          docker compose logs localstack-kms-init localstack-supplier-secrets-init \
+            localstack-s3-buckets-init localstack-groq-secret-init
+
+      - name: ./gradlew check
+        run: ./gradlew check --no-daemon
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: backend/build/reports/tests
+          retention-days: 7
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:coverage
