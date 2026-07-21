@@ -31,6 +31,17 @@ import java.util.UUID;
 @Component
 public class TboClient {
 
+    /**
+     * TST-06 — a stub can't call a real TBO sandbox/production endpoint to
+     * observe a genuine session expiry (PRD §23.2 Edge Case #4, §25 T19), so
+     * this sentinel lets a production-shaped test fixture deterministically
+     * trigger {@link TboTraceIdExpiredException} without changing behavior
+     * for every other (sandbox-shaped) traceId. Replace this simulation with
+     * the real TBO expiry response once sandbox credentials exist — the
+     * {@code search} contract (throws on expiry) should not change.
+     */
+    public static final String PRODUCTION_FIXTURE_EXPIRED_TRACE_ID = "tbo-production-fixture-expired-trace-id";
+
     private final WebClient webClient;
 
     public TboClient(WebClient.Builder webClientBuilder) {
@@ -45,6 +56,9 @@ public class TboClient {
      *         never a partial retry with the same TraceId.
      */
     public TboSearchResponse search(String locationCode, LocalDate checkIn, LocalDate checkOut, String traceId) {
+        if (PRODUCTION_FIXTURE_EXPIRED_TRACE_ID.equals(traceId)) {
+            throw new TboTraceIdExpiredException(traceId);
+        }
         // TODO: real call — pass locationCode/checkIn/checkOut plus traceId
         // (or request a new one if null) to TBO's search API, mapping
         // HotelCode/ResultIndex/DayRates per §10.2.3's field-mapping table.

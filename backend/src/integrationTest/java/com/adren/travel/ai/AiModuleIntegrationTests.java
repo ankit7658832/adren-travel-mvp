@@ -149,7 +149,16 @@ class AiModuleIntegrationTests {
         assertThat(row.get("ai_output_json")).isNull();
     }
 
+    /**
+     * TST-06, PRD S23.2 Edge Case #4 / S25 T20 — a Mystifly-shaped fare
+     * expiring between search and payment is exactly this "price still
+     * matches at booking time" vs "price changed" pair; supplierId here is
+     * Hotelbeds (the client that's actually unmocked in this slice), but
+     * the revalidation mechanism this proves is supplier-agnostic. This
+     * test is the sandbox-shaped (fare unchanged) half of that pair.
+     */
     @Test
+    @org.junit.jupiter.api.Tag("supplier-sandbox-fixture")
     void revalidateAiPricingAtBookingConfirmsAgainstTheRealStubSupplierLivePriceAI09() {
         UUID consultantId = UUID.randomUUID();
         UUID itineraryId = UUID.randomUUID();
@@ -169,7 +178,9 @@ class AiModuleIntegrationTests {
         assertThat(result).isInstanceOf(PricingConfirmed.class);
     }
 
+    /** TST-06, PRD S23.2 Edge Case #4 / S25 T20 — the production-shaped (fare changed) half of the pair above. */
     @Test
+    @org.junit.jupiter.api.Tag("supplier-production-fixture")
     void revalidateAiPricingAtBookingDetectsAGenuineLivePriceMismatchAgainstTheRealSupplierAI09() {
         UUID consultantId = UUID.randomUUID();
         UUID itineraryId = UUID.randomUUID();

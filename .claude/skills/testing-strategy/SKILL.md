@@ -23,7 +23,7 @@ Mechanics and tier selection. For *what must be true* about the code under test 
 ./gradlew check                # both, plus ModularityTests boundary verification
 ```
 
-Supplier integration tests: per PRD §23.2 Edge Case #4, sandbox and production supplier environments can behave differently (Hotelbeds/TBO specifically called out) — when a real supplier client replaces a stub, its integration tests should run against both sandbox and (where safely possible) production-like fixtures, flagged separately in CI rather than assumed equivalent.
+Supplier integration tests: per PRD §23.2 Edge Case #4, sandbox and production supplier environments can behave differently (Hotelbeds/TBO specifically called out) — when a real supplier client replaces a stub, its integration tests should run against both sandbox and (where safely possible) production-like fixtures, flagged separately in CI rather than assumed equivalent. Mechanism (TST-06): tag the always-succeeds test `@Tag("supplier-sandbox-fixture")` and the documented-quirk one (session/fare expiry, etc.) `@Tag("supplier-production-fixture")` — `./gradlew supplierSandboxFixtureTests`/`supplierProductionFixtureTests` run each tag across both the `test` and `integrationTest` source sets, wired as two separate CI jobs (`.github/workflows/ci.yml`). `TboClient.PRODUCTION_FIXTURE_EXPIRED_TRACE_ID` is the pattern for simulating a documented quirk from a stub that has no real sandbox/production endpoint to observe yet — a sentinel input value the stub recognizes, not a behavior change for real inputs.
 
 ## Frontend — two tiers
 

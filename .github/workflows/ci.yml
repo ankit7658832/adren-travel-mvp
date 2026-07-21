@@ -66,6 +66,59 @@ jobs:
           path: backend/build/reports/tests
           retention-days: 7
 
+  # TST-06, PRD S23.2 Edge Case #4 / S25 T19-T20 — sandbox and production
+  # supplier environments are documented to behave differently (Hotelbeds/TBO
+  # specifically). These two jobs are ALREADY exercised as part of the
+  # `backend` job's ./gradlew check (supplierSandboxFixtureTests/
+  # supplierProductionFixtureTests aren't wired into `check` itself, so this
+  # is their only run) — kept as separate jobs, not steps, so a
+  # sandbox-shaped regression and a production-shaped one show up as two
+  # distinctly-named, separately-flagged checks on a PR, never assumed
+  # equivalent just because "the backend job passed."
+  supplier-sandbox-fixtures:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+      - name: Start local infra (Postgres + LocalStack)
+        run: docker compose up -d
+      - name: Wait for LocalStack and its init containers
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4566/_localstack/health && break
+            sleep 2
+          done
+      - run: ./gradlew supplierSandboxFixtureTests --no-daemon
+
+  supplier-production-fixtures:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+      - name: Start local infra (Postgres + LocalStack)
+        run: docker compose up -d
+      - name: Wait for LocalStack and its init containers
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4566/_localstack/health && break
+            sleep 2
+          done
+      - run: ./gradlew supplierProductionFixtureTests --no-daemon
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

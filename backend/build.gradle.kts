@@ -192,6 +192,41 @@ tasks.register<Test>("integrationTest") {
     shouldRunAfter(tasks.test)
 }
 
+// TST-06, PRD S23.2 Edge Case #4 / S25 T19-T20 — sandbox and production
+// supplier environments are documented to behave differently (Hotelbeds/TBO
+// specifically). Real production fixtures are stubbed/synthetic in MVP
+// (real production access is Phase 2's SUP-* epic), so these two tasks
+// separate the ALWAYS-SUCCEEDS supplier-client tests (@Tag
+// "supplier-sandbox-fixture") from the documented-quirk ones (@Tag
+// "supplier-production-fixture" — TBO TraceId expiry mid-build, Mystifly-
+// shaped stale-fare detection) across BOTH the test and integrationTest
+// source sets, reported as two distinct, separately-flagged CI jobs rather
+// than assumed equivalent.
+val supplierFixtureTestClasspath = sourceSets["test"].runtimeClasspath + sourceSets["integrationTest"].runtimeClasspath
+val supplierFixtureTestClassesDirs = sourceSets["test"].output.classesDirs + sourceSets["integrationTest"].output.classesDirs
+
+tasks.register<Test>("supplierSandboxFixtureTests") {
+    description = "TST-06: supplier client tests against sandbox-shaped fixtures (stable session/fare, no expiry)."
+    group = "verification"
+    testClassesDirs = supplierFixtureTestClassesDirs
+    classpath = supplierFixtureTestClasspath
+    useJUnitPlatform {
+        includeTags("supplier-sandbox-fixture")
+    }
+    shouldRunAfter(tasks.test, tasks.named("integrationTest"))
+}
+
+tasks.register<Test>("supplierProductionFixtureTests") {
+    description = "TST-06: supplier client tests against production-shaped fixtures (TBO TraceId expiry T19, stale-fare detection T20)."
+    group = "verification"
+    testClassesDirs = supplierFixtureTestClassesDirs
+    classpath = supplierFixtureTestClasspath
+    useJUnitPlatform {
+        includeTags("supplier-production-fixture")
+    }
+    shouldRunAfter(tasks.test, tasks.named("integrationTest"))
+}
+
 // OPS-08 — release-checklist step: ModularityTests.writeModuleDocumentation()
 // (run as part of ./gradlew test, no separate wiring needed for generation
 // itself) regenerates PlantUML module diagrams under build/spring-modulith-docs
