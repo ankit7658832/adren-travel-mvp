@@ -30,13 +30,18 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
-      // Keep an explicit floor so coverage can't silently regress —
-      // raise these as real feature coverage grows past the scaffold stage.
+      // TST-05 — raised from the original scaffold-stage floor (70/70/60/70)
+      // now that real feature coverage has grown well past it (measured
+      // 90.68/82.14/89.9/90.68 lines/functions/branches/statements as of
+      // this review). Set a few points below the measured figures, not
+      // flush against them, so a normal PR has headroom rather than
+      // immediately tripping the gate — see RULES.md S8 for the recurring
+      // review checkpoint this threshold should keep pace with.
       thresholds: {
-        lines: 70,
-        functions: 70,
-        branches: 60,
-        statements: 70,
+        lines: 85,
+        functions: 78,
+        branches: 85,
+        statements: 85,
       },
     },
   },

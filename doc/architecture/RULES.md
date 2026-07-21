@@ -338,6 +338,8 @@ Copy the relevant block into a PR description, or use this as a reviewer's pass/
 - [ ] New interactive elements are keyboard-operable with associated labels and appropriate ARIA live regions for async state.
 - [ ] New top-level route/feature is wrapped in an error boundary.
 - [ ] Exported hook/component prop shapes with >1 field have a named type.
+- [ ] A component test needing a server response uses an MSW handler (`server.use(http...)`, `src/test/mswServer.ts`), never `vi.mock("@/shared/api/apiClient")` (TST-04).
+- [ ] **Periodic, not per-PR:** when `npm run test:coverage`'s actual measured coverage sits well above `vite.config.ts`'s thresholds for a sustained stretch (a stage/epic boundary is a natural checkpoint), raise the thresholds to a few points below the measured figures — don't leave them at a stale, long-since-cleared floor (TST-05; last raised 70/70/60/70 → 85/78/85/85 lines/functions/branches/statements against a measured 90.68/82.14/89.9/90.68).
 
 ---
 

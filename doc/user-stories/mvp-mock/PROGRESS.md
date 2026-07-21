@@ -180,7 +180,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **TST-02** — extend modularitytests coverage as stub modules become real
 - [x] **TST-03** — scaffold playwright e2e specs for flow b and flow c journeys
 - [x] **TST-04** — wire msw into the frontend test setup for realistic api mocking
-- [ ] **TST-05** — raise vitest coverage thresholds as real feature coverage grows
+- [x] **TST-05** — raise vitest coverage thresholds as real feature coverage grows
 - [x] **TST-06** — separate supplier sandbox vs production fixtures in ci
 - [ ] **TST-07** — build a representative seed fixture dataset across all six markets
 - [x] **TST-08** — build a contract test harness for the normalized suppliersearchresult shape
