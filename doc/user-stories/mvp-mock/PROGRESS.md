@@ -184,7 +184,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **TST-06** — separate supplier sandbox vs production fixtures in ci
 - [x] **TST-07** — build a representative seed fixture dataset across all six markets
 - [x] **TST-08** — build a contract test harness for the normalized suppliersearchresult shape
-- [ ] **TST-09** — build an ai governance audit log test harness asserting the 100 logged invariant
+- [x] **TST-09** — build an ai governance audit log test harness asserting the 100 logged invariant
 
 ---
 Total: 149 stories.

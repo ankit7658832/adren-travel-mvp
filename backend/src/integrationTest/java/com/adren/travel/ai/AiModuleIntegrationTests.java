@@ -127,6 +127,32 @@ class AiModuleIntegrationTests {
         assertThat(row.get("ai_output_json").toString()).contains("GROQ_API_KEY");
     }
 
+    /**
+     * TST-09 — AI-02/AI-03's reference usage of {@link AiAuditCompletenessAssertions}:
+     * every prior test here already proved "one call produces (at least)
+     * one row" one at a time; this generalizes it to the actual PRD
+     * S11.2/S24.3 invariant — N calls produce EXACTLY N rows, not more
+     * (a duplicate/retry write) and not fewer (a dropped/sampled one).
+     * Each call genuinely reaches the real Groq API and genuinely 401s
+     * (dummy key), and AI-13's bounded retry never retries an auth
+     * failure, so each of these 3 calls produces exactly one attempt.
+     */
+    @Test
+    void threeRealGroqCallsProduceExactlyThreeAuditLogRowsNoSamplingAI07() {
+        long countBefore = AiAuditCompletenessAssertions.currentAuditLogRowCount(jdbcTemplate);
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+
+        for (int i = 0; i < 3; i++) {
+            var command = new GenerateItineraryCommand(consultantId, UUID.randomUUID(), "GOA",
+                LocalDate.now().plusDays(30), LocalDate.now().plusDays(34), "Anything at all", null, false);
+            org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+                () -> aiApi.generateItinerary(command));
+        }
+
+        AiAuditCompletenessAssertions.assertExactlyNNewAuditLogRows(jdbcTemplate, countBefore, 3);
+    }
+
     @Test
     void aCompleteWithAiCallOnAnItineraryWithAnExistingHotelSelectionNeverReachesGroqAI03() {
         UUID consultantId = UUID.randomUUID();
