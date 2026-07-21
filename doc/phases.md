@@ -92,21 +92,23 @@ Every `⚠️ NEEDS CLARIFICATION` flag in the story catalogues, consolidated in
 
 This is the ongoing tracker, now backed by `doc/user-stories/mvp-mock/PROGRESS.md` (created in Stage 1; §5's "gap" note above predates it and is left as historical record). Update as stories close.
 
-### Mock phase (149 stories / 748 points, updated Stage 7 — 2026-07-19)
+**Source-of-truth note (added Stage 8 Step D-retroactive, 2026-07-21):** this section had gone stale — it still read "Stage 7 — 76%" after Stage 8 (Ads/Campaign Management + Hardening's tail) had already landed and been merged, because the epic that closed it out never got a completion write-up here. Going forward, **`doc/user-stories/mvp-mock/PROGRESS.md`'s per-story checkboxes are the source of truth.** If this table and `PROGRESS.md` ever disagree, `PROGRESS.md` is correct and this table is the one that's stale and needs refreshing — not the other way around. `PROGRESS.md` should still be updated per-story as each one closes (unchanged practice); this table should be refreshed at the end of every stage, not left to drift until someone notices.
+
+### Mock phase (149 stories / 748 points, updated Stage 8 Step D-retroactive — 2026-07-21)
 
 | Epic | Stories | Points | Status |
 |---|---|---|---|
-| Foundation | 24 | 124 | 100% (24/24) |
+| Foundation | 24 | 124 | **100% (24/24)** |
 | Booking Core | 27 | 121 | **100% (27/27)** — completed Stage 3 Batch 2 |
 | Financial Layer | 18 | 95 | **100% (18/18)** — completed Stage 3 Batch 2 |
 | AI Layer | 13 | 72 | **100% (13/13)** — completed Stage 4 |
 | Local DMC + BYOS | 11 | 57 | **100% (11/11)** — completed Stage 5 |
-| Ads/Campaign Management | 15 | 80 | 0% (0/15) — **fully unblocked as of Stage 7** (see §7g) |
-| Hardening | 13 | 76 | **77% (10/13, 57/76 pts)** — everything unblocked by Stage 6 is done; `HRD-09/10/11` (19 pts) remain gated on `ADS-09` |
+| Ads/Campaign Management | 15 | 80 | **100% (15/15)** — completed Stage 8 |
+| Hardening | 13 | 76 | **100% (13/13)** — completed Stage 8 (`HRD-09/10/11` closed the tail once `ADS-09` landed) |
 | Frontend Shell | 10 | 55 | **100% (10/10)** — completed Stage 7 |
-| DevOps/Infra | 9 | 30 | 0% (0/9) — fully unblocked, unaffected by this stage |
-| Test Infrastructure | 9 | 38 | 0% (0/9) — **7/9 unblocked**; `TST-04/05` (7 pts) newly unblocked by Stage 7 (`FES-08`) |
-| **Total** | **149** | **748** | **76% (113/149 stories, 581/748 pts)** |
+| DevOps/Infra | 9 | 30 | 0% (0/9) — fully unblocked, next up (Stage 9, see §7h) |
+| Test Infrastructure | 9 | 38 | 0% (0/9) — fully unblocked (`TST-04/05`'s `FES-08` gate cleared in Stage 7); next up (Stage 9, see §7h) |
+| **Total** | **149** | **748** | **88% (131/149 stories, 680/748 pts)** |
 
 ## 7a. Stage 1 & Stage 2 actual velocity, and a revised remaining-timeline estimate (Stage 3, Step A)
 
@@ -357,6 +359,44 @@ Per the user's own standing instruction, the estimate for finishing the non-Ads/
 3. **DevOps/Infra and Test Infrastructure remain legitimate parallel-track candidates** (both fully or mostly unblocked, 30 and 38 points respectively) if a second work-stream is available, but neither has Ads/Campaign's downstream unblock value.
 
 **Stopping here per Step D's own instruction — not starting Ads/Campaign Management without an explicit go-ahead.**
+
+## 7h. Stage 8 (Ads/Campaign Management + Hardening's tail) completion, an eighth velocity data point, and the final-68-points projection (retroactive write-up, 2026-07-21)
+
+**Why this is retroactive:** Stage 8 (branch `AD-stage8-ads-campaign-management`) closed out both Ads/Campaign Management (15/15) and, by extension, Hardening's last 3 stories (`HRD-09/10/11`) — but no Step D report was written at the time, which is exactly how this table went stale (§7's source-of-truth note above). Reconstructed here from git history rather than left undocumented.
+
+**What landed:** All 15 Ads/Campaign Management stories (80 points, `ADS-01` through `ADS-15`), each committed individually per the established per-story discipline, followed after a session gap by `HRD-09/HRD-10/HRD-11` (Consultant + Super Admin Dashboards, 19 points) in **one combined commit** — a deviation from every prior stage's one-commit-per-story practice, flagged below. Mock-phase total is now **131/149 stories, 680/748 points (88%)**. Ads/Campaign Management and Hardening are both **100% complete** — the last two epics with open stories before this stage.
+
+**What this stage revealed, flagged rather than smoothed over:**
+
+- **`HRD-09/10/11` were committed as a single squashed commit** (`a22a02a`), not three per-story commits like every other closed-out epic in this catalogue. This has two consequences: (1) it breaks the "one commit per story, `PROGRESS.md` updated per commit" discipline every prior stage followed, which is worth restoring for Stage 9 rather than repeating; (2) it means this stage's velocity figure can't be cleanly split into a per-story or even a "which day was this dashboard work actually done on" breakdown the way Stages 1–7 could — see the data-quality caveat below.
+- **A genuine ~38h25m idle gap sits between `ADS-15` (2026-07-19 23:17:10) and `HRD-09/10/11` (2026-07-21 13:42:34)** — a real session break (2026-07-20 has zero commits), the same kind of gap Stage 4 identified and excluded from its "active-only" figure. Unlike Stage 4's gap, though, this one can't be cleanly excluded here: because `HRD-09/10/11` is a single commit with no intermediate timestamps, there's no way to tell how much of the 2026-07-21 session before 13:42:34 was actually spent on these 3 stories versus something else — an "active-only" figure for this stage would be a guess dressed up as a measurement, not a real exclusion like Stage 4's. Reporting raw span only for this stage, with this limitation stated rather than papered over with a fabricated active-only number.
+- **A small non-story commit followed immediately after** (`eb35f9c`, 2026-07-21 13:43:05, "Add a local-dev seed Consultant + dev-only token-minting endpoint for local login") — dev-convenience tooling, not a catalogue story, excluded from points/velocity math here.
+
+**Stage 8 velocity** (same method as §7a–§7g — git commit timestamps, `AD-stage8-ads-campaign-management` branch):
+- Commits: `6d29aa0` (2026-07-19 17:18:06, `ADS-01`) through `a22a02a` (2026-07-21 13:42:34, `HRD-09/10/11`).
+- Delivered **18 stories / 99 points**: `ADS-01`–`ADS-15` (15 stories, 80 pts) + `HRD-09/10/11` (3 stories, 19 pts).
+- Calendar-day span: 2026-07-19 → 2026-07-21 (3 distinct dates, but zero commits on 2026-07-20 — a real idle day, not just a quiet one). Raw wall-clock elapsed: ~44h24m28s.
+- Sub-span for the cleanly-measurable portion (`ADS-01`→`ADS-15` only, all individually committed): 2026-07-19 17:18:06 → 23:17:10 = **~5h59m4s for the full 80-pt Ads/Campaign epic**, a genuine, trustworthy figure since it's per-story-committed like Stages 1–7.
+
+| Basis | Elapsed | Points | Velocity |
+|---|---|---|---|
+| Raw span, full stage (18 stories) | ~44.41h (1.85 days) | 99 | 53.5 pts/day |
+| `ADS-01`–`15` only (clean, per-story-committed) | ~5.98h | 80 | 320.9 pts/day |
+
+**⚠️ Neither figure above should anchor the remaining-points projection.** The raw-span figure (53.5 pts/day) is deflated by the 38h25m idle gap the same way an un-excluded Stage 4 span would have been (§7d already showed that pattern: 114.6 pts/day raw vs. 292.5 pts/day active-only, same underlying stage). The Ads-only figure (320.9 pts/day) is inflated the same way Stages 5–7 were flagged as outliers — no evidence either way here since Ads/Campaign was largely new mechanism (a whole new module), but it's a single-stage figure with no cross-check, and it excludes the Hardening tail entirely. **Stage 4's 114.6 pts/day remains the most defensible non-outlier basis** — it's now the *only* one of the last five stages (4, 5, 6, 7, 8) not flagged for either a pre-existing-foundation inflation effect or a data-quality/idle-gap issue, per §7d/§7e/§7f/§7g's own reasoning plus this section's findings.
+
+**Combined actual delivery (all eight stages):** 131 stories / **680 points** — matches `PROGRESS.md`'s 131/149 exactly, a useful cross-check that this reconstruction is consistent with the per-story tracker. Summing each stage's own raw wall-clock span: 10h17m + 14h54m + 24h38m + 15h5m + 2h7m + 2h12m + 2h7m + 44h24m28s ≈ **115h44m28s (≈4.82 days)**, across 7 distinct calendar dates (2026-07-14 through 2026-07-19, plus 2026-07-21 — 2026-07-20 was fully idle).
+
+| Basis | Elapsed | Points | Velocity |
+|---|---|---|---|
+| Summed raw wall-clock | ~115.7h (4.82 days) | 680 | 141.0 pts/day → **~987 pts/week** |
+| Calendar-date count (crude, 7 dates) | 7 distinct dates | 680 | 97.1 pts/day → **~680 pts/week** |
+
+**Final-68-points projection (`DevOps/Infra` 30 pts + `Test Infrastructure` 38 pts, 18 stories):** using Stage 4's 114.6 pts/day (the basis this document has consistently favored since §7d, for the reasons restated above): **68 / 114.6 ≈ 0.59 days ≈ 14.2 hours of active work.** The cumulative summed-raw-wall-clock rate (141.0 pts/day, now carrying two idle-gap-deflated stages) gives a more optimistic ≈0.48 days (≈11.6h) — reported for completeness, not recommended as the planning number, same convention as every prior stage's report.
+
+**Epic-completion flag, per the standing Step D instruction:** the original trigger ("Booking Core, Financial Layer, AI Layer, Local DMC+BYOS, Ads/Campaign, and Hardening all complete") is **now met** — all six are 100%. What's left of the mock phase is exactly the two epics §7f/§7g already identified as having no further leverage over anything else: `DevOps/Infra` (9 stories, 30 pts) and `Test Infrastructure` (9 stories, 38 pts), 68 points / 18 stories total, both fully unblocked.
+
+**Recommendation (already the user's own stated plan): `DevOps/Infra` before `Test Infrastructure`.** Checked directly against dependency chains rather than assumed: `OPS-01` (LocalStack services in docker-compose) is a prerequisite `TST-01` ("extend the Testcontainers base infrastructure for new modules") needs a stable container topology to extend; `OPS-05` (CI wiring for `gradlew check` + npm test/coverage/lint) is what `TST-03`/`TST-06` actually plug into; `OPS-06` (Java 25 toolchain bump) changes the JVM `TST-01`'s Testcontainers client runs under. Building `DevOps/Infra` first avoids `Test Infrastructure` extending scaffolding that gets rebuilt out from under it a few stories later.
 
 ### Production phase (83 stories / 476 points)
 
