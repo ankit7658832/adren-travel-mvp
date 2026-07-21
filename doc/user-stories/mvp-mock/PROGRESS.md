@@ -182,7 +182,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **TST-04** — wire msw into the frontend test setup for realistic api mocking
 - [x] **TST-05** — raise vitest coverage thresholds as real feature coverage grows
 - [x] **TST-06** — separate supplier sandbox vs production fixtures in ci
-- [ ] **TST-07** — build a representative seed fixture dataset across all six markets
+- [x] **TST-07** — build a representative seed fixture dataset across all six markets
 - [x] **TST-08** — build a contract test harness for the normalized suppliersearchresult shape
 - [ ] **TST-09** — build an ai governance audit log test harness asserting the 100 logged invariant
 
