@@ -168,6 +168,71 @@ tasks.register<Test>("integrationTest") {
     shouldRunAfter(tasks.test)
 }
 
+// OPS-04, RULES.md S4.2 — every module's migrations must be strictly
+// incrementing (V<n>__description.sql, no duplicate/out-of-order version
+// numbers) and a merged migration must never be edited or deleted after
+// the fact (only Flyway's own checksum-on-migrate check catches that at
+// runtime, against a real applied-history DB — this catches it in CI,
+// before merge, against git history instead).
+tasks.register("verifyMigrationDiscipline") {
+    group = "verification"
+    description = "OPS-04: Flyway migration numbering is strictly incrementing and no merged migration was edited or deleted."
+
+    val migrationDir = layout.projectDirectory.dir("src/main/resources/db/migration")
+    val projectDir = layout.projectDirectory.asFile
+
+    doLast {
+        val versionRegex = Regex("""^V(\d+)__.+\.sql$""")
+        val files = migrationDir.asFile.listFiles { f -> f.isFile }?.toList() ?: emptyList()
+        val versioned = files.map { f ->
+            val match = versionRegex.matchEntire(f.name)
+                ?: throw GradleException("OPS-04: migration file '${f.name}' doesn't match V<n>__description.sql")
+            match.groupValues[1].toLong() to f.name
+        }
+
+        val duplicates = versioned.groupBy { it.first }.filterValues { it.size > 1 }
+        if (duplicates.isNotEmpty()) {
+            throw GradleException("OPS-04: duplicate Flyway migration version number(s): " +
+                duplicates.entries.joinToString { (version, entries) -> "V$version -> ${entries.map { it.second }}" })
+        }
+
+        val sortedByVersion = versioned.sortedBy { it.first }
+        for (i in 1 until sortedByVersion.size) {
+            if (sortedByVersion[i].first <= sortedByVersion[i - 1].first) {
+                throw GradleException("OPS-04: migration versions not strictly increasing at " +
+                    "${sortedByVersion[i].second} (V${sortedByVersion[i].first}) after " +
+                    "${sortedByVersion[i - 1].second} (V${sortedByVersion[i - 1].first})")
+            }
+        }
+
+        val baseRef = listOf("origin/main", "main").firstOrNull { ref ->
+            ProcessBuilder("git", "rev-parse", "--verify", ref)
+                .directory(projectDir).redirectErrorStream(true).start().waitFor() == 0
+        }
+        if (baseRef == null) {
+            logger.warn("OPS-04: no 'origin/main' or 'main' git ref found — skipping the " +
+                "no-edits-to-merged-migrations check (nothing to diff against).")
+        } else {
+            val diffProcess = ProcessBuilder(
+                "git", "diff", "--name-status", baseRef, "--", "src/main/resources/db/migration"
+            ).directory(projectDir).redirectErrorStream(true).start()
+            val diffOutput = diffProcess.inputStream.bufferedReader().readText()
+            diffProcess.waitFor()
+
+            val violations = diffOutput.lineSequence()
+                .filter { it.isNotBlank() }
+                .filterNot { it.startsWith("A\t") }
+                .toList()
+            if (violations.isNotEmpty()) {
+                throw GradleException("OPS-04: merged migration(s) edited/deleted/renamed relative to " +
+                    "'$baseRef' — a merged migration must never change after the fact " +
+                    "(RULES.md S4.2). Add a NEW migration instead:\n" + violations.joinToString("\n"))
+            }
+        }
+    }
+}
+
 tasks.named("check") {
     dependsOn(tasks.named("integrationTest"))
+    dependsOn(tasks.named("verifyMigrationDiscipline"))
 }
