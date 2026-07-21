@@ -94,7 +94,7 @@ This is the ongoing tracker, now backed by `doc/user-stories/mvp-mock/PROGRESS.m
 
 **Source-of-truth note (added Stage 8 Step D-retroactive, 2026-07-21):** this section had gone stale — it still read "Stage 7 — 76%" after Stage 8 (Ads/Campaign Management + Hardening's tail) had already landed and been merged, because the epic that closed it out never got a completion write-up here. Going forward, **`doc/user-stories/mvp-mock/PROGRESS.md`'s per-story checkboxes are the source of truth.** If this table and `PROGRESS.md` ever disagree, `PROGRESS.md` is correct and this table is the one that's stale and needs refreshing — not the other way around. `PROGRESS.md` should still be updated per-story as each one closes (unchanged practice); this table should be refreshed at the end of every stage, not left to drift until someone notices.
 
-### Mock phase (149 stories / 748 points, updated Stage 8 Step D-retroactive — 2026-07-21)
+### Mock phase (149 stories / 748 points, updated Stage 9 — 2026-07-21)
 
 | Epic | Stories | Points | Status |
 |---|---|---|---|
@@ -106,9 +106,11 @@ This is the ongoing tracker, now backed by `doc/user-stories/mvp-mock/PROGRESS.m
 | Ads/Campaign Management | 15 | 80 | **100% (15/15)** — completed Stage 8 |
 | Hardening | 13 | 76 | **100% (13/13)** — completed Stage 8 (`HRD-09/10/11` closed the tail once `ADS-09` landed) |
 | Frontend Shell | 10 | 55 | **100% (10/10)** — completed Stage 7 |
-| DevOps/Infra | 9 | 30 | 0% (0/9) — fully unblocked, next up (Stage 9, see §7h) |
-| Test Infrastructure | 9 | 38 | 0% (0/9) — fully unblocked (`TST-04/05`'s `FES-08` gate cleared in Stage 7); next up (Stage 9, see §7h) |
-| **Total** | **149** | **748** | **88% (131/149 stories, 680/748 pts)** |
+| DevOps/Infra | 9 | 30 | **100% (9/9)** — completed Stage 9 |
+| Test Infrastructure | 9 | 38 | **100% (9/9)** — completed Stage 9 |
+| **Total** | **149** | **748** | **100% (149/149 stories, 748/748 pts)** |
+
+**Mock phase is feature-complete as of Stage 9 (2026-07-21).** See §7i for what Stage 9 actually found/fixed along the way (several genuine, previously-undiscovered gaps — not just infra/test scaffolding), and §5's Definition of Done checklist for the mock-complete validation this completeness figure still needs before treating the phase as truly done, not just "every story's checkbox is ticked."
 
 ## 7a. Stage 1 & Stage 2 actual velocity, and a revised remaining-timeline estimate (Stage 3, Step A)
 
@@ -397,6 +399,20 @@ Per the user's own standing instruction, the estimate for finishing the non-Ads/
 **Epic-completion flag, per the standing Step D instruction:** the original trigger ("Booking Core, Financial Layer, AI Layer, Local DMC+BYOS, Ads/Campaign, and Hardening all complete") is **now met** — all six are 100%. What's left of the mock phase is exactly the two epics §7f/§7g already identified as having no further leverage over anything else: `DevOps/Infra` (9 stories, 30 pts) and `Test Infrastructure` (9 stories, 38 pts), 68 points / 18 stories total, both fully unblocked.
 
 **Recommendation (already the user's own stated plan): `DevOps/Infra` before `Test Infrastructure`.** Checked directly against dependency chains rather than assumed: `OPS-01` (LocalStack services in docker-compose) is a prerequisite `TST-01` ("extend the Testcontainers base infrastructure for new modules") needs a stable container topology to extend; `OPS-05` (CI wiring for `gradlew check` + npm test/coverage/lint) is what `TST-03`/`TST-06` actually plug into; `OPS-06` (Java 25 toolchain bump) changes the JVM `TST-01`'s Testcontainers client runs under. Building `DevOps/Infra` first avoids `Test Infrastructure` extending scaffolding that gets rebuilt out from under it a few stories later.
+
+## 7i. Stage 9 (DevOps/Infra + Test Infrastructure) completion — mock phase is 149/149 (2026-07-21)
+
+**What landed:** all 18 remaining mock-phase stories — `DevOps/Infra` (`OPS-01/02/03/07/09` then `OPS-04/05/06/08`, two batches) and `Test Infrastructure` (`TST-01/02/06/08` then `TST-03/04/05/07/09`, two batches) — closing out the mock phase's 149/149 stories, 748/748 points. Same per-story discipline as every prior stage (implement, verify against the story's own acceptance criterion, update `PROGRESS.md`, commit).
+
+**This stage was materially more than infra/test scaffolding — several genuine, previously-undiscovered gaps surfaced and were fixed or explicitly flagged, not glossed over:**
+
+- **The Testcontainers/Docker "known caveat" flagged since Stage 3 (§7c/§7e) was actually root-caused, not just worked around.** Three distinct issues: docker-java's undeclared default API version (1.32) rejected by modern Docker Engines — fixed via a JVM system property, not the commonly-assumed `DOCKER_API_VERSION` env var; Ryuk's cleanup sidecar failing to bind-mount Rancher Desktop's non-standard socket path; and LocalStack being silently OOM-killed on a 2GB VM (raised to 6GB with explicit go-ahead, per `TST-01`). A fourth, real parallel-execution flakiness issue (17 `@ApplicationModuleTest` contexts' HikariCP pools vs. Postgres's `max_connections`) was also root-caused and fixed via headroom, not pool-shrinking, after an aggressive first attempt broke two legitimate concurrency tests.
+- **The frontend could not make a single successful authenticated API call against a real, security-enabled backend.** `apiClient.ts` had zero request interceptor attaching the auth token anywhere, despite the backend enforcing auth on everything except a tiny allowlist. Confirmed with a direct `curl` comparison before/after fixing it (`TST-03`). All 10 e2e specs pass for the first time ever as a result (previously 0–4 ever passed for real).
+- **No REST endpoint anywhere creates a new `Itinerary` row** — every booking endpoint (line-items, save-as-quotation, convert-to-package) requires one to already exist; `new Itinerary(...)` is only ever constructed in unit tests. This is a genuine booking-flow gap (not test-infra's job to fix), flagged rather than silently worked around — `package-creation-flow.spec.ts` documents it precisely and asserts the real, confirmed failure mode.
+- **`BOK-13`'s frontend (Flow C — traveler details/payment/confirmation) was deferred and never followed up on** — `BookingPaymentFlow.tsx` is still a bare placeholder. Already honestly tracked in `PROGRESS.md`'s own `BOK-13` entry, confirmed rather than assumed; Flow C's e2e spec asserts what's actually there today per an explicit decision, not a fabricated passing chain.
+- **A genuine Spring Modulith cycle was caught by the module-boundary check doing its job** (`TST-07`): a new test file placed in the `infra` package (meant to stay a dependency-free leaf, like `TestInfrastructure` itself) imported `BookingApi`, closing a cycle (`ai -> supplier -> infra -> booking -> ai`). Moved the file to the `booking` package; confirmed the cycle is gone.
+
+**Epic-completion flag:** the mock phase is now **100% by story count (149/149, 748/748 pts)** — every epic in the table above is complete. This is a *story-checklist* completeness figure, not yet a validated "mock-complete" claim: §5's Definition of Done (a manual/e2e walkthrough of Flow A/B/C end-to-end) is the next, and last, mock-phase gate, and given this stage's own findings above (no itinerary-creation endpoint, Flow C's placeholder), that walkthrough is expected to hit those same real, already-documented gaps rather than pass cleanly — reporting the actual result, not a rosy one, is the point of running it at all.
 
 ### Production phase (83 stories / 476 points)
 
