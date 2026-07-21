@@ -166,7 +166,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 
 - [x] **OPS-01** — extend docker compose with localstack s3 sqs sns secrets manager kms services
 - [x] **OPS-02** — provision adren owned supplier credentials in localstack secrets manager
-- [ ] **OPS-03** — provision localstack s3 buckets for vouchers and the document vault
+- [x] **OPS-03** — provision localstack s3 buckets for vouchers and the document vault
 - [ ] **OPS-04** — establish flyway migration discipline across all modules
 - [ ] **OPS-05** — wire gradlew check and npm test coverage lint into ci on every pr
 - [ ] **OPS-06** — bump the gradle build to the java 25 toolchain once available

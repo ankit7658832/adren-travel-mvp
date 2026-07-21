@@ -75,6 +75,33 @@ services:
       done"
     restart: "no"
 
+  # OPS-03 — provisions the two S3 buckets BOK-15's voucher generation and
+  # BOK-14's Traveler Profile document vault will target once DocumentStorage
+  # (booking.internal) gets a real S3-backed implementation — StubDocumentStorage
+  # itself doesn't call S3 yet (that swap is separately-scoped, later work), but
+  # the buckets/encryption config need to exist and be verifiable now. SSE-S3
+  # (AES256) is the encryption-at-rest baseline — no story-specific KMS key is
+  # referenced by BOK-14/BOK-15 for these buckets, unlike FND-12's BYOS envelope
+  # key, so there's nothing narrower to bind bucket-level SSE to here.
+  localstack-s3-buckets-init:
+    image: amazon/aws-cli:2.17.62
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: ap-south-1
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "for BUCKET in vouchers traveler-documents; do
+        aws --endpoint-url=http://localstack:4566 s3api head-bucket --bucket $$BUCKET >/dev/null 2>&1 ||
+        aws --endpoint-url=http://localstack:4566 s3api create-bucket --bucket $$BUCKET --create-bucket-configuration LocationConstraint=ap-south-1 >/dev/null;
+        aws --endpoint-url=http://localstack:4566 s3api put-bucket-encryption --bucket $$BUCKET --server-side-encryption-configuration '{\"Rules\":[{\"ApplyServerSideEncryptionByDefault\":{\"SSEAlgorithm\":\"AES256\"}}]}' >/dev/null;
+        echo Provisioned $$BUCKET;
+      done"
+    restart: "no"
+
 volumes:
   adren-postgres-data:
   adren-localstack-data:
