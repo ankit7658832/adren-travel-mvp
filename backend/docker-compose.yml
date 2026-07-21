@@ -49,6 +49,32 @@ services:
         echo Created alias/adren-byos-credentials)"
     restart: "no"
 
+  # OPS-02 — seeds one placeholder Secrets Manager entry per Adren-owned
+  # supplier (SupplierId, excluding LOCAL_DMC/BYOS which never get a
+  # SupplierCredential row) under the exact naming scheme
+  # AwsSupplierSecretsService (FND-11) itself uses —
+  # adren/supplier-credentials/<SUPPLIER_ID> — so a fresh local/dev/
+  # integrationTest environment has real ARNs to resolve against instead
+  # of an empty Secrets Manager.
+  localstack-supplier-secrets-init:
+    image: amazon/aws-cli:2.17.62
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: ap-south-1
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "for SUPPLIER in HOTELBEDS STUBA TBO MYSTIFLY TRANSFERZ WIDGETY HBACTIVITIES; do
+        NAME=adren/supplier-credentials/$$SUPPLIER;
+        VALUE=placeholder-local-dev-credential-$$SUPPLIER;
+        (aws --endpoint-url=http://localstack:4566 secretsmanager create-secret --name $$NAME --secret-string $$VALUE >/dev/null 2>&1 && echo Created $$NAME) ||
+        (aws --endpoint-url=http://localstack:4566 secretsmanager put-secret-value --secret-id $$NAME --secret-string $$VALUE >/dev/null && echo Updated $$NAME);
+      done"
+    restart: "no"
+
 volumes:
   adren-postgres-data:
   adren-localstack-data:
