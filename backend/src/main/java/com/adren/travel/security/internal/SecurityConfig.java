@@ -43,7 +43,12 @@ class SecurityConfig {
         // action — it only renders whatever status/body the original
         // (already-authorized) request's failure produced — so permitting
         // it here doesn't weaken authorization anywhere else.
-        "/error"
+        "/error",
+        // Local-dev-only token minting (DevAuthController, @Profile("dev")
+        // — the bean doesn't exist at all outside that profile, so this
+        // path 404s as an ordinary unmapped route everywhere else; listing
+        // it here permitAll never bypasses auth on any real endpoint).
+        "/dev-auth/**"
     };
 
     @Bean

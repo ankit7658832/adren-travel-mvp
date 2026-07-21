@@ -1,0 +1,15 @@
+# Local-dev-only overrides — activate with SPRING_PROFILES_ACTIVE=dev.
+# Never applied in any other environment (test, prod, or no profile at
+# all uses application.yml's defaults untouched).
+spring:
+  flyway:
+    # Adds the dev-only seed migration location on top of the real one
+    # (application.yml's db/migration) — never replaces it.
+    locations: classpath:db/migration,classpath:db/dev-seed
+
+adren:
+  security:
+    jwt:
+      # Long-lived for local dev convenience only — the real default
+      # (application.yml, 60 minutes) is what every other environment gets.
+      expiration-minutes: ${ADREN_JWT_EXPIRATION_MINUTES:43200}
