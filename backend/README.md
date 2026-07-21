@@ -1,8 +1,22 @@
 # ADREN TRAVEL — Backend
 
-Spring Boot 3 + Spring Modulith + Gradle (Kotlin DSL). Java 25 toolchain
-target (see `build.gradle.kts` — bump once a Java 25 JDK is available in
-your build environment; this scaffold was authored against a Java 21 JDK).
+Spring Boot 3 + Spring Modulith + Gradle (Kotlin DSL). Builds against a
+real Java 25 JDK (OPS-06 — this scaffold was originally authored against
+Java 21, tracked as a known gap until a Java 25 JDK was actually available
+and verified; it now is). `./gradlew build` succeeds with no Java-25-specific
+compatibility warnings: the two JDK-25-era warnings a build like this would
+otherwise hit — Mockito's inline-mock-maker dynamic self-attach ("will no
+longer work in future JDK releases") and Gradle's own native-platform
+library hitting JDK 25's tightened native-access restrictions — are
+addressed via `-XX:+EnableDynamicAgentLoading` on test tasks
+(`build.gradle.kts`) and `org.gradle.jvmargs=--enable-native-access=ALL-UNNAMED`
+(`gradle.properties`) respectively. One residual, harmless warning remains
+un-silenceable from committed project config alone: Gradle 9.6.1's own
+wrapper-launcher JVM (not the daemon `gradle.properties` configures) prints
+the same native-access warning once on a fresh daemon start — set
+`JAVA_OPTS="--enable-native-access=ALL-UNNAMED"` in your shell if you want
+that fully silent too; it's Gradle-tooling noise, not a signal about this
+project's own code.
 
 ## Module map (matches PRD Sections 9–17)
 

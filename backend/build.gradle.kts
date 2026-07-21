@@ -139,6 +139,15 @@ tasks.withType<Test> {
         "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE",
         System.getenv("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE") ?: "/var/run/docker.sock"
     )
+
+    // OPS-06 — JDK 25 tightened dynamic Java-agent loading (Mockito's
+    // inline-mock-maker self-attaches at runtime rather than being
+    // declared as a build-time -javaagent). Without this, every test run
+    // using Mockito.mock(...) prints "Mockito is currently self-attaching
+    // ... this will no longer work in future releases of the JDK" —
+    // explicitly opting in is the fix the warning itself suggests, not a
+    // long-term-viable thing to silently ignore.
+    jvmArgs("-XX:+EnableDynamicAgentLoading")
 }
 
 // Separate source set + task for integration tests so `./gradlew test` stays fast
