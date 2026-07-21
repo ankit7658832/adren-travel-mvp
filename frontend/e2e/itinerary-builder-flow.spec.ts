@@ -1,16 +1,18 @@
 import { test, expect } from "@playwright/test";
+import { loginAs } from "./support/devAuth";
 
 // Traces to PRD Section 9.1 Flow A steps 5-6 and Section 21.2 acceptance
 // criteria. Requires the real backend running on :8080, same as
-// search-flow.spec.ts — and inherits the same known gap: neither spec logs
-// in first, since no login/token-issuance screen exists yet anywhere in
-// the mvp-mock story catalogue (see Stage 1 wrap-up report). Both specs
-// will fail against a backend that enforces authentication until that
-// story lands; kept in the same shape as search-flow.spec.ts rather than
-// invented ad hoc so both get fixed together.
+// search-flow.spec.ts.
+//
+// TST-03 — fixed together with search-flow.spec.ts: both used to navigate
+// straight past auth ("no login screen exists yet"), which is now closed
+// via loginAs (the dev-only token-minting endpoint).
 test("Consultant can search, build an itinerary, and swap a location's auto-selected default for an alternate", async ({
   page,
+  request,
 }) => {
+  await loginAs(page, request, "CONSULTANT");
   await page.goto("/search");
 
   await page.getByLabel(/locations/i).fill("Goa");
@@ -39,7 +41,8 @@ test("Consultant can search, build an itinerary, and swap a location's auto-sele
 // fails authentication. This proves the entry point and its explicit
 // error state (never a silently fabricated suggestion) rather than a
 // happy path this environment cannot actually produce.
-test("Consultant can open the Complete with AI entry point and submit a request", async ({ page }) => {
+test("Consultant can open the Complete with AI entry point and submit a request", async ({ page, request }) => {
+  await loginAs(page, request, "CONSULTANT");
   await page.goto("/search");
   await page.getByLabel(/locations/i).fill("Goa");
   await page.getByRole("button", { name: /search/i }).click();
@@ -48,9 +51,13 @@ test("Consultant can open the Complete with AI entry point and submit a request"
   await expect(page).toHaveURL(/\/itinerary\//);
 
   await page.getByRole("button", { name: /complete with ai/i }).click();
-  await expect(page.getByLabel(/location/i)).toBeVisible();
+  // TST-03 — getByLabel(/location/i) is ambiguous here (the itinerary
+  // MapPanel's own "Map showing N itinerary location(s)" aria-label also
+  // matches); never caught before since this step was never reached
+  // against a real, auth-passing backend until loginAs existed.
+  await expect(page.getByRole("textbox", { name: /location/i })).toBeVisible();
 
-  await page.getByLabel(/location/i).fill("Goa");
+  await page.getByRole("textbox", { name: /location/i }).fill("Goa");
   await page.getByLabel(/what is the traveler looking for/i).fill("A relaxing beach trip");
   await page.getByRole("button", { name: /generate suggestions/i }).click();
 

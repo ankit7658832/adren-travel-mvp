@@ -25,6 +25,8 @@ PRD Section 9.1 (Flow A/B/C). See the `testing-strategy` and
 `frontend-react-vite` Claude Code skills before adding new tests or
 features.
 
+**`npm run test:e2e` needs the real backend running with `SPRING_PROFILES_ACTIVE=dev`** (`cd backend && SPRING_PROFILES_ACTIVE=dev ./gradlew bootRun`, plus `docker compose up -d` for its Postgres/LocalStack) — most specs log in via `e2e/support/devAuth.ts`, which calls the dev-only token-minting endpoint (TST-03). Without the `dev` profile active, every spec that logs in will fail at that step (the endpoint 404s outside that profile).
+
 ## Adding a new screen
 
 1. Create `src/features/<screen-name>/`.
