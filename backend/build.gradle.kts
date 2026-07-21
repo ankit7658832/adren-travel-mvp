@@ -126,6 +126,19 @@ tasks.withType<Test> {
     //   ./gradlew test              -> fast unit tests (see testing-strategy skill)
     //   ./gradlew integrationTest   -> Testcontainers/LocalStack-backed tests
     systemProperty("junit.jupiter.execution.parallel.enabled", "true")
+
+    // Testcontainers compatibility defaults for non-Docker-Desktop backends
+    // (Rancher Desktop, Colima, Lima, Podman) — see backend/README.md's
+    // "Testcontainers on non-Docker-Desktop backends" section for the two
+    // failure modes these work around. Both are no-ops/harmless on a
+    // standard Docker Desktop or CI Docker-in-Docker setup, and both remain
+    // overridable (-Dapi.version=... on the gradlew invocation, or an
+    // actual TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE env var already set).
+    systemProperty("api.version", System.getProperty("api.version") ?: "1.41")
+    environment(
+        "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE",
+        System.getenv("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE") ?: "/var/run/docker.sock"
+    )
 }
 
 // Separate source set + task for integration tests so `./gradlew test` stays fast
