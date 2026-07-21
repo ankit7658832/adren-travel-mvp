@@ -347,8 +347,8 @@ Copy the relevant block into a PR description, or use this as a reviewer's pass/
 
 Pulled together from the ⚠️ boxes above, roughly in priority order:
 
-1. Add `@Transactional` to `BookingServiceImpl.saveAsQuotation`/`confirmBooking` (§4.3) — outbox atomicity is currently unguaranteed.
-2. ~~Stand up Spring Security~~ **Done (FND-01)** — stateless JWT authN is real. Remaining: method-level `@PreAuthorize` role-matrix enforcement (`FND-02`) and tenant-scoped authorization on lookups (`FND-03`) before a second real endpoint ships against real Consultant/traveler data (§5.1–5.2).
+1. ~~Add `@Transactional` to `BookingServiceImpl.saveAsQuotation`/`confirmBooking` (§4.3)~~ **Done** — stale by the time of this check (mock-complete DoD validation, 2026-07-21): confirmed directly against the current file, `@Transactional` is present on `saveAsQuotation`, `confirmBooking`, `confirmBookingOnAccount`, `confirmBookingFromPaymentWebhook`, and every other state-mutating method in the class. This item was fixed at some point during later stages without this backlog line ever being updated — exactly the kind of drift this whole document warns about elsewhere.
+2. ~~Stand up Spring Security~~ **Done (FND-01)**. ~~Remaining: method-level `@PreAuthorize` role-matrix enforcement (`FND-02`) and tenant-scoped authorization on lookups (`FND-03`)~~ **Also done** — confirmed directly: `BookingApi`/`WhitelabelApi` etc. carry real `@PreAuthorize` role/capability-grant expressions per endpoint, and `CurrentPrincipal.resolveTenantScope`/`requireOwnedDraftItinerary`-style checks gate real Consultant/traveler data lookups.
 3. Fix `BookingConfirmedEvent` to carry `Money` instead of decomposed `BigDecimal`+`CurrencyCode` (§2.3) — cheap now, expensive after a real listener depends on the current shape.
 4. Add correlation-ID context propagation across the `@ApplicationModuleListener` async boundary before the notification listener's real body ships (§6.1).
 5. Add an `eslint.config.js` with `jsx-a11y` — `npm run lint` currently has nothing to run (§7.3).
