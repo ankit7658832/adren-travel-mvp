@@ -177,6 +177,24 @@ tasks.register<Test>("integrationTest") {
     shouldRunAfter(tasks.test)
 }
 
+// OPS-08 — release-checklist step: ModularityTests.writeModuleDocumentation()
+// (run as part of ./gradlew test, no separate wiring needed for generation
+// itself) regenerates PlantUML module diagrams under build/spring-modulith-docs
+// straight from the actual code structure. This task is the second half —
+// copying them into doc/architecture/ — that doc/README.md's "Regenerating
+// architecture diagrams" section already documented as a manual step but
+// nothing ever ran. Deliberately NOT wired into `check`/CI: this is a
+// release-process step a human runs and reviews the diff of, not a
+// pass/fail gate on every PR.
+tasks.register<Copy>("updateModuleDocs") {
+    group = "documentation"
+    description = "OPS-08: copies the regenerated Spring Modulith PlantUML module diagrams into doc/architecture/ — run before a release PR and review the diff."
+    dependsOn(tasks.named("test"))
+    from(layout.buildDirectory.dir("spring-modulith-docs"))
+    into(rootDir.resolve("../doc/architecture"))
+    include("*.puml")
+}
+
 // OPS-04, RULES.md S4.2 — every module's migrations must be strictly
 // incrementing (V<n>__description.sql, no duplicate/out-of-order version
 // numbers) and a merged migration must never be edited or deleted after

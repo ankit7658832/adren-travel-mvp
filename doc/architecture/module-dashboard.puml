@@ -1,0 +1,48 @@
+@startuml
+title <size:24>Reporting & Dashboard</size>
+
+set separator none
+top to bottom direction
+
+<style>
+  root {
+    BackgroundColor: #ffffff
+    FontColor: #444444
+  }
+</style>
+
+!include <C4/C4>
+!include <C4/C4_Context>
+!include <C4/C4_Component>
+
+System_Boundary("ADRENTRAVEL_boundary", "ADREN TRAVEL", $tags="") {
+  Container_Boundary("ADRENTRAVEL.ADRENTRAVEL_boundary", "ADREN TRAVEL", $tags="") {
+    Component(ADRENTRAVEL.ADRENTRAVEL.CoreBookingEngine, "Core Booking Engine", $techn="Module", $descr="", $tags="", $link="")
+    Component(ADRENTRAVEL.ADRENTRAVEL.AdsCampaignManagement, "Ads/Campaign Management", $techn="Module", $descr="", $tags="", $link="")
+    Component(ADRENTRAVEL.ADRENTRAVEL.ReportingDashboard, "Reporting & Dashboard", $techn="Module", $descr="", $tags="", $link="")
+    Component(ADRENTRAVEL.ADRENTRAVEL.Security, "Security", $techn="Module", $descr="", $tags="", $link="")
+    Component(ADRENTRAVEL.ADRENTRAVEL.PaymentsYieldMarkupWallet, "Payments, Yield/Markup & Wallet", $techn="Module", $descr="", $tags="", $link="")
+    Component(ADRENTRAVEL.ADRENTRAVEL.AIItineraryGovernance, "AI Itinerary & Governance", $techn="Module", $descr="", $tags="", $link="")
+  }
+
+}
+
+Rel(ADRENTRAVEL.ADRENTRAVEL.AdsCampaignManagement, ADRENTRAVEL.ADRENTRAVEL.CoreBookingEngine, "listens to", $techn="", $tags="", $link="")
+Rel(ADRENTRAVEL.ADRENTRAVEL.AdsCampaignManagement, ADRENTRAVEL.ADRENTRAVEL.Security, "depends on", $techn="", $tags="", $link="")
+Rel(ADRENTRAVEL.ADRENTRAVEL.AdsCampaignManagement, ADRENTRAVEL.ADRENTRAVEL.CoreBookingEngine, "uses", $techn="", $tags="", $link="")
+Rel(ADRENTRAVEL.ADRENTRAVEL.AdsCampaignManagement, ADRENTRAVEL.ADRENTRAVEL.AIItineraryGovernance, "uses", $techn="", $tags="", $link="")
+Rel(ADRENTRAVEL.ADRENTRAVEL.CoreBookingEngine, ADRENTRAVEL.ADRENTRAVEL.PaymentsYieldMarkupWallet, "listens to", $techn="", $tags="", $link="")
+Rel(ADRENTRAVEL.ADRENTRAVEL.CoreBookingEngine, ADRENTRAVEL.ADRENTRAVEL.Security, "depends on", $techn="", $tags="", $link="")
+Rel(ADRENTRAVEL.ADRENTRAVEL.CoreBookingEngine, ADRENTRAVEL.ADRENTRAVEL.PaymentsYieldMarkupWallet, "uses", $techn="", $tags="", $link="")
+Rel(ADRENTRAVEL.ADRENTRAVEL.CoreBookingEngine, ADRENTRAVEL.ADRENTRAVEL.AIItineraryGovernance, "uses", $techn="", $tags="", $link="")
+Rel(ADRENTRAVEL.ADRENTRAVEL.ReportingDashboard, ADRENTRAVEL.ADRENTRAVEL.Security, "depends on", $techn="", $tags="", $link="")
+Rel(ADRENTRAVEL.ADRENTRAVEL.ReportingDashboard, ADRENTRAVEL.ADRENTRAVEL.CoreBookingEngine, "uses", $techn="", $tags="", $link="")
+Rel(ADRENTRAVEL.ADRENTRAVEL.ReportingDashboard, ADRENTRAVEL.ADRENTRAVEL.PaymentsYieldMarkupWallet, "uses", $techn="", $tags="", $link="")
+Rel(ADRENTRAVEL.ADRENTRAVEL.ReportingDashboard, ADRENTRAVEL.ADRENTRAVEL.AdsCampaignManagement, "uses", $techn="", $tags="", $link="")
+Rel(ADRENTRAVEL.ADRENTRAVEL.ReportingDashboard, ADRENTRAVEL.ADRENTRAVEL.AIItineraryGovernance, "uses", $techn="", $tags="", $link="")
+Rel(ADRENTRAVEL.ADRENTRAVEL.PaymentsYieldMarkupWallet, ADRENTRAVEL.ADRENTRAVEL.Security, "depends on", $techn="", $tags="", $link="")
+Rel(ADRENTRAVEL.ADRENTRAVEL.AIItineraryGovernance, ADRENTRAVEL.ADRENTRAVEL.Security, "depends on", $techn="", $tags="", $link="")
+
+SHOW_LEGEND(true)
+hide stereotypes
+@enduml

@@ -1,0 +1,32 @@
+@startuml
+title <size:24>White-Label & Admin Console</size>
+
+set separator none
+top to bottom direction
+
+<style>
+  root {
+    BackgroundColor: #ffffff
+    FontColor: #444444
+  }
+</style>
+
+!include <C4/C4>
+!include <C4/C4_Context>
+!include <C4/C4_Component>
+
+System_Boundary("ADRENTRAVEL_boundary", "ADREN TRAVEL", $tags="") {
+  Container_Boundary("ADRENTRAVEL.ADRENTRAVEL_boundary", "ADREN TRAVEL", $tags="") {
+    Component(ADRENTRAVEL.ADRENTRAVEL.Security, "Security", $techn="Module", $descr="", $tags="", $link="")
+    Component(ADRENTRAVEL.ADRENTRAVEL.SharedKernel, "Shared Kernel", $techn="Module", $descr="", $tags="", $link="")
+    Component(ADRENTRAVEL.ADRENTRAVEL.WhiteLabelAdminConsole, "White-Label & Admin Console", $techn="Module", $descr="", $tags="", $link="")
+  }
+
+}
+
+Rel(ADRENTRAVEL.ADRENTRAVEL.WhiteLabelAdminConsole, ADRENTRAVEL.ADRENTRAVEL.SharedKernel, "depends on", $techn="", $tags="", $link="")
+Rel(ADRENTRAVEL.ADRENTRAVEL.WhiteLabelAdminConsole, ADRENTRAVEL.ADRENTRAVEL.Security, "uses", $techn="", $tags="", $link="")
+
+SHOW_LEGEND(true)
+hide stereotypes
+@enduml

@@ -74,7 +74,8 @@ See the `testing-strategy` Claude Code skill for the full test-tier convention.
 
 ## Generating module documentation
 
-`ModularityTests.writeModuleDocumentation()` regenerates PlantUML module
-diagrams under `build/spring-modulith-docs`. Copy the output into
-`../doc/architecture/` as part of your release checklist so the module map
-never drifts from the code.
+`./gradlew updateModuleDocs` (OPS-08) runs `ModularityTests.writeModuleDocumentation()`
+(regenerates PlantUML module diagrams under `build/spring-modulith-docs`)
+and copies the `.puml` output into `../doc/architecture/` in one step —
+run it as part of your release checklist and review the diff before the
+release PR, so the module map never silently drifts from the code.

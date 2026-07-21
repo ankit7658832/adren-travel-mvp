@@ -15,7 +15,7 @@
 | `PRD_v2_detailed.md` | Detailed/Engineering Edition — per-supplier integration specs, full data dictionary, screen-by-screen UI spec, acceptance criteria, edge-case catalogue, NFRs, test scenario appendix |
 | `DESIGN.md` | Frontend design system — Layer 1/Layer 2 token architecture, contrast-safety algorithm, component specs |
 | `architecture/RULES.md` | Enforceable backend/frontend engineering rules and the reasoning behind each one |
-| `architecture/` (PlantUML diagrams) | Auto-generated module diagrams (see below) — empty until first generated |
+| `architecture/` (PlantUML diagrams) | Auto-generated module diagrams (see below) — generated as of OPS-08 (12 modules + the overall component diagram) |
 | `user-stories/mvp-mock-stories.md`, `user-stories/mvp-mock/` | 142 MVP Mock-phase stories (full catalogue, and one-file-per-story split) |
 | `user-stories/production-stories.md`, `user-stories/production/` | 83 Production-phase stories (full catalogue, and one-file-per-story split) |
 
@@ -25,12 +25,15 @@ The backend's `ModularityTests.writeModuleDocumentation()`
 (`backend/src/test/java/com/adren/travel/ModularityTests.java`) uses Spring
 Modulith's `Documenter` to generate PlantUML module diagrams straight from
 the actual code structure — not hand-drawn, so they can't drift from
-reality. Regenerate and copy them in as part of your release checklist:
+reality. Regenerate and copy them in as part of your release checklist
+(OPS-08 — one Gradle task now does both steps that used to be a manual
+`cp`, so it's a release-checklist step someone actually runs, not just
+documented):
 
 ```bash
 cd backend
-./gradlew test --tests ModularityTests
-cp build/spring-modulith-docs/*.puml ../doc/architecture/
+./gradlew updateModuleDocs
+git diff ../doc/architecture/*.puml   # review before the release PR
 ```
 
 ## Using these docs during development
