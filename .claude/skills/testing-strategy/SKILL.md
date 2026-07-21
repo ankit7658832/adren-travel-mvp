@@ -40,7 +40,7 @@ npm run test:e2e       # Playwright — auto-starts dev server, single chromium 
 
 Component tests assert on user-visible behavior (`getByRole`, `getByLabelText`, `getByText`) — not implementation details like internal state shape or hook call counts. `SearchDashboard.test.tsx`/`useMultiLocationSearch.test.ts` are the reference pattern (`renderHook`/`act`/`waitFor` for the hook, full-tree `render`/`screen`/`fireEvent` for the component).
 
-`msw` is an installed devDependency but not yet wired into `src/test/setup.ts` (which currently only registers jest-dom matchers) — once a feature starts making real `apiClient` calls instead of a mocked hook function (see `RULES.md` §7.1's React Query reconciliation), set up an MSW server in `setup.ts` to intercept those calls in tests rather than mocking `apiClient` itself, so tests exercise the real request/response shape.
+`msw` is wired into `src/test/setup.ts` (TST-04): `src/test/mswServer.ts`'s `setupServer()` intercepts `apiClient`'s real HTTP calls (`beforeAll`/`afterEach`/`afterAll` lifecycle in `setup.ts`, `onUnhandledRequest: "error"` so a forgotten handler fails loudly, not silently). Add a per-test `server.use(http.post("/api/v1/<path>", ...))` handler — never `vi.mock("@/shared/api/apiClient")` for a new test; that mocks the module instead of exercising the real request/response shape. `SearchDashboard.test.tsx`/`useMultiLocationSearch.test.tsx` are the reference usage.
 
 Reserve e2e for journeys, not screens — a new screen gets a component test by default; only add/extend an e2e spec when the screen is part of one of the three PRD §9.1 flows and the thing being verified is genuinely cross-screen (can't be caught by component tests in isolation).
 
