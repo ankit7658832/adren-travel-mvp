@@ -3,6 +3,7 @@ package com.adren.travel.ads.internal;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
 import java.util.UUID;
@@ -35,4 +36,13 @@ interface AdCampaignRepository extends JpaRepository<AdCampaign, UUID> {
      * for it).
      */
     List<AdCampaign> findByConsultantIdAndStatusNot(UUID consultantId, AdCampaignStatus excludedStatus);
+
+    /**
+     * HRD-11 — the Super Admin Dashboard's ad spend across Consultants,
+     * platform scope, grouped by budget-cap currency (RULES.md §4.4:
+     * summing across currencies is invalid, so this can never collapse to
+     * a single total).
+     */
+    @Query("SELECT c.budgetCapCurrency, SUM(c.spendToDateAmount) FROM AdCampaign c GROUP BY c.budgetCapCurrency")
+    List<Object[]> sumSpendToDateGroupedByCurrency();
 }

@@ -164,4 +164,14 @@ public interface AdsApi {
      */
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     void reportMetaAccountSuspension(UUID consultantId);
+
+    /**
+     * HRD-11, PRD §9.5/§21.6 — the Super Admin Dashboard's ad spend
+     * across Consultants, platform scope — unlike every other method on
+     * this Api, there is no "my own" equivalent here, same reasoning as
+     * {@code BookingApi#findAllConsultantGmv}'s company-wide-only
+     * visibility.
+     */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    AdSpendAcrossConsultantsView findAdSpendAcrossConsultants();
 }

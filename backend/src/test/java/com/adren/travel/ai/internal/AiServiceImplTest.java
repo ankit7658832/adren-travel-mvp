@@ -3,6 +3,7 @@ package com.adren.travel.ai.internal;
 import com.adren.travel.ai.AdCreativeGenerationResult;
 import com.adren.travel.ai.AdCreativeSuggestion;
 import com.adren.travel.ai.AiAuditLogEntryView;
+import com.adren.travel.ai.AiGovernanceSummaryView;
 import com.adren.travel.ai.AiItineraryGenerationResult;
 import com.adren.travel.ai.AiItinerarySuggestion;
 import com.adren.travel.ai.AiPricingRevalidationResult;
@@ -723,6 +724,20 @@ class AiServiceImplTest {
 
         verify(auditLogRepository).findAllByOrderByCreatedAtDesc(pageable);
         verify(auditLogRepository, org.mockito.Mockito.never()).findByConsultantIdOrderByCreatedAtDesc(any(), any());
+    }
+
+    @Test
+    void findAiGovernanceSummarySumsCountsAcrossEveryDispositionHRD11() {
+        when(auditLogRepository.countByDisposition(AiSuggestionDisposition.SUGGESTED)).thenReturn(10L);
+        when(auditLogRepository.countByDisposition(AiSuggestionDisposition.NO_VIABLE_SUGGESTION)).thenReturn(3L);
+        when(auditLogRepository.countByDisposition(AiSuggestionDisposition.GROQ_ERROR)).thenReturn(2L);
+
+        AiGovernanceSummaryView summary = service.findAiGovernanceSummary();
+
+        assertThat(summary.suggestedCount()).isEqualTo(10L);
+        assertThat(summary.noViableSuggestionCount()).isEqualTo(3L);
+        assertThat(summary.groqErrorCount()).isEqualTo(2L);
+        assertThat(summary.totalSuggestions()).isEqualTo(15L);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

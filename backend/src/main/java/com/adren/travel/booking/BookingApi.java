@@ -382,4 +382,30 @@ public interface BookingApi {
         + "(hasRole('USER') and @capabilityGrantService.isGranted(principal.userId, "
         + "T(com.adren.travel.security.CapabilityGrantService.Capability).CREATE_PACKAGE))")
     void updatePackagePrice(UUID packageId, BigDecimal newMarkupPrice);
+
+    /** HRD-09, PRD §9.5/§21.5 — the Consultant Dashboard's "bookings this month"/"GMV" summary cards. Same role shape as {@link #findPublishedPackagesByConsultant}. */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    ConsultantBookingMetricsView findConsultantBookingMetrics(UUID consultantId);
+
+    /** HRD-09, PRD §9.5/§21.5 — the Consultant Dashboard's Top Packages tab, ranked by booking count, all-time. Same role shape as {@link #findPublishedPackagesByConsultant}. */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    List<PackageSummaryView> findTopPackagesForConsultant(UUID consultantId, int limit);
+
+    /** HRD-09, PRD §9.5/§21.5 — the Consultant Dashboard's Pending Quotations tab. Same role shape as {@link #findPublishedPackagesByConsultant}. */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    Page<QuotationSummaryView> findPendingQuotationsForConsultant(UUID consultantId, Pageable pageable);
+
+    /**
+     * HRD-11, PRD §9.5/§21.6 — the Super Admin Dashboard's all-Consultant
+     * GMV, platform scope (every Consultant, not tenant-scoped) — unlike
+     * every other method on this Api, there is no "my own" equivalent
+     * here, same reasoning as {@link com.adren.travel.ai.AiApi#findAuditLog}'s
+     * company-wide-only visibility.
+     */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    AllConsultantGmvView findAllConsultantGmv();
+
+    /** HRD-11, PRD §9.5/§21.6 — the Super Admin Dashboard's per-supplier performance summary, platform scope. SUPER_ADMIN-only, same reasoning as {@link #findAllConsultantGmv}. */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    List<SupplierPerformanceView> findSupplierPerformanceSummary();
 }

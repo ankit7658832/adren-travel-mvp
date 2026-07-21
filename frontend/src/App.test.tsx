@@ -44,17 +44,17 @@ describe("App routing (FES-01 code-split routes)", () => {
     expect(await screen.findByText("Search & Build Itinerary")).toBeInTheDocument();
   });
 
-  it("resolves a not-yet-built screen's lazy chunk with its placeholder for an authorized SUPER_ADMIN session", async () => {
+  it("resolves the Super Admin Console's lazy chunk for an authorized SUPER_ADMIN session", async () => {
     renderApp("/admin", "SUPER_ADMIN");
 
-    expect(await screen.findByText("21.6 Super Admin Console")).toBeInTheDocument();
+    expect(await screen.findByText(/21\.6 Super Admin Console/i)).toBeInTheDocument();
   });
 
   it("FES-07: a USER-role session hitting the Super Admin Console route is redirected to / before it mounts", async () => {
     renderApp("/admin", "USER");
 
     expect(await screen.findByText("Search & Build Itinerary")).toBeInTheDocument();
-    expect(screen.queryByText("21.6 Super Admin Console")).not.toBeInTheDocument();
+    expect(screen.queryByText(/21\.6 Super Admin Console/i)).not.toBeInTheDocument();
   });
 
   it("resolves the storefront route's lazy chunk with no session at all, since it's Layer 2/unguarded", async () => {

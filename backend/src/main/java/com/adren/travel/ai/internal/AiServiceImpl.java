@@ -5,6 +5,7 @@ import com.adren.travel.ai.AdCreativeSuggestion;
 import com.adren.travel.ai.AdCreativeVariant;
 import com.adren.travel.ai.AiApi;
 import com.adren.travel.ai.AiAuditLogEntryView;
+import com.adren.travel.ai.AiGovernanceSummaryView;
 import com.adren.travel.ai.AiServiceUnavailableException;
 import com.adren.travel.ai.AiItineraryGenerationResult;
 import com.adren.travel.ai.AiItinerarySuggestion;
@@ -234,6 +235,15 @@ class AiServiceImpl implements AiApi {
         return new AiAuditLogEntryView(log.getAuditLogId(), log.getCorrelationId(), log.getAttemptNumber(),
             log.getConsultantId(), log.getItineraryId(), log.getRequestInputJson(), log.getSourceDataSnapshotJson(),
             log.getAiOutputJson(), log.getDisposition().name(), log.getCreatedAt());
+    }
+
+    @Override
+    public AiGovernanceSummaryView findAiGovernanceSummary() {
+        long suggestedCount = auditLogRepository.countByDisposition(AiSuggestionDisposition.SUGGESTED);
+        long noViableSuggestionCount = auditLogRepository.countByDisposition(AiSuggestionDisposition.NO_VIABLE_SUGGESTION);
+        long groqErrorCount = auditLogRepository.countByDisposition(AiSuggestionDisposition.GROQ_ERROR);
+        return new AiGovernanceSummaryView(
+            suggestedCount + noViableSuggestionCount + groqErrorCount, suggestedCount, noViableSuggestionCount, groqErrorCount);
     }
 
     /**

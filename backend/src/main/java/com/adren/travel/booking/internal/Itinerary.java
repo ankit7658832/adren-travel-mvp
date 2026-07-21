@@ -157,4 +157,8 @@ class Itinerary {
     boolean isAiApproved() {
         return aiApproved;
     }
+
+    Instant getCreatedAt() {
+        return createdAt;
+    }
 }

@@ -95,4 +95,8 @@ public interface AiApi {
      */
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     Page<AiAuditLogEntryView> findAuditLog(UUID consultantId, Pageable pageable);
+
+    /** HRD-11, PRD §9.5/§21.6 — the Super Admin Dashboard's AI governance summary, platform scope. Same visibility shape as {@link #findAuditLog}. */
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    AiGovernanceSummaryView findAiGovernanceSummary();
 }

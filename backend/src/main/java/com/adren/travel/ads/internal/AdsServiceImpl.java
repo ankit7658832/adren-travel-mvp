@@ -2,6 +2,7 @@ package com.adren.travel.ads.internal;
 
 import com.adren.travel.ads.AdAccountView;
 import com.adren.travel.ads.AdCampaignCreativeVariantView;
+import com.adren.travel.ads.AdSpendAcrossConsultantsView;
 import com.adren.travel.ads.AdCampaignView;
 import com.adren.travel.ads.AdsApi;
 import com.adren.travel.ads.CampaignBillingDetailView;
@@ -24,6 +25,8 @@ import com.adren.travel.ai.GenerateAdCreativeCommand;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.PackageView;
 import com.adren.travel.security.CurrentPrincipal;
+import com.adren.travel.shared.CurrencyAmount;
+import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -31,6 +34,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -300,6 +304,14 @@ class AdsServiceImpl implements AdsApi {
             adCampaignRepository.save(campaign);
             events.publishEvent(new AdCampaignMetaSuspendedEvent(campaign.getCampaignId(), consultantId));
         }
+    }
+
+    @Override
+    public AdSpendAcrossConsultantsView findAdSpendAcrossConsultants() {
+        List<CurrencyAmount> spendByCurrency = adCampaignRepository.sumSpendToDateGroupedByCurrency().stream()
+            .map(row -> new CurrencyAmount((CurrencyCode) row[0], (BigDecimal) row[1]))
+            .toList();
+        return new AdSpendAcrossConsultantsView(spendByCurrency);
     }
 
     private static AdCampaignView toView(AdCampaign campaign) {

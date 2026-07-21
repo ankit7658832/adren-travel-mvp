@@ -7,6 +7,7 @@ import com.adren.travel.ai.AiPricingRevalidationResult;
 import com.adren.travel.ai.PricingStale;
 import com.adren.travel.booking.AddActivityLineItemCommand;
 import com.adren.travel.booking.AiPricingStaleException;
+import com.adren.travel.booking.AllConsultantGmvView;
 import com.adren.travel.booking.ApproveAiSuggestionCommand;
 import com.adren.travel.booking.AddCruiseLineItemCommand;
 import com.adren.travel.booking.AddFlightLineItemCommand;
@@ -18,12 +19,16 @@ import com.adren.travel.booking.BookingSearchResultView;
 import com.adren.travel.booking.CalculateCancellationRefundCommand;
 import com.adren.travel.booking.CancellationRequestView;
 import com.adren.travel.booking.ConsolidateCheckoutTotalCommand;
+import com.adren.travel.booking.ConsultantBookingMetricsView;
 import com.adren.travel.booking.ConvertQuotationToPackageCommand;
 import com.adren.travel.booking.CreateTravelerProfileCommand;
 import com.adren.travel.booking.DisputeTicketView;
 import com.adren.travel.booking.FlagDisputeCommand;
 import com.adren.travel.booking.GenerateAiSuggestionCommand;
+import com.adren.travel.booking.PackageSummaryView;
 import com.adren.travel.booking.PackageView;
+import com.adren.travel.booking.QuotationSummaryView;
+import com.adren.travel.booking.SupplierPerformanceView;
 import com.adren.travel.booking.event.ActivityLineItemAddedEvent;
 import com.adren.travel.booking.event.BookingCancelledEvent;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
@@ -46,9 +51,11 @@ import com.adren.travel.payments.RefundCalculation;
 import com.adren.travel.payments.SellRateCalculation;
 import com.adren.travel.payments.WalletHoldCommand;
 import com.adren.travel.security.CurrentPrincipal;
+import com.adren.travel.shared.CurrencyAmount;
 import com.adren.travel.shared.CurrencyCode;
 import com.adren.travel.shared.Money;
 import com.adren.travel.shared.ProductCategory;
+import com.adren.travel.supplier.SupplierId;
 import com.adren.travel.supplier.SupplierSearchApi;
 import com.adren.travel.supplier.SupplierSearchResult;
 import com.adren.travel.whitelabel.Market;
@@ -64,9 +71,13 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Internal implementation of {@link BookingApi}. Not visible outside this
@@ -908,5 +919,71 @@ class BookingServiceImpl implements BookingApi {
             travelPackage.getValidityStart(), travelPackage.getValidityEnd(), travelPackage.getBasePrice(),
             travelPackage.getMarkupPrice(), travelPackage.getCurrency(), travelPackage.getMaxPax(),
             travelPackage.isPromotedViaAds());
+    }
+
+    @Override
+    public ConsultantBookingMetricsView findConsultantBookingMetrics(UUID consultantId) {
+        UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(consultantId);
+        Instant monthStart = LocalDate.now(ZoneOffset.UTC).withDayOfMonth(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+        List<Booking> bookingsThisMonth =
+            bookingRepository.findByConsultantIdAndCreatedAtGreaterThanEqual(scopedConsultantId, monthStart);
+
+        // Same "no data yet, default to INR" simplification PaymentsServiceImpl#provisionWallet
+        // already established for a brand-new Consultant with nothing to report.
+        Money gmvThisMonth = bookingsThisMonth.stream()
+            .map(b -> new Money(b.getTotalSellPriceAmount(), b.getTotalSellCurrency()))
+            .reduce(Money::plus)
+            .orElseGet(() -> Money.zero(CurrencyCode.INR));
+
+        return new ConsultantBookingMetricsView(bookingsThisMonth.size(), gmvThisMonth);
+    }
+
+    @Override
+    public List<PackageSummaryView> findTopPackagesForConsultant(UUID consultantId, int limit) {
+        UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(consultantId);
+
+        // Bounded by "how many packages/bookings one Consultant realistically
+        // has" (MVP scale) — a single pass over each collection, grouped
+        // in memory, avoids N+1 per-package count queries (backend-best-
+        // practices §5).
+        Map<UUID, Long> bookingCountBySourceItineraryId = bookingRepository.findByConsultantId(scopedConsultantId)
+            .stream()
+            .collect(Collectors.groupingBy(Booking::getItineraryId, Collectors.counting()));
+
+        return travelPackageRepository.findByConsultantIdAndStatus(
+                scopedConsultantId, PackageStatus.PUBLISHED, Pageable.unpaged())
+            .stream()
+            .map(pkg -> new PackageSummaryView(pkg.getPackageId(), pkg.getName(),
+                bookingCountBySourceItineraryId.getOrDefault(pkg.getSourceItineraryId(), 0L)))
+            .sorted(Comparator.comparingLong(PackageSummaryView::bookingCount).reversed())
+            .limit(limit)
+            .toList();
+    }
+
+    @Override
+    public Page<QuotationSummaryView> findPendingQuotationsForConsultant(UUID consultantId, Pageable pageable) {
+        UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(consultantId);
+        return itineraryRepository.findByConsultantIdAndStatus(scopedConsultantId, ItineraryStatus.QUOTATION, pageable)
+            .map(itinerary -> new QuotationSummaryView(itinerary.getItineraryId(), itinerary.getCreatedAt()));
+    }
+
+    @Override
+    public AllConsultantGmvView findAllConsultantGmv() {
+        List<CurrencyAmount> gmvByCurrency = bookingRepository.sumTotalSellPriceGroupedByCurrency().stream()
+            .map(row -> new CurrencyAmount((CurrencyCode) row[0], (BigDecimal) row[1]))
+            .toList();
+        return new AllConsultantGmvView(gmvByCurrency);
+    }
+
+    @Override
+    public List<SupplierPerformanceView> findSupplierPerformanceSummary() {
+        return Arrays.stream(SupplierId.values())
+            .map(supplierId -> new SupplierPerformanceView(supplierId,
+                hotelLineItemRepository.countBySupplierId(supplierId)
+                    + flightLineItemRepository.countBySupplierId(supplierId)
+                    + transferLineItemRepository.countBySupplierId(supplierId)
+                    + cruiseLineItemRepository.countBySupplierId(supplierId)
+                    + activityLineItemRepository.countBySupplierId(supplierId)))
+            .toList();
     }
 }

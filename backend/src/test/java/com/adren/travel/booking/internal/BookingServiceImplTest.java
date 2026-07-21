@@ -9,6 +9,7 @@ import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.ApproveAiSuggestionCommand;
 import com.adren.travel.booking.BookingSearchResultView;
 import com.adren.travel.booking.CabinClass;
+import com.adren.travel.booking.ConsultantBookingMetricsView;
 import com.adren.travel.booking.CalculateCancellationRefundCommand;
 import com.adren.travel.booking.CancellationRequestView;
 import com.adren.travel.booking.ConsolidateCheckoutTotalCommand;
@@ -77,6 +78,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -2061,6 +2063,116 @@ class BookingServiceImplTest {
 
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).name()).isEqualTo("Goa Getaway");
+    }
+
+    @Test
+    void findConsultantBookingMetricsCountsAndSumsOnlyThisMonthsBookingsHRD09() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Booking thisMonthBooking1 = new Booking(UUID.randomUUID(), UUID.randomUUID(), consultantId,
+            BigDecimal.valueOf(10_000), CurrencyCode.INR, PaymentMethod.WALLET, "REF-1");
+        Booking thisMonthBooking2 = new Booking(UUID.randomUUID(), UUID.randomUUID(), consultantId,
+            BigDecimal.valueOf(5_000), CurrencyCode.INR, PaymentMethod.WALLET, "REF-2");
+        when(bookingRepository.findByConsultantIdAndCreatedAtGreaterThanEqual(eq(consultantId), any()))
+            .thenReturn(List.of(thisMonthBooking1, thisMonthBooking2));
+
+        ConsultantBookingMetricsView metrics = service.findConsultantBookingMetrics(consultantId);
+
+        assertThat(metrics.bookingsThisMonth()).isEqualTo(2);
+        assertThat(metrics.gmvThisMonth().amount()).isEqualByComparingTo("15000.00");
+        assertThat(metrics.gmvThisMonth().currency()).isEqualTo(CurrencyCode.INR);
+    }
+
+    @Test
+    void findConsultantBookingMetricsDefaultsToZeroInrWhenNoBookingsThisMonthHRD09() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        when(bookingRepository.findByConsultantIdAndCreatedAtGreaterThanEqual(eq(consultantId), any()))
+            .thenReturn(List.of());
+
+        ConsultantBookingMetricsView metrics = service.findConsultantBookingMetrics(consultantId);
+
+        assertThat(metrics.bookingsThisMonth()).isEqualTo(0);
+        assertThat(metrics.gmvThisMonth().amount()).isEqualByComparingTo("0");
+        assertThat(metrics.gmvThisMonth().currency()).isEqualTo(CurrencyCode.INR);
+    }
+
+    @Test
+    void findTopPackagesForConsultantRanksByBookingCountDescendingHRD09() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        UUID popularItineraryId = UUID.randomUUID();
+        UUID quietItineraryId = UUID.randomUUID();
+        TravelPackage popular = new TravelPackage(UUID.randomUUID(), popularItineraryId, consultantId,
+            "Goa Escape", null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(10_000), BigDecimal.valueOf(500), CurrencyCode.INR, 4);
+        TravelPackage quiet = new TravelPackage(UUID.randomUUID(), quietItineraryId, consultantId,
+            "Kerala Backwaters", null, LocalDate.now().plusDays(30), LocalDate.now().plusDays(90),
+            BigDecimal.valueOf(8_000), BigDecimal.valueOf(400), CurrencyCode.INR, 4);
+        when(travelPackageRepository.findByConsultantIdAndStatus(consultantId, PackageStatus.PUBLISHED, Pageable.unpaged()))
+            .thenReturn(new PageImpl<>(List.of(popular, quiet)));
+        when(bookingRepository.findByConsultantId(consultantId)).thenReturn(List.of(
+            new Booking(UUID.randomUUID(), popularItineraryId, consultantId, BigDecimal.valueOf(10_000),
+                CurrencyCode.INR, PaymentMethod.WALLET, "REF-1"),
+            new Booking(UUID.randomUUID(), popularItineraryId, consultantId, BigDecimal.valueOf(10_000),
+                CurrencyCode.INR, PaymentMethod.WALLET, "REF-2"),
+            new Booking(UUID.randomUUID(), quietItineraryId, consultantId, BigDecimal.valueOf(8_000),
+                CurrencyCode.INR, PaymentMethod.WALLET, "REF-3")));
+
+        var topPackages = service.findTopPackagesForConsultant(consultantId, 5);
+
+        assertThat(topPackages).hasSize(2);
+        assertThat(topPackages.get(0).name()).isEqualTo("Goa Escape");
+        assertThat(topPackages.get(0).bookingCount()).isEqualTo(2);
+        assertThat(topPackages.get(1).name()).isEqualTo("Kerala Backwaters");
+        assertThat(topPackages.get(1).bookingCount()).isEqualTo(1);
+    }
+
+    @Test
+    void findPendingQuotationsForConsultantReturnsOnlyItinerariesStillAtQuotationHRD09() {
+        UUID consultantId = UUID.randomUUID();
+        authenticateAs(Role.CONSULTANT, consultantId);
+        Itinerary itinerary = new Itinerary(UUID.randomUUID(), consultantId, UUID.randomUUID());
+        itinerary.markAsQuotation();
+        Pageable pageable = PageRequest.of(0, 10);
+        when(itineraryRepository.findByConsultantIdAndStatus(consultantId, ItineraryStatus.QUOTATION, pageable))
+            .thenReturn(new PageImpl<>(List.of(itinerary)));
+
+        Page<com.adren.travel.booking.QuotationSummaryView> result =
+            service.findPendingQuotationsForConsultant(consultantId, pageable);
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).itineraryId()).isEqualTo(itinerary.getItineraryId());
+    }
+
+    @Test
+    void findAllConsultantGmvGroupsByCurrencyHRD11() {
+        when(bookingRepository.sumTotalSellPriceGroupedByCurrency()).thenReturn(List.of(
+            new Object[] {CurrencyCode.INR, BigDecimal.valueOf(100_000)},
+            new Object[] {CurrencyCode.GBP, BigDecimal.valueOf(5_000)}));
+
+        var gmv = service.findAllConsultantGmv();
+
+        assertThat(gmv.gmvByCurrency()).hasSize(2);
+        assertThat(gmv.gmvByCurrency()).extracting(com.adren.travel.shared.CurrencyAmount::currency)
+            .containsExactlyInAnyOrder(CurrencyCode.INR, CurrencyCode.GBP);
+    }
+
+    @Test
+    void findSupplierPerformanceSummarySumsAcrossAllLineItemTypesHRD11() {
+        when(hotelLineItemRepository.countBySupplierId(com.adren.travel.supplier.SupplierId.HOTELBEDS)).thenReturn(3L);
+        when(flightLineItemRepository.countBySupplierId(com.adren.travel.supplier.SupplierId.HOTELBEDS)).thenReturn(0L);
+        when(transferLineItemRepository.countBySupplierId(com.adren.travel.supplier.SupplierId.HOTELBEDS)).thenReturn(0L);
+        when(cruiseLineItemRepository.countBySupplierId(com.adren.travel.supplier.SupplierId.HOTELBEDS)).thenReturn(0L);
+        when(activityLineItemRepository.countBySupplierId(com.adren.travel.supplier.SupplierId.HOTELBEDS)).thenReturn(0L);
+
+        var summary = service.findSupplierPerformanceSummary();
+
+        assertThat(summary).extracting(com.adren.travel.booking.SupplierPerformanceView::supplierId)
+            .containsExactlyInAnyOrder(com.adren.travel.supplier.SupplierId.values());
+        assertThat(summary).filteredOn(s -> s.supplierId() == com.adren.travel.supplier.SupplierId.HOTELBEDS)
+            .extracting(com.adren.travel.booking.SupplierPerformanceView::lineItemCount)
+            .containsExactly(3L);
     }
 
     private static void authenticateAs(Role role, UUID consultantId) {

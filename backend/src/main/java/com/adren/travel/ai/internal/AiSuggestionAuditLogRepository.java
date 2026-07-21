@@ -18,4 +18,7 @@ interface AiSuggestionAuditLogRepository extends JpaRepository<AiSuggestionAudit
 
     /** AI-11 — filtered to one Consultant, newest first. */
     Page<AiSuggestionAuditLog> findByConsultantIdOrderByCreatedAtDesc(UUID consultantId, Pageable pageable);
+
+    /** HRD-11 — the Super Admin Dashboard's AI governance summary, one count per disposition. */
+    long countByDisposition(AiSuggestionDisposition disposition);
 }

@@ -496,6 +496,19 @@ class AdsServiceImplTest {
             .publishEvent(any(com.adren.travel.ads.event.AdCampaignMetaSuspendedEvent.class));
     }
 
+    @Test
+    void findAdSpendAcrossConsultantsGroupsByCurrencyHRD11() {
+        when(adCampaignRepository.sumSpendToDateGroupedByCurrency()).thenReturn(List.of(
+            new Object[] {CurrencyCode.INR, java.math.BigDecimal.valueOf(50_000)},
+            new Object[] {CurrencyCode.GBP, java.math.BigDecimal.valueOf(1_200)}));
+
+        var adSpend = service().findAdSpendAcrossConsultants();
+
+        assertThat(adSpend.spendByCurrency()).hasSize(2);
+        assertThat(adSpend.spendByCurrency()).extracting(com.adren.travel.shared.CurrencyAmount::currency)
+            .containsExactlyInAnyOrder(CurrencyCode.INR, CurrencyCode.GBP);
+    }
+
     private static void authenticateAs(Role role, UUID consultantId) {
         AdrenPrincipal principal = new AdrenPrincipal(UUID.randomUUID(), role, consultantId);
         List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
