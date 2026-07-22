@@ -11,6 +11,7 @@ import type { Role } from "./shared/auth/authTypes";
  * several (Super Admin Console) serve a completely different persona from
  * the Consultant/User screens and have no reason sharing an initial bundle.
  *
+ *   /login               -> Login Screen (unnumbered, HRD-14) — real
  *   /search              -> 21.1 Search Dashboard (Layer 1) — real
  *   /itinerary/:id       -> 21.2 Itinerary Builder (Layer 1) — FND-16
  *   /packages/new        -> 21.3 Package Builder (Layer 1) — BOK-11
@@ -36,6 +37,9 @@ import type { Role } from "./shared/auth/authTypes";
  * Roles & Permissions Matrix. See protectedRouteElement's own comment for
  * why /, /search stay unguarded.
  */
+const LoginScreen = lazy(() =>
+  import("./features/login/LoginScreen").then((m) => ({ default: m.LoginScreen }))
+);
 const SearchDashboard = lazy(() =>
   import("./features/search-dashboard/SearchDashboard").then((m) => ({ default: m.SearchDashboard }))
 );
@@ -141,6 +145,7 @@ export default function App() {
   return (
     <Suspense fallback={<RouteLoadingFallback />}>
       <Routes>
+        <Route path="/login" element={routeElement(<LoginScreen />)} />
         <Route path="/" element={routeElement(<SearchDashboard />)} />
         <Route path="/search" element={routeElement(<SearchDashboard />)} />
         <Route

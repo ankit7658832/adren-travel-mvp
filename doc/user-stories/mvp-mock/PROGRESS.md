@@ -150,7 +150,7 @@ See `doc/phases.md` for the dependency-derived build order and `doc/architecture
 - [x] **HRD-11** — build the super admin dashboard
 - [x] **HRD-12** — tune inventory sync batch cadence per supplier
 - [x] **HRD-13** — alert super admin on inventory sync staleness beyond threshold
-- [ ] **HRD-14** — implement a real credential checked login screen and endpoint
+- [x] **HRD-14** — implement a real credential checked login screen and endpoint
 - [ ] **HRD-15** — build the direct booking payment flow frontend completing bok 13
 
 ## Frontend Shell (10)

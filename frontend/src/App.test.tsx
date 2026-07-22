@@ -62,4 +62,10 @@ describe("App routing (FES-01 code-split routes)", () => {
 
     expect(await screen.findByRole("heading", { level: 1 })).toBeInTheDocument();
   });
+
+  it("HRD-14: resolves the login screen's lazy chunk with no session at all", async () => {
+    renderApp("/login");
+
+    expect(await screen.findByRole("heading", { name: /sign in/i })).toBeInTheDocument();
+  });
 });
