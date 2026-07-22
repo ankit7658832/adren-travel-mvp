@@ -2,6 +2,7 @@ import { lazy, Suspense, type ReactNode } from "react";
 import { Routes, Route } from "react-router-dom";
 import { RouteErrorBoundary } from "./shared/components/RouteErrorBoundary";
 import { ProtectedRoute } from "./shared/auth/ProtectedRoute";
+import { NavBar } from "./shared/layout/NavBar";
 import type { Role } from "./shared/auth/authTypes";
 
 /**
@@ -143,73 +144,79 @@ function protectedRouteElement(screen: ReactNode, allowedRoles: Role[]) {
 
 export default function App() {
   return (
-    <Suspense fallback={<RouteLoadingFallback />}>
-      <Routes>
-        <Route path="/login" element={routeElement(<LoginScreen />)} />
-        <Route path="/" element={routeElement(<SearchDashboard />)} />
-        <Route path="/search" element={routeElement(<SearchDashboard />)} />
-        <Route
-          path="/itinerary/:id"
-          element={protectedRouteElement(<ItineraryBuilder />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
-        />
-        <Route
-          path="/packages/new"
-          element={protectedRouteElement(<PackageBuilder />, ["SUPER_ADMIN", "CONSULTANT"])}
-        />
-        <Route
-          path="/booking/:packageId"
-          element={protectedRouteElement(<BookingPaymentFlow />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
-        />
-        <Route path="/dashboard" element={protectedRouteElement(<ConsultantDashboard />, ["CONSULTANT"])} />
-        <Route path="/admin" element={protectedRouteElement(<SuperAdminConsole />, ["SUPER_ADMIN"])} />
-        <Route
-          path="/admin/consultants/new"
-          element={protectedRouteElement(<ConsultantOnboardingWizard />, ["SUPER_ADMIN"])}
-        />
-        <Route path="/admin/consultants" element={protectedRouteElement(<ConsultantList />, ["SUPER_ADMIN"])} />
-        <Route path="/users" element={protectedRouteElement(<UserManagement />, ["CONSULTANT"])} />
-        <Route
-          path="/admin/suppliers"
-          element={protectedRouteElement(<SupplierCredentialManagement />, ["SUPER_ADMIN"])}
-        />
-        <Route
-          path="/admin/ai-governance"
-          element={protectedRouteElement(<AiGovernanceLogViewer />, ["SUPER_ADMIN"])}
-        />
-        <Route
-          path="/admin/campaigns/policy-review"
-          element={protectedRouteElement(<CampaignPolicyReviewQueue />, ["SUPER_ADMIN"])}
-        />
-        <Route path="/local-dmc" element={protectedRouteElement(<LocalDmcOnboarding />, ["CONSULTANT"])} />
-        <Route
-          path="/local-dmc/:id/inventory"
-          element={protectedRouteElement(<LocalDmcBulkUpload />, ["CONSULTANT"])}
-        />
-        <Route path="/byos-credentials" element={protectedRouteElement(<ByosCredentialEntry />, ["CONSULTANT"])} />
-        <Route path="/wallet" element={protectedRouteElement(<WalletBilling />, ["SUPER_ADMIN", "CONSULTANT"])} />
-        <Route
-          path="/campaigns/new"
-          element={protectedRouteElement(<CampaignBuilder />, ["SUPER_ADMIN", "CONSULTANT"])}
-        />
-        <Route
-          path="/campaigns/:campaignId/billing"
-          element={protectedRouteElement(<CampaignBillingDetail />, ["SUPER_ADMIN", "CONSULTANT"])}
-        />
-        <Route
-          path="/pnr"
-          element={protectedRouteElement(<PnrBookingSearch />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
-        />
-        <Route
-          path="/notifications"
-          element={protectedRouteElement(<NotificationPreferences />, ["CONSULTANT"])}
-        />
-        {/* Layer 2, End Traveler-facing — no internal role required. */}
-        <Route path="/storefront" element={routeElement(<ConsultantStorefront />)} />
-        <Route
-          path="/disputes"
-          element={protectedRouteElement(<DisputeTicketTracker />, ["SUPER_ADMIN", "CONSULTANT"])}
-        />
-      </Routes>
-    </Suspense>
+    <>
+      {/* HRD-14 follow-up — the only navigation between screens in this
+          app; every screen used to be reachable only by typing its exact
+          URL. */}
+      <NavBar />
+      <Suspense fallback={<RouteLoadingFallback />}>
+        <Routes>
+          <Route path="/login" element={routeElement(<LoginScreen />)} />
+          <Route path="/" element={routeElement(<SearchDashboard />)} />
+          <Route path="/search" element={routeElement(<SearchDashboard />)} />
+          <Route
+            path="/itinerary/:id"
+            element={protectedRouteElement(<ItineraryBuilder />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
+          <Route
+            path="/packages/new"
+            element={protectedRouteElement(<PackageBuilder />, ["SUPER_ADMIN", "CONSULTANT"])}
+          />
+          <Route
+            path="/booking/:packageId"
+            element={protectedRouteElement(<BookingPaymentFlow />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
+          <Route path="/dashboard" element={protectedRouteElement(<ConsultantDashboard />, ["CONSULTANT"])} />
+          <Route path="/admin" element={protectedRouteElement(<SuperAdminConsole />, ["SUPER_ADMIN"])} />
+          <Route
+            path="/admin/consultants/new"
+            element={protectedRouteElement(<ConsultantOnboardingWizard />, ["SUPER_ADMIN"])}
+          />
+          <Route path="/admin/consultants" element={protectedRouteElement(<ConsultantList />, ["SUPER_ADMIN"])} />
+          <Route path="/users" element={protectedRouteElement(<UserManagement />, ["CONSULTANT"])} />
+          <Route
+            path="/admin/suppliers"
+            element={protectedRouteElement(<SupplierCredentialManagement />, ["SUPER_ADMIN"])}
+          />
+          <Route
+            path="/admin/ai-governance"
+            element={protectedRouteElement(<AiGovernanceLogViewer />, ["SUPER_ADMIN"])}
+          />
+          <Route
+            path="/admin/campaigns/policy-review"
+            element={protectedRouteElement(<CampaignPolicyReviewQueue />, ["SUPER_ADMIN"])}
+          />
+          <Route path="/local-dmc" element={protectedRouteElement(<LocalDmcOnboarding />, ["CONSULTANT"])} />
+          <Route
+            path="/local-dmc/:id/inventory"
+            element={protectedRouteElement(<LocalDmcBulkUpload />, ["CONSULTANT"])}
+          />
+          <Route path="/byos-credentials" element={protectedRouteElement(<ByosCredentialEntry />, ["CONSULTANT"])} />
+          <Route path="/wallet" element={protectedRouteElement(<WalletBilling />, ["SUPER_ADMIN", "CONSULTANT"])} />
+          <Route
+            path="/campaigns/new"
+            element={protectedRouteElement(<CampaignBuilder />, ["SUPER_ADMIN", "CONSULTANT"])}
+          />
+          <Route
+            path="/campaigns/:campaignId/billing"
+            element={protectedRouteElement(<CampaignBillingDetail />, ["SUPER_ADMIN", "CONSULTANT"])}
+          />
+          <Route
+            path="/pnr"
+            element={protectedRouteElement(<PnrBookingSearch />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
+          <Route
+            path="/notifications"
+            element={protectedRouteElement(<NotificationPreferences />, ["CONSULTANT"])}
+          />
+          {/* Layer 2, End Traveler-facing — no internal role required. */}
+          <Route path="/storefront" element={routeElement(<ConsultantStorefront />)} />
+          <Route
+            path="/disputes"
+            element={protectedRouteElement(<DisputeTicketTracker />, ["SUPER_ADMIN", "CONSULTANT"])}
+          />
+        </Routes>
+      </Suspense>
+    </>
   );
 }

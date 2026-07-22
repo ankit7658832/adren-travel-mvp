@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useMultiLocationSearch } from "./useMultiLocationSearch";
 import { MapPanel } from "@/shared/layout/MapPanel";
 import { ResultsPanel } from "@/shared/layout/ResultsPanel";
@@ -60,16 +60,9 @@ export function SearchDashboard() {
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-neutral-900">
-          Search &amp; Build Itinerary
-        </h1>
-        {/* HRD-14 — the only entry point to the real login screen; no
-            shared app-wide nav/header exists yet for this to live in. */}
-        <Link to="/login" className="text-sm font-medium text-primary-600 hover:underline">
-          Sign in
-        </Link>
-      </div>
+      <h1 className="text-2xl font-semibold text-neutral-900">
+        Search &amp; Build Itinerary
+      </h1>
 
       <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
         <div className="flex-1">
