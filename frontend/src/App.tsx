@@ -2,7 +2,7 @@ import { lazy, Suspense, type ReactNode } from "react";
 import { Routes, Route } from "react-router-dom";
 import { RouteErrorBoundary } from "./shared/components/RouteErrorBoundary";
 import { ProtectedRoute } from "./shared/auth/ProtectedRoute";
-import { NavBar } from "./shared/layout/NavBar";
+import { AppShell } from "./shared/layout/AppShell";
 import type { Role } from "./shared/auth/authTypes";
 
 /**
@@ -144,11 +144,10 @@ function protectedRouteElement(screen: ReactNode, allowedRoles: Role[]) {
 
 export default function App() {
   return (
-    <>
-      {/* HRD-14 follow-up — the only navigation between screens in this
-          app; every screen used to be reachable only by typing its exact
-          URL. */}
-      <NavBar />
+    // doc/ADREN_UIUX_SPEC.md §3 Global Navigation Shell — the only
+    // navigation between screens in this app; every screen used to be
+    // reachable only by typing its exact URL.
+    <AppShell>
       <Suspense fallback={<RouteLoadingFallback />}>
         <Routes>
           <Route path="/login" element={routeElement(<LoginScreen />)} />
@@ -217,6 +216,6 @@ export default function App() {
           />
         </Routes>
       </Suspense>
-    </>
+    </AppShell>
   );
 }
