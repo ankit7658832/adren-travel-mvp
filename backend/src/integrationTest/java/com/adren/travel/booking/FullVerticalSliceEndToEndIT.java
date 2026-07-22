@@ -220,6 +220,14 @@ class FullVerticalSliceEndToEndIT {
         // 7. Publish the Package.
         postForRawBody("/api/v1/packages/" + packageId + "/publish", Map.of("promoteViaAds", false), token);
 
+        // 7b. HRD-15 — the Direct Booking & Payment screen's price-breakdown
+        // step reads a single published Package by id; this REST exposure
+        // of the already-existing BookingApi.findPackageById (AI-12) never
+        // had a caller until HRD-15's frontend.
+        Map<String, Object> fetchedPackage = getJson("/api/v1/packages/" + packageId, token);
+        assertThat(fetchedPackage.get("name")).isEqualTo("Goa Getaway");
+        assertThat(new BigDecimal(fetchedPackage.get("markupPrice").toString())).isEqualByComparingTo("500");
+
         // 8. Wallet baseline — availableBalance starts at 0 (insertDraftItinerary
         // pre-seeds a 100,000 INR credit_limit so step 9's 11,500 INR
         // confirmation clears FIN-08's credit-limit check).

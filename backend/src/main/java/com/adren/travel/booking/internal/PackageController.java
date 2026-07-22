@@ -47,4 +47,15 @@ class PackageController {
     Page<PackageView> findPublished(@RequestParam UUID consultantId, Pageable pageable) {
         return bookingApi.findPublishedPackagesByConsultant(consultantId, pageable);
     }
+
+    /**
+     * HRD-15 — a single published Package's content, for the Direct
+     * Booking & Payment screen's price-breakdown step. {@code
+     * BookingApi.findPackageById} (AI-12) already existed for the {@code
+     * ads} module's own use; this is its first REST exposure.
+     */
+    @GetMapping("/{packageId}")
+    PackageView findById(@PathVariable UUID packageId) {
+        return bookingApi.findPackageById(packageId);
+    }
 }
