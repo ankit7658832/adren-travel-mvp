@@ -21,6 +21,9 @@ import type { Role } from "./shared/auth/authTypes";
  *   /booking/:packageId  -> 21.4 Booking & Payment Flow (mixed, doc/DESIGN.md §10) — BOK-13
  *   /bookings/:bookingId/confirmation -> SCR-17 Booking Confirmation (doc/ADREN_UIUX_SPEC.md §12.2) — real
  *   /travelers/new       -> SCR-14 Pax/Traveler Details (doc/ADREN_UIUX_SPEC.md §9) — real
+ *   /preview/{hotels,flights,transfers,cruises,activities}[/:productId]
+ *                         -> SCR-04–13 Per-Product List/Detail (doc/ADREN_UIUX_SPEC.md §7–8)
+ *                         — PREVIEW/MOCK DATA, see productPreviewData.ts's own doc comment
  *   /dashboard           -> 21.5 Consultant Dashboard (Layer 1) — HRD-09
  *   /admin               -> 21.6 Super Admin Console (Layer 1) — HRD-11
  *   /wallet              -> 21.7 Wallet & Billing (Layer 1) — FIN-09
@@ -68,6 +71,12 @@ const BookingConfirmation = lazy(() =>
 );
 const TravelerDetailsScreen = lazy(() =>
   import("./features/traveler-details/TravelerDetailsScreen").then((m) => ({ default: m.TravelerDetailsScreen }))
+);
+const ProductListPage = lazy(() =>
+  import("./features/product-preview/ProductListPage").then((m) => ({ default: m.ProductListPage }))
+);
+const ProductDetailPage = lazy(() =>
+  import("./features/product-preview/ProductDetailPage").then((m) => ({ default: m.ProductDetailPage }))
 );
 const ConsultantDashboard = lazy(() =>
   import("./features/consultant-dashboard/ConsultantDashboard").then((m) => ({ default: m.ConsultantDashboard }))
@@ -190,6 +199,49 @@ export default function App() {
           <Route
             path="/travelers/new"
             element={protectedRouteElement(<TravelerDetailsScreen />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
+          {/* SCR-04–13 — preview/mock-data screens (productPreviewData.ts),
+              same role scope as the real internal search/build workflow
+              these stand in for (doc/DESIGN.md §10.1: never End-Traveler-facing). */}
+          <Route
+            path="/preview/hotels"
+            element={protectedRouteElement(<ProductListPage categoryId="hotel" />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
+          <Route
+            path="/preview/hotels/:productId"
+            element={protectedRouteElement(<ProductDetailPage categoryId="hotel" />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
+          <Route
+            path="/preview/flights"
+            element={protectedRouteElement(<ProductListPage categoryId="flight" />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
+          <Route
+            path="/preview/flights/:productId"
+            element={protectedRouteElement(<ProductDetailPage categoryId="flight" />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
+          <Route
+            path="/preview/transfers"
+            element={protectedRouteElement(<ProductListPage categoryId="transfer" />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
+          <Route
+            path="/preview/transfers/:productId"
+            element={protectedRouteElement(<ProductDetailPage categoryId="transfer" />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
+          <Route
+            path="/preview/cruises"
+            element={protectedRouteElement(<ProductListPage categoryId="cruise" />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
+          <Route
+            path="/preview/cruises/:productId"
+            element={protectedRouteElement(<ProductDetailPage categoryId="cruise" />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
+          <Route
+            path="/preview/activities"
+            element={protectedRouteElement(<ProductListPage categoryId="activity" />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
+          <Route
+            path="/preview/activities/:productId"
+            element={protectedRouteElement(<ProductDetailPage categoryId="activity" />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
           />
           <Route path="/dashboard" element={protectedRouteElement(<ConsultantDashboard />, ["CONSULTANT"])} />
           <Route path="/admin" element={protectedRouteElement(<SuperAdminConsole />, ["SUPER_ADMIN"])} />
