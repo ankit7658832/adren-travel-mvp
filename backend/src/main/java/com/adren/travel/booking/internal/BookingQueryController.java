@@ -2,6 +2,7 @@ package com.adren.travel.booking.internal;
 
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.BookingSearchResultView;
+import com.adren.travel.booking.BookingView;
 import com.adren.travel.booking.CalculateCancellationRefundCommand;
 import com.adren.travel.booking.CancellationRequestView;
 import com.adren.travel.booking.DisputeTicketView;
@@ -12,6 +13,9 @@ import com.adren.travel.shared.Money;
 import com.adren.travel.shared.PageResponse;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -42,6 +46,22 @@ class BookingQueryController {
     @GetMapping
     PageResponse<UUID> findByConsultant(@RequestParam UUID consultantId, Pageable pageable) {
         return PageResponse.of(bookingApi.findBookingsByConsultant(consultantId, pageable));
+    }
+
+    /** SCR-17 (doc/ADREN_UIUX_SPEC.md §12.2) — the Booking Confirmation screen's content. */
+    @GetMapping("/{bookingId}")
+    BookingView findById(@PathVariable UUID bookingId) {
+        return bookingApi.findBookingById(bookingId);
+    }
+
+    /** SCR-17's "Download Voucher" button. */
+    @GetMapping("/{bookingId}/voucher")
+    ResponseEntity<byte[]> downloadVoucher(@PathVariable UUID bookingId) {
+        byte[] pdf = bookingApi.downloadVoucherPdf(bookingId);
+        return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_PDF)
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"voucher-" + bookingId + ".pdf\"")
+            .body(pdf);
     }
 
     /** PRD §16, §22.8 T12, HRD-07 — PNR/booking reference search across all product types. */

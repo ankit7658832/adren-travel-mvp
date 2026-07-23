@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { LoginScreen } from "./LoginScreen";
@@ -11,7 +12,9 @@ function renderLoginScreen() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <LoginScreen />
+      <MemoryRouter>
+        <LoginScreen />
+      </MemoryRouter>
     </QueryClientProvider>
   );
 }

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/shared/design-system/Button";
 import { TextField } from "@/shared/design-system/TextField";
 import { Card } from "@/shared/design-system/Card";
@@ -22,6 +22,7 @@ import {
  */
 export function BookingPaymentFlow() {
   const { packageId } = useParams<{ packageId: string }>();
+  const navigate = useNavigate();
   const packageQuery = usePackageDetails(packageId);
   const createTravelerProfile = useCreateTravelerProfile();
   const confirmBooking = useConfirmBooking();
@@ -71,24 +72,21 @@ export function BookingPaymentFlow() {
       },
       {
         onSuccess: () => {
-          confirmBooking.mutate({
-            quotationOrPackageId: travelPackage.packageId,
-            totalSellPrice,
-            currency: travelPackage.currency,
-            paymentMethod,
-          });
+          confirmBooking.mutate(
+            {
+              quotationOrPackageId: travelPackage.packageId,
+              totalSellPrice,
+              currency: travelPackage.currency,
+              paymentMethod,
+            },
+            {
+              // SCR-18's own spec: "routes to SCR-17 on success" —
+              // BookingConfirmation is that screen.
+              onSuccess: (data) => navigate(`/bookings/${data.bookingId}/confirmation`),
+            }
+          );
         },
       }
-    );
-  }
-
-  if (confirmBooking.isSuccess) {
-    return (
-      <main className="mx-auto max-w-2xl px-6 py-8">
-        <div role="status" className="rounded-md border border-success-700/20 bg-success-50 px-4 py-3 text-success-700">
-          Booking confirmed — id {confirmBooking.data.bookingId}
-        </div>
-      </main>
     );
   }
 

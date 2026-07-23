@@ -34,4 +34,11 @@ class VoucherService {
         voucherRepository.save(voucher);
         return voucher;
     }
+
+    /** SCR-17 — the Download Voucher button's actual content. */
+    byte[] retrievePdf(UUID bookingId) {
+        Voucher voucher = voucherRepository.findByBookingId(bookingId)
+            .orElseThrow(() -> new IllegalStateException("No voucher for confirmed booking: " + bookingId));
+        return documentStorage.retrieve(voucher.getPdfReference());
+    }
 }

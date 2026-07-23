@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { BookingPaymentFlow } from "./BookingPaymentFlow";
@@ -37,6 +37,11 @@ function mockWallet(overrides: Partial<Record<string, string>> = {}) {
   );
 }
 
+function ConfirmationRouteStub() {
+  const { bookingId } = useParams<{ bookingId: string }>();
+  return <p role="status">Booking confirmed — id {bookingId}</p>;
+}
+
 function renderFlow() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
@@ -44,6 +49,10 @@ function renderFlow() {
       <MemoryRouter initialEntries={["/booking/pkg-1"]}>
         <Routes>
           <Route path="/booking/:packageId" element={<BookingPaymentFlow />} />
+          {/* Stands in for the real BookingConfirmation screen (its own
+              component test), just proving SCR-18 navigates there on
+              success with the right booking id. */}
+          <Route path="/bookings/:bookingId/confirmation" element={<ConfirmationRouteStub />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>

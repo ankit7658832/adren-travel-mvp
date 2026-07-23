@@ -64,4 +64,11 @@ class PrincipalCredential {
     UUID getConsultantId() {
         return consultantId;
     }
+
+    // SCR-00b — sets a new hash directly; the caller (SecurityApiImpl) is
+    // the only place that ever computes one, via the same PasswordEncoder
+    // both registration and login already use.
+    void changePasswordHash(String newPasswordHash) {
+        this.passwordHash = newPasswordHash;
+    }
 }

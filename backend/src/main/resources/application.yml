@@ -61,6 +61,11 @@ adren:
       # rather than silently reusing a dev secret (RULES.md S5.3).
       secret: ${ADREN_JWT_SECRET}
       expiration-minutes: ${ADREN_JWT_EXPIRATION_MINUTES:60}
+    password-reset:
+      # SCR-00b — where the emailed reset link points; every non-local
+      # profile must override this to its real deployed frontend origin.
+      frontend-base-url: ${ADREN_FRONTEND_BASE_URL:http://localhost:5173}
+      token-expiration-minutes: ${ADREN_PASSWORD_RESET_EXPIRATION_MINUTES:30}
   aws:
     # OPS-09 — no endpoint-override default here (see AwsProperties'
     # Javadoc): unset means the AWS SDK resolves the real regional

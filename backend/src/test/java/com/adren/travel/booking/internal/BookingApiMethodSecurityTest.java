@@ -124,6 +124,11 @@ class BookingApiMethodSecurityTest {
         }
 
         @Bean
+        VoucherRepository voucherRepository() {
+            return Mockito.mock(VoucherRepository.class);
+        }
+
+        @Bean
         PaymentsApi paymentsApi() {
             return Mockito.mock(PaymentsApi.class);
         }
@@ -156,7 +161,7 @@ class BookingApiMethodSecurityTest {
                                ActivityLineItemRepository activityLineItemRepository,
                                QuotationRepository quotationRepository,
                                TravelPackageRepository travelPackageRepository, BookingRepository bookingRepository,
-                               VoucherService voucherService,
+                               VoucherService voucherService, VoucherRepository voucherRepository,
                                ApplicationEventPublisher publisher, WhitelabelApi whitelabelApi,
                                SupplierSearchApi supplierSearchApi, HotelDedupService hotelDedupService,
                                PaymentsApi paymentsApi, CancellationRequestRepository cancellationRequestRepository,
@@ -164,7 +169,7 @@ class BookingApiMethodSecurityTest {
             return new BookingServiceImpl(repository, travelerProfileRepository, hotelLineItemRepository,
                 flightLineItemRepository, transferLineItemRepository, cruiseLineItemRepository,
                 activityLineItemRepository, quotationRepository, travelPackageRepository, bookingRepository,
-                voucherService, publisher, whitelabelApi, supplierSearchApi, hotelDedupService, paymentsApi,
+                voucherService, voucherRepository, publisher, whitelabelApi, supplierSearchApi, hotelDedupService, paymentsApi,
                 cancellationRequestRepository, disputeTicketRepository, aiApi);
         }
     }
@@ -251,6 +256,25 @@ class BookingApiMethodSecurityTest {
 
         authenticateAs(Role.SUPER_ADMIN, null);
         assertThat(bookingApi.findBookingsByConsultant(consultantId, PageRequest.of(0, 20)).getContent()).isEmpty();
+    }
+
+    @Test
+    void findBookingByIdIsAlsoGuardedByMethodSecurity() {
+        BookingRepository bookingRepository = context.getBean(BookingRepository.class);
+        VoucherRepository voucherRepository = context.getBean(VoucherRepository.class);
+        UUID bookingId = UUID.randomUUID();
+        UUID consultantId = UUID.randomUUID();
+        Booking booking = new Booking(bookingId, UUID.randomUUID(), consultantId, java.math.BigDecimal.TEN,
+            com.adren.travel.shared.CurrencyCode.INR, PaymentMethod.WALLET, "ABC12345");
+        when(bookingRepository.findById(bookingId)).thenReturn(java.util.Optional.of(booking));
+        when(voucherRepository.findByBookingId(bookingId)).thenReturn(
+            java.util.Optional.of(new Voucher(UUID.randomUUID(), bookingId, "voucher.pdf", null)));
+
+        assertThatThrownBy(() -> bookingApi.findBookingById(bookingId))
+            .isInstanceOf(AuthenticationCredentialsNotFoundException.class);
+
+        authenticateAs(Role.CONSULTANT, consultantId);
+        assertThat(bookingApi.findBookingById(bookingId).pnrSearchableRef()).isEqualTo("ABC12345");
     }
 
     @Test

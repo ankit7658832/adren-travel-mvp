@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/shared/design-system/Button";
 import { TextField } from "@/shared/design-system/TextField";
 import { useLogin, landingRouteFor } from "./useLogin";
@@ -60,6 +61,10 @@ export function LoginScreen() {
           {loginMutation.isPending ? "Signing in…" : "Sign in"}
         </Button>
       </form>
+
+      <Link to="/forgot-password" className="mt-4 text-sm text-primary-600 hover:underline">
+        Forgot your password?
+      </Link>
     </main>
   );
 }

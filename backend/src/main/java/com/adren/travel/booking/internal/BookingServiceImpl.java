@@ -16,6 +16,7 @@ import com.adren.travel.booking.AddTransferLineItemCommand;
 import com.adren.travel.booking.AlternateOption;
 import com.adren.travel.booking.BookingApi;
 import com.adren.travel.booking.BookingSearchResultView;
+import com.adren.travel.booking.BookingView;
 import com.adren.travel.booking.CalculateCancellationRefundCommand;
 import com.adren.travel.booking.CancellationRequestView;
 import com.adren.travel.booking.ConsolidateCheckoutTotalCommand;
@@ -29,6 +30,7 @@ import com.adren.travel.booking.PackageSummaryView;
 import com.adren.travel.booking.PackageView;
 import com.adren.travel.booking.QuotationSummaryView;
 import com.adren.travel.booking.SupplierPerformanceView;
+import com.adren.travel.booking.VoucherView;
 import com.adren.travel.booking.event.ActivityLineItemAddedEvent;
 import com.adren.travel.booking.event.BookingCancelledEvent;
 import com.adren.travel.booking.event.BookingConfirmedEvent;
@@ -109,6 +111,7 @@ class BookingServiceImpl implements BookingApi {
     private final TravelPackageRepository travelPackageRepository;
     private final BookingRepository bookingRepository;
     private final VoucherService voucherService;
+    private final VoucherRepository voucherRepository;
     private final ApplicationEventPublisher events;
     private final WhitelabelApi whitelabelApi;
     private final SupplierSearchApi supplierSearchApi;
@@ -131,7 +134,7 @@ class BookingServiceImpl implements BookingApi {
                         ActivityLineItemRepository activityLineItemRepository,
                         QuotationRepository quotationRepository,
                         TravelPackageRepository travelPackageRepository, BookingRepository bookingRepository,
-                        VoucherService voucherService,
+                        VoucherService voucherService, VoucherRepository voucherRepository,
                         ApplicationEventPublisher events, WhitelabelApi whitelabelApi,
                         SupplierSearchApi supplierSearchApi, HotelDedupService hotelDedupService,
                         PaymentsApi paymentsApi, CancellationRequestRepository cancellationRequestRepository,
@@ -147,6 +150,7 @@ class BookingServiceImpl implements BookingApi {
         this.travelPackageRepository = travelPackageRepository;
         this.bookingRepository = bookingRepository;
         this.voucherService = voucherService;
+        this.voucherRepository = voucherRepository;
         this.events = events;
         this.whitelabelApi = whitelabelApi;
         this.hotelDedupService = hotelDedupService;
@@ -792,6 +796,37 @@ class BookingServiceImpl implements BookingApi {
         UUID scopedConsultantId = CurrentPrincipal.resolveTenantScope(consultantId);
         return itineraryRepository.findByConsultantId(scopedConsultantId, pageable)
             .map(Itinerary::getItineraryId);
+    }
+
+    @Override
+    public BookingView findBookingById(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+            .orElseThrow(() -> new IllegalArgumentException("No such booking: " + bookingId));
+        CurrentPrincipal.resolveTenantScope(booking.getConsultantId());
+
+        // BOK-15: every CONFIRMED booking gets a Voucher generated
+        // synchronously in the SAME transaction as confirmation itself
+        // (finalizeConfirmedBooking) — a missing one here would be a data
+        // integrity bug, not a normal "not yet generated" state to hide behind Optional.
+        Voucher voucher = voucherRepository.findByBookingId(bookingId)
+            .orElseThrow(() -> new IllegalStateException("No voucher for confirmed booking: " + bookingId));
+
+        return new BookingView(
+            booking.getBookingId(),
+            booking.getPnrSearchableRef(),
+            booking.getStatus().name(),
+            booking.getPaymentMethod().name(),
+            new Money(booking.getTotalSellPriceAmount(), booking.getTotalSellCurrency()),
+            booking.getCreatedAt(),
+            new VoucherView(voucher.getPdfReference(), voucher.getAtolCertificateReference(), voucher.getGeneratedAt()));
+    }
+
+    @Override
+    public byte[] downloadVoucherPdf(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+            .orElseThrow(() -> new IllegalArgumentException("No such booking: " + bookingId));
+        CurrentPrincipal.resolveTenantScope(booking.getConsultantId());
+        return voucherService.retrievePdf(bookingId);
     }
 
     @Override

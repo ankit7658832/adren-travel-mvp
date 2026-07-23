@@ -13,10 +13,13 @@ import type { Role } from "./shared/auth/authTypes";
  * the Consultant/User screens and have no reason sharing an initial bundle.
  *
  *   /login               -> Login Screen (unnumbered, HRD-14) — real
+ *   /forgot-password     -> SCR-00b Forgot Password (doc/ADREN_UIUX_SPEC.md §5.2) — real
+ *   /reset-password      -> SCR-00b Reset Password (doc/ADREN_UIUX_SPEC.md §5.2) — real
  *   /search              -> 21.1 Search Dashboard (Layer 1) — real
  *   /itinerary/:id       -> 21.2 Itinerary Builder (Layer 1) — FND-16
  *   /packages/new        -> 21.3 Package Builder (Layer 1) — BOK-11
  *   /booking/:packageId  -> 21.4 Booking & Payment Flow (mixed, doc/DESIGN.md §10) — BOK-13
+ *   /bookings/:bookingId/confirmation -> SCR-17 Booking Confirmation (doc/ADREN_UIUX_SPEC.md §12.2) — real
  *   /dashboard           -> 21.5 Consultant Dashboard (Layer 1) — HRD-09
  *   /admin               -> 21.6 Super Admin Console (Layer 1) — HRD-11
  *   /wallet              -> 21.7 Wallet & Billing (Layer 1) — FIN-09
@@ -41,6 +44,12 @@ import type { Role } from "./shared/auth/authTypes";
 const LoginScreen = lazy(() =>
   import("./features/login/LoginScreen").then((m) => ({ default: m.LoginScreen }))
 );
+const ForgotPasswordScreen = lazy(() =>
+  import("./features/password-reset/ForgotPasswordScreen").then((m) => ({ default: m.ForgotPasswordScreen }))
+);
+const ResetPasswordScreen = lazy(() =>
+  import("./features/password-reset/ResetPasswordScreen").then((m) => ({ default: m.ResetPasswordScreen }))
+);
 const SearchDashboard = lazy(() =>
   import("./features/search-dashboard/SearchDashboard").then((m) => ({ default: m.SearchDashboard }))
 );
@@ -52,6 +61,9 @@ const PackageBuilder = lazy(() =>
 );
 const BookingPaymentFlow = lazy(() =>
   import("./features/booking-payment-flow/BookingPaymentFlow").then((m) => ({ default: m.BookingPaymentFlow }))
+);
+const BookingConfirmation = lazy(() =>
+  import("./features/booking-confirmation/BookingConfirmation").then((m) => ({ default: m.BookingConfirmation }))
 );
 const ConsultantDashboard = lazy(() =>
   import("./features/consultant-dashboard/ConsultantDashboard").then((m) => ({ default: m.ConsultantDashboard }))
@@ -151,6 +163,8 @@ export default function App() {
       <Suspense fallback={<RouteLoadingFallback />}>
         <Routes>
           <Route path="/login" element={routeElement(<LoginScreen />)} />
+          <Route path="/forgot-password" element={routeElement(<ForgotPasswordScreen />)} />
+          <Route path="/reset-password" element={routeElement(<ResetPasswordScreen />)} />
           <Route path="/" element={routeElement(<SearchDashboard />)} />
           <Route path="/search" element={routeElement(<SearchDashboard />)} />
           <Route
@@ -164,6 +178,10 @@ export default function App() {
           <Route
             path="/booking/:packageId"
             element={protectedRouteElement(<BookingPaymentFlow />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
+          <Route
+            path="/bookings/:bookingId/confirmation"
+            element={protectedRouteElement(<BookingConfirmation />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
           />
           <Route path="/dashboard" element={protectedRouteElement(<ConsultantDashboard />, ["CONSULTANT"])} />
           <Route path="/admin" element={protectedRouteElement(<SuperAdminConsole />, ["SUPER_ADMIN"])} />

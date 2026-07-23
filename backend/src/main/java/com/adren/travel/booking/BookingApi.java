@@ -170,6 +170,19 @@ public interface BookingApi {
     Page<UUID> findBookingsByConsultant(UUID consultantId, Pageable pageable);
 
     /**
+     * SCR-17 (doc/ADREN_UIUX_SPEC.md §12.2) — a single confirmed Booking's
+     * confirmation-screen content, tenant-scoped via {@code
+     * CurrentPrincipal.resolveTenantScope} same as every other
+     * single-resource lookup in this module.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    BookingView findBookingById(UUID bookingId);
+
+    /** SCR-17's "Download Voucher" button — same tenant scoping as {@link #findBookingById}. */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','CONSULTANT','USER')")
+    byte[] downloadVoucherPdf(UUID bookingId);
+
+    /**
      * Searches by PNR/internal booking reference across all product types
      * from a single field (PRD §16, §22.8 T12, HRD-07) — {@code Booking}
      * itself carries no product-type field, so this is one lookup, not a

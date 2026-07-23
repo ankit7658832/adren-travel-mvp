@@ -30,4 +30,12 @@ class SecurityControllerAdvice {
             "https://docs.adren.travel/errors/invalid-credentials", "Invalid credentials",
             "Invalid email or password.", request.getRequestURI());
     }
+
+    // SCR-00b — an invalid/expired/already-used reset token.
+    @ExceptionHandler(IllegalArgumentException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    ProblemDetail handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
+        return ProblemDetailFactory.create(HttpStatus.BAD_REQUEST,
+            "https://docs.adren.travel/errors/invalid-request", "Invalid request", ex.getMessage(), request.getRequestURI());
+    }
 }

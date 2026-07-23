@@ -11,4 +11,7 @@ interface DocumentStorage {
 
     /** Stores {@code content} and returns its storage reference (an S3 key in a real implementation). */
     String store(String keyPrefix, byte[] content);
+
+    /** SCR-17 — retrieves previously-stored content by the reference {@link #store} returned. */
+    byte[] retrieve(String reference);
 }

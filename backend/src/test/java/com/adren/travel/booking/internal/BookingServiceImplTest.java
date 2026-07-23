@@ -137,6 +137,9 @@ class BookingServiceImplTest {
     VoucherService voucherService;
 
     @Mock
+    VoucherRepository voucherRepository;
+
+    @Mock
     PaymentsApi paymentsApi;
 
     @Mock
@@ -155,7 +158,7 @@ class BookingServiceImplTest {
         service = new BookingServiceImpl(itineraryRepository, travelerProfileRepository, hotelLineItemRepository,
             flightLineItemRepository, transferLineItemRepository, cruiseLineItemRepository,
             activityLineItemRepository, quotationRepository, travelPackageRepository, bookingRepository,
-            voucherService, events, whitelabelApi, supplierSearchApi, hotelDedupService, paymentsApi,
+            voucherService, voucherRepository, events, whitelabelApi, supplierSearchApi, hotelDedupService, paymentsApi,
             cancellationRequestRepository, disputeTicketRepository, aiApi);
     }
 

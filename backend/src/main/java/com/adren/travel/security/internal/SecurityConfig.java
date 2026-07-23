@@ -55,7 +55,11 @@ class SecurityConfig {
         // without a bearer token; it verifies the submitted password and
         // mints one, same shape as every other public-endpoint exception
         // in this list.
-        "/api/v1/auth/login"
+        "/api/v1/auth/login",
+        // SCR-00b — a signed-out user has no bearer token yet by
+        // definition; both reachable without one.
+        "/api/v1/auth/forgot-password",
+        "/api/v1/auth/reset-password"
     };
 
     @Bean
