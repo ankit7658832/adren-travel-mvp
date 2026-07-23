@@ -21,6 +21,7 @@ import type { Role } from "./shared/auth/authTypes";
  *   /booking/:packageId  -> 21.4 Booking & Payment Flow (mixed, doc/DESIGN.md §10) — BOK-13
  *   /bookings/:bookingId/confirmation -> SCR-17 Booking Confirmation (doc/ADREN_UIUX_SPEC.md §12.2) — real
  *   /travelers/new       -> SCR-14 Pax/Traveler Details (doc/ADREN_UIUX_SPEC.md §9) — real
+ *   /preview             -> Product Preview index (links to the 5 categories below)
  *   /preview/{hotels,flights,transfers,cruises,activities}[/:productId]
  *                         -> SCR-04–13 Per-Product List/Detail (doc/ADREN_UIUX_SPEC.md §7–8)
  *                         — PREVIEW/MOCK DATA, see productPreviewData.ts's own doc comment
@@ -71,6 +72,9 @@ const BookingConfirmation = lazy(() =>
 );
 const TravelerDetailsScreen = lazy(() =>
   import("./features/traveler-details/TravelerDetailsScreen").then((m) => ({ default: m.TravelerDetailsScreen }))
+);
+const ProductPreviewIndex = lazy(() =>
+  import("./features/product-preview/ProductPreviewIndex").then((m) => ({ default: m.ProductPreviewIndex }))
 );
 const ProductListPage = lazy(() =>
   import("./features/product-preview/ProductListPage").then((m) => ({ default: m.ProductListPage }))
@@ -203,6 +207,10 @@ export default function App() {
           {/* SCR-04–13 — preview/mock-data screens (productPreviewData.ts),
               same role scope as the real internal search/build workflow
               these stand in for (doc/DESIGN.md §10.1: never End-Traveler-facing). */}
+          <Route
+            path="/preview"
+            element={protectedRouteElement(<ProductPreviewIndex />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
           <Route
             path="/preview/hotels"
             element={protectedRouteElement(<ProductListPage categoryId="hotel" />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}

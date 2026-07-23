@@ -14,6 +14,7 @@ import {
   Bot,
   ClipboardCheck,
   ShieldCheck,
+  Compass,
   type LucideIcon,
 } from "lucide-react";
 import type { Role } from "@/shared/auth/authTypes";
@@ -44,6 +45,7 @@ export const CONSULTANT_LINKS: SidebarLink[] = [
   { to: "/pnr", label: "Bookings / PNR Search", icon: Ticket },
   { to: "/notifications", label: "Settings", icon: Bell },
   { to: "/disputes", label: "Disputes", icon: AlertTriangle },
+  { to: "/preview", label: "Product Preview", icon: Compass },
 ];
 
 export const SUPER_ADMIN_LINKS: SidebarLink[] = [
@@ -57,6 +59,7 @@ export const SUPER_ADMIN_LINKS: SidebarLink[] = [
   { to: "/campaigns/new", label: "Campaigns", icon: Megaphone },
   { to: "/pnr", label: "Bookings / PNR Search", icon: Ticket },
   { to: "/disputes", label: "Disputes", icon: AlertTriangle },
+  { to: "/preview", label: "Product Preview", icon: Compass },
 ];
 
 export const USER_LINKS: SidebarLink[] = [
