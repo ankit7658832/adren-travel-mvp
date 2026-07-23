@@ -5,6 +5,7 @@ import { MapPanel } from "@/shared/layout/MapPanel";
 import { ResultsPanel } from "@/shared/layout/ResultsPanel";
 import { Button } from "@/shared/design-system/Button";
 import { Badge } from "@/shared/design-system/Badge";
+import { ErrorModal } from "@/shared/components/ErrorModal";
 import { useItineraryDraftStore } from "@/features/itinerary-builder/itineraryDraftStore";
 
 /**
@@ -18,7 +19,7 @@ import { useItineraryDraftStore } from "@/features/itinerary-builder/itineraryDr
  */
 export function SearchDashboard() {
   const [locationInput, setLocationInput] = useState("");
-  const { status, results, errorMessage, search } = useMultiLocationSearch();
+  const { status, results, errorMessage, search, dismiss } = useMultiLocationSearch();
   const startDraft = useItineraryDraftStore((s) => s.startDraft);
   const setLineItem = useItineraryDraftStore((s) => s.setLineItem);
   const navigate = useNavigate();
@@ -102,17 +103,16 @@ export function SearchDashboard() {
       )}
 
       {status === "error" && (
-        <div
-          role="alert"
-          className="mt-6 flex items-center justify-between rounded-md border border-error-600/20 bg-error-50 px-4 py-3"
-        >
-          <p className="text-sm text-error-700">
-            {errorMessage ?? "Something went wrong."}
-          </p>
-          <Button variant="secondary" size="sm" onClick={handleSearch}>
-            Retry
-          </Button>
-        </div>
+        // SCR-16 (doc/ADREN_UIUX_SPEC.md §2.5) — a whole-search failure
+        // is exactly the "stops the user's current task" case the Global
+        // Error Modal is for, vs. the per-location "no inventory" card
+        // (below) used when only some locations fail.
+        <ErrorModal
+          title="Search failed"
+          message={errorMessage ?? "Something went wrong."}
+          onRetry={handleSearch}
+          onDismiss={dismiss}
+        />
       )}
 
       {status === "success" && (

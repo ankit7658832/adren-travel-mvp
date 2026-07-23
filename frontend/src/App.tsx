@@ -20,6 +20,7 @@ import type { Role } from "./shared/auth/authTypes";
  *   /packages/new        -> 21.3 Package Builder (Layer 1) — BOK-11
  *   /booking/:packageId  -> 21.4 Booking & Payment Flow (mixed, doc/DESIGN.md §10) — BOK-13
  *   /bookings/:bookingId/confirmation -> SCR-17 Booking Confirmation (doc/ADREN_UIUX_SPEC.md §12.2) — real
+ *   /travelers/new       -> SCR-14 Pax/Traveler Details (doc/ADREN_UIUX_SPEC.md §9) — real
  *   /dashboard           -> 21.5 Consultant Dashboard (Layer 1) — HRD-09
  *   /admin               -> 21.6 Super Admin Console (Layer 1) — HRD-11
  *   /wallet              -> 21.7 Wallet & Billing (Layer 1) — FIN-09
@@ -64,6 +65,9 @@ const BookingPaymentFlow = lazy(() =>
 );
 const BookingConfirmation = lazy(() =>
   import("./features/booking-confirmation/BookingConfirmation").then((m) => ({ default: m.BookingConfirmation }))
+);
+const TravelerDetailsScreen = lazy(() =>
+  import("./features/traveler-details/TravelerDetailsScreen").then((m) => ({ default: m.TravelerDetailsScreen }))
 );
 const ConsultantDashboard = lazy(() =>
   import("./features/consultant-dashboard/ConsultantDashboard").then((m) => ({ default: m.ConsultantDashboard }))
@@ -182,6 +186,10 @@ export default function App() {
           <Route
             path="/bookings/:bookingId/confirmation"
             element={protectedRouteElement(<BookingConfirmation />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
+          />
+          <Route
+            path="/travelers/new"
+            element={protectedRouteElement(<TravelerDetailsScreen />, ["SUPER_ADMIN", "CONSULTANT", "USER"])}
           />
           <Route path="/dashboard" element={protectedRouteElement(<ConsultantDashboard />, ["CONSULTANT"])} />
           <Route path="/admin" element={protectedRouteElement(<SuperAdminConsole />, ["SUPER_ADMIN"])} />

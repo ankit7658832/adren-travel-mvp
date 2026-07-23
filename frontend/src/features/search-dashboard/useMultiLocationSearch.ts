@@ -61,5 +61,9 @@ export function useMultiLocationSearch() {
     results: mutation.data ?? [],
     errorMessage: mutation.error instanceof Error ? mutation.error.message : null,
     search,
+    // SCR-16 — the Global Error Modal's Dismiss action clears the whole-
+    // search-failed state back to idle, rather than leaving the modal's
+    // trigger condition permanently true.
+    dismiss: mutation.reset,
   };
 }
